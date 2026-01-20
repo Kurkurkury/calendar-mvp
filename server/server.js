@@ -619,8 +619,28 @@ app.post("/api/google/quick-add", async (req, res) => {
 
     return res.json({ ok: true, googleEvent: null, parsed });
   } catch (e) {
-    const details = e?.response?.data || e?.errors || e?.stack || e?.message || String(e);
-    res.status(500).json({ ok: false, message: "quick-add failed", details });
+	    const msg = String(e?.message || "");
+	    const details = e?.response?.data || e?.errors || e?.stack || msg || String(e);
+
+	    // ✅ UX-Fix (Phase 4): Wenn Google nicht verbunden ist (keine Tokens), soll Quick-Add
+	    // nicht mit 500 crashen, sondern sauber 401 zurückgeben.
+	    const isNotConnected =
+	      msg.includes("Nicht verbunden") ||
+	      msg.includes("keine Tokens") ||
+	      msg.includes("Google nicht verbunden") ||
+	      msg.includes("auth-url") ||
+	      msg.includes("Tokens");
+
+	    if (isNotConnected) {
+	      return res.status(401).json({
+	        ok: false,
+	        code: "GOOGLE_NOT_CONNECTED",
+	        message: "Google nicht verbunden. Öffne /api/google/auth-url (oder /api/google/auth) und verbinde.",
+	        details: msg,
+	      });
+	    }
+
+	    res.status(500).json({ ok: false, message: "quick-add failed", details });
   }
 });
 
