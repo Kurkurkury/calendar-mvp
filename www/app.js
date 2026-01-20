@@ -33,11 +33,12 @@ function uiNotify(type, message) {
       if (line) line.style.fontWeight = "400";
     }, 2500);
   } catch (e) {
-        uiNotify("error", "❌ " + (e && e.message ? e.message : "Unbekannter Fehler"));
-// Last resort (should never be needed)
-    alert(message);
+    // Never recurse in an error handler
+    console.warn('uiNotify failed:', e);
+    try { alert(message); } catch {}
   }
 }
+
 
 // app.js
 // Kalender MVP – Woche + Tasks + Eisenhower + Auto-Scheduling in Time Windows
@@ -230,8 +231,6 @@ boot();
 async function boot() {
   state.weekStart = startOfWeek(state.activeDate);
 
-  // ✅ Google buttons in Topbar einfügen (rechts neben "+ Neu")
-  mountGoogleButtons();
 
   // Nav (view-aware)
   els.prevWeekBtn?.addEventListener("click", async () => { shiftView(-1); await render(); });
@@ -275,88 +274,115 @@ async function boot() {
     }
   });
 
+  bindGoogleButtons();
   await refreshFromApi();
   startGooglePollingOnce();
   await render();
 }
 
 // -------------------- Google UI --------------------
-function mountGoogleButtons() {
-  const right = document.querySelector("header.topbar .right");
-  if (!right) return;
+function bindGoogleButtons() {
+  // Prefer existing buttons from index.html
+  els.googleConnectBtn = byId('googleConnectBtn');
+  els.googleDisconnectBtn = byId('googleDisconnectBtn');
 
-  if (right.querySelector("[data-google-ui='1']")) return;
-
-  const wrap = document.createElement("div");
-  wrap.setAttribute("data-google-ui", "1");
-  wrap.style.display = "flex";
-  wrap.style.gap = "8px";
-  wrap.style.alignItems = "center";
-
-  const connect = document.createElement("button");
-  connect.type = "button";
-  connect.className = "btn ghost";
-  connect.textContent = "Google verbinden";
-
-  const disconnect = document.createElement("button");
-  disconnect.type = "button";
-  disconnect.className = "btn ghost";
-  disconnect.textContent = "Trennen";
-  disconnect.style.display = "none";
-
-  connect.addEventListener("click", onGoogleConnect);
-  disconnect.addEventListener("click", onGoogleDisconnect);
-
-  wrap.appendChild(connect);
-  wrap.appendChild(disconnect);
-
-  right.insertBefore(wrap, els.newBtn || null);
-
-  els.googleConnectBtn = connect;
-  els.googleDisconnectBtn = disconnect;
+  els.googleConnectBtn?.addEventListener('click', onGoogleConnect);
+  els.googleDisconnectBtn?.addEventListener('click', onGoogleDisconnect);
 
   updateGoogleButtons();
 }
 
 function updateGoogleButtons() {
-  const connected = !!state.google?.connected;
-  const configured = !!state.google?.configured;
+  const g = state.google || {};
+  const connected = !!g.connected;
+  const configured = !!g.configured;
+  const wrong = !!g.wrongAccount;
 
   if (els.googleConnectBtn) {
     els.googleConnectBtn.disabled = !configured;
-    els.googleConnectBtn.title = configured ? "" : "Backend: Google OAuth ist nicht konfiguriert (Env Vars fehlen)";
-    els.googleConnectBtn.style.display = connected ? "none" : "";
+    els.googleConnectBtn.title = configured ? '' : 'Backend: Google OAuth ist nicht konfiguriert (ENV Vars fehlen)';
+    // If wrong account: keep connect visible so user can reconnect
+    els.googleConnectBtn.style.display = connected && !wrong ? 'none' : '';
   }
+
   if (els.googleDisconnectBtn) {
-    els.googleDisconnectBtn.style.display = connected ? "" : "none";
+    // Disconnect is optional (server may require API key)
+    els.googleDisconnectBtn.style.display = connected ? '' : 'none';
   }
+}
+
+function googleUiStatusLine() {
+  const g = state.google || {};
+  if (!g.configured) return 'Google: nicht konfiguriert ⚪';
+  if (!g.connected) return 'Google: nicht verbunden 🟡';
+
+  const email = g.connectedEmail ? String(g.connectedEmail) : 'verbunden';
+  if (g.wrongAccount) {
+    const allowed = g.allowedEmail ? String(g.allowedEmail) : '(unbekannt)';
+    return `Google: FALSCHER ACCOUNT ❌ (${email}) • erlaubt: ${allowed}`;
+  }
+  return `Google: verbunden ✅ (${email})`;
+}
+
+async function pollGoogleConnected({ timeoutMs = 90_000, intervalMs = 2000 } = {}) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeoutMs) {
+    try {
+      const g = await apiGet('/api/google/status');
+      state.google = (g.google || g || { configured: false, connected: false, scopes: '' });
+      updateGoogleButtons();
+
+      if (state.google?.connected && !state.google?.wrongAccount) {
+        return true;
+      }
+    } catch {
+      // ignore while polling
+    }
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+  return false;
 }
 
 async function onGoogleConnect() {
   try {
-    const out = await apiGet("/api/google/auth-url");
+    const out = await apiGet('/api/google/auth-url');
     const url = out?.url;
-    if (!url) throw new Error("auth-url missing");
+    if (!url) throw new Error('auth-url missing');
 
-    window.open(url, "_blank", "noopener,noreferrer");
-    setStatus("Google OAuth geöffnet… nach dem Login Status aktualisieren.", true);
+    // Open OAuth in a new tab/window
+    window.open(url, '_blank', 'noopener,noreferrer');
 
+    uiNotify('success', 'Google Login geöffnet – nach erfolgreichem Login verbindet die App automatisch…');
+    setStatus('Google Login geöffnet… warte auf Verbindung…', true);
 
+    const ok = await pollGoogleConnected();
+    if (ok) {
+      uiNotify('success', 'Google verbunden ✅');
+      await refreshFromApi();
+      await render();
+    } else {
+      uiNotify('error', 'Google noch nicht verbunden. Falls du fertig eingeloggt bist: Seite neu laden.');
+    }
   } catch (e) {
-    setStatus(`Google verbinden fehlgeschlagen ⚠️`, true);
-    console.warn("Google connect error:", e);
+    uiNotify('error', 'Google verbinden fehlgeschlagen: ' + (e?.message || String(e)));
+    console.warn('Google connect error:', e);
   }
 }
 
 async function onGoogleDisconnect() {
   try {
-    await apiPost("/api/google/disconnect", {});
+    if (!API_KEY) {
+      uiNotify('error', 'Trennen ist gesperrt (API-Key fehlt). Für Normalnutzung nicht nötig.');
+      return;
+    }
+
+    await apiPost('/api/google/disconnect', {});
     await refreshFromApi();
     await render();
-    setStatus(`Google getrennt ✅ • ${googleStatusText()}`, true);
+    uiNotify('success', 'Google getrennt ✅');
   } catch (e) {
-    setStatus(`Trennen fehlgeschlagen ⚠️`, true);
-    console.warn("Google disconnect error:", e);
+    uiNotify('error', 'Trennen fehlgeschlagen: ' + (e?.message || String(e)));
+    console.warn('Google disconnect error:', e);
   }
 }
 
@@ -367,8 +393,8 @@ function isMobile() {
 
 function setStatus(msg, ok = true) {
   if (!els.statusLine) return;
-  els.statusLine.textContent = msg || "";
-  els.statusLine.style.color = ok ? "" : "var(--danger)";
+  els.statusLine.textContent = msg || '';
+  els.statusLine.style.color = ok ? '' : 'var(--danger)';
 }
 
 // Kleine Toast-Meldung (ohne CSS-Datei anfassen)
@@ -420,10 +446,7 @@ function toast(message, type = "info", ms = 2600) {
 }
 
 function googleStatusText() {
-  const g = state.google || { configured: false, connected: false, scopes: "" };
-  if (g.connected) return "Google Kalender: verbunden ✅";
-  if (g.configured) return "Google Kalender: bereit (OAuth fehlt noch) 🟡";
-  return "Google Kalender: nicht konfiguriert ⚪";
+  return googleUiStatusLine();
 }
 
 function isNetworkFetchFail(err) {
@@ -432,7 +455,7 @@ function isNetworkFetchFail(err) {
     msg.includes("failed to fetch") ||
     msg.includes("networkerror") ||
     msg.includes("load failed") ||
-    msg.includes("fetch fail")
+    msg.includes('fetch fail') || msg.includes('netzwerkfehler')
   );
 }
 
@@ -471,7 +494,7 @@ async function refreshFromApi() {
       state.events = loadLastKnownGoogleEvents() || [];
     }
 
-    setStatus(`API verbunden ✅ (${API_BASE}) • ${googleStatusText()}`, true);
+    setStatus(`API: verbunden ✅ (${API_BASE}) • ${googleUiStatusLine()}`, !state.google?.wrongAccount);
   } catch (e) {
     if (isNetworkFetchFail(e)) {
       updateGoogleButtons();
@@ -507,7 +530,7 @@ async function render() {
   updateGoogleButtons();
 
   if (els.statusLine?.textContent?.includes("API verbunden")) {
-    setStatus(`API verbunden ✅ (${API_BASE}) • ${googleStatusText()}`, true);
+    setStatus(`API: verbunden ✅ (${API_BASE}) • ${googleUiStatusLine()}`, !state.google?.wrongAccount);
   }
 }
 
@@ -1022,17 +1045,23 @@ async function createTask() {
 // -------------------- Event Quick-Add --------------------
 async function createEventFromText() {
   // Quick-Add funktioniert nur, wenn Google im Backend wirklich verbunden ist.
-  if (!state.google?.connected) {
-    setStatus('Google ist nicht verbunden. Bitte zuerst oben auf "Google verbinden" klicken.', false);
-    toast('❌ Google nicht verbunden – zuerst "Google verbinden"', "error", 3400);
-    try { els.googleConnectBtn?.focus?.(); } catch { }
+  if (!state.google?.configured) {
+    setStatus('Google OAuth ist im Backend nicht konfiguriert. (Render ENV prüfen)', false);
+    uiNotify('error', 'Google OAuth ist im Backend nicht konfiguriert.');
     return;
   }
 
-  const text = (els.eventText.value || "").trim();
+  if (!state.google?.connected || state.google?.wrongAccount) {
+    setStatus('Google ist nicht (korrekt) verbunden. Bitte oben auf "Mit Google verbinden" klicken.', false);
+    uiNotify('error', '❌ Google nicht verbunden – zuerst "Mit Google verbinden"');
+    try { els.googleConnectBtn?.focus?.(); } catch {}
+    return;
+  }
+
+  const text = (els.eventText.value || '').trim();
   if (!text) {
-    setStatus("Bitte Event-Text eingeben (z.B. „Coiffeur morgen 13:00 60min“).", false);
-    toast("❌ Bitte Event-Text eingeben", "error", 3000);
+    setStatus('Bitte Event-Text eingeben (z.B. „Coiffeur morgen 13:00 60min“).', false);
+    uiNotify('error', '❌ Bitte Event-Text eingeben');
     els.eventText.focus();
     return;
   }
@@ -1040,16 +1069,11 @@ async function createEventFromText() {
   const btn = els.createEventBtn;
   const oldText = btn.textContent;
   btn.disabled = true;
-  btn.textContent = "Erstelle…";
-  btn.setAttribute("aria-busy", "true");
-
-  // DEV: künstliche Verzögerung, damit du den Ladezustand siehst (später wieder entfernen)
-  if (typeof location !== "undefined" && (location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
-    await new Promise((r) => setTimeout(r, 900));
-  }
+  btn.textContent = 'Erstelle…';
+  btn.setAttribute('aria-busy', 'true');
 
   try {
-    const data = await apiPost("/api/google/quick-add", { text });
+    const data = await apiPost('/api/google/quick-add', { text });
 
     const maybe = extractEventFromQuickAddResponse(data, text);
     if (maybe) {
@@ -1060,16 +1084,27 @@ async function createEventFromText() {
     await refreshFromApi();
     await render();
 
-    setStatus(`Event erstellt ✅ • ${googleStatusText()}`, true);
-    toast("✅ Event erstellt", "success");
+    setStatus(`Event erstellt ✅ • ${googleUiStatusLine()}`, true);
+    uiNotify('success', '✅ Event erstellt');
     closeEventModal();
   } catch (e) {
-    setStatus(`Event fehlgeschlagen ❌: ${e?.message || "unbekannt"} • ${googleStatusText()}`, false);
-    toast(`❌ Event fehlgeschlagen: ${e?.message || "unbekannt"}`, "error", 3800);
+    const status = e?._meta?.status;
+
+    if (status == 401) {
+      // Backend now returns 401 for "not connected" / "wrong account" situations
+      await refreshFromApi();
+      updateGoogleButtons();
+      setStatus(`❌ ${googleUiStatusLine()}`, false);
+      uiNotify('error', 'Google ist nicht (korrekt) verbunden – bitte erneut verbinden.');
+      try { els.googleConnectBtn?.focus?.(); } catch {}
+    } else {
+      setStatus(`Event fehlgeschlagen ❌: ${e?.message || 'unbekannt'} • ${googleUiStatusLine()}`, false);
+      uiNotify('error', `❌ Event fehlgeschlagen: ${e?.message || 'unbekannt'}`);
+    }
   } finally {
     btn.disabled = false;
     btn.textContent = oldText;
-    btn.removeAttribute("aria-busy");
+    btn.removeAttribute('aria-busy');
   }
 }
 
@@ -1165,60 +1200,77 @@ function debugEnvLine() {
   return `base=${API_BASE} • raw=${RAW_API_BASE} • isNative=${IS_NATIVE} • hasCapacitor=${!!window.Capacitor} • ua=${navigator.userAgent.slice(0, 60)}…`;
 }
 
-async function apiGet(path) {
-  const url = API_BASE + path;
+function parseApiBody(text) {
+  // Render can sometimes return HTML on errors.
   try {
-    const res = await fetch(url, { method: "GET", headers: headers() });
-
-    const text = await res.text();
-    let data = {};
-    try { data = JSON.parse(text); } catch { }
-
-    if (!res.ok || data.ok === false) {
-      throw new Error(`HTTP ${res.status} ${res.statusText} • ${data.message || text || "no body"}`);
-    }
-
-    return data;
-  } catch (e) {
-    const msg =
-      `FETCH FAIL (GET)\n` +
-      `url: ${url}\n` +
-      `${debugEnvLine()}\n` +
-      `error: ${e?.message || String(e)}`;
-
-    console.warn(msg);
-    throw new Error(msg);
+    const json = JSON.parse(text);
+    return { kind: 'json', json };
+  } catch {
+    return { kind: 'text', text: String(text || '') };
   }
 }
 
-async function apiPost(path, body) {
+function makeApiError({ method, url, status, statusText, body }) {
+  const base = `HTTP ${status} ${statusText || ''}`.trim();
+
+  // If backend returned a structured message, prefer it
+  const msg = body?.kind === 'json'
+    ? (body.json?.message || body.json?.error || '')
+    : (body?.text || '');
+
+  const clean = msg ? `${base} • ${msg}` : base;
+
+  // Attach a minimal hint (no huge multi-line dumps in UI)
+  const err = new Error(clean);
+  err._meta = { method, url, status, statusText, body };
+  return err;
+}
+
+async function apiGet(path) {
   const url = API_BASE + path;
+  let res;
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify(body),
-    });
-
-    const text = await res.text();
-    let data = {};
-    try { data = JSON.parse(text); } catch { }
-
-    if (!res.ok || data.ok === false) {
-      throw new Error(`HTTP ${res.status} ${res.statusText} • ${data.message || text || "no body"}`);
-    }
-
-    return data;
+    res = await fetch(url, { method: 'GET', headers: headers() });
   } catch (e) {
-    const msg =
-      `FETCH FAIL (POST)\n` +
-      `url: ${url}\n` +
-      `${debugEnvLine()}\n` +
-      `error: ${e?.message || String(e)}`;
-
-    console.warn(msg);
-    throw new Error(msg);
+    const err = new Error(`Netzwerkfehler (GET) – Backend nicht erreichbar`);
+    err._meta = { method: 'GET', url, cause: e };
+    throw err;
   }
+
+  const text = await res.text();
+  const body = parseApiBody(text);
+
+  // If JSON: allow { ok:false, message }
+  if (res.ok && !(body.kind === 'json' && body.json?.ok === false)) {
+    return body.kind === 'json' ? body.json : {};
+  }
+
+  throw makeApiError({ method: 'GET', url, status: res.status, statusText: res.statusText, body });
+}
+
+async function apiPost(path, bodyObj) {
+  const url = API_BASE + path;
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(bodyObj || {}),
+    });
+  } catch (e) {
+    const err = new Error(`Netzwerkfehler (POST) – Backend nicht erreichbar`);
+    err._meta = { method: 'POST', url, cause: e };
+    throw err;
+  }
+
+  const text = await res.text();
+  const body = parseApiBody(text);
+
+  if (res.ok && !(body.kind === 'json' && body.json?.ok === false)) {
+    return body.kind === 'json' ? body.json : {};
+  }
+
+  throw makeApiError({ method: 'POST', url, status: res.status, statusText: res.statusText, body });
 }
 
 // -------------------- Date/time utils --------------------
