@@ -12,6 +12,18 @@ const __dirname = path.dirname(__filename);
 
 const TOKENS_PATH = path.join(__dirname, "google-tokens.json");
 
+// --- Token Storage (Free Render Setup) ---
+// Render Persistent Disks are paid. For the MVP we support storing the full
+// token JSON in an ENV var: GOOGLE_TOKENS_JSON.
+//
+// Priority:
+// 1) process.env.GOOGLE_TOKENS_JSON (if set)
+// 2) server/google-tokens.json (local dev)
+//
+// Note: ENV vars cannot be modified at runtime, so when GOOGLE_TOKENS_JSON is
+// set we treat tokens as read-only (no save on refresh). This is OK because the
+// refresh_token stays stable and is enough to rehydrate auth after restarts.
+
 export function getGoogleConfig() {
   const {
     GOOGLE_CLIENT_ID = "",
@@ -48,6 +60,13 @@ function buildOAuthClient() {
 
 export function loadTokens() {
   try {
+    // 1) ENV (Render free)
+    const envJson = (process.env.GOOGLE_TOKENS_JSON || "").trim();
+    if (envJson) {
+      return JSON.parse(envJson);
+    }
+
+    // 2) File (local dev)
     if (!fs.existsSync(TOKENS_PATH)) return null;
     return JSON.parse(fs.readFileSync(TOKENS_PATH, "utf-8"));
   } catch {
@@ -56,6 +75,11 @@ export function loadTokens() {
 }
 
 export function saveTokens(tokens) {
+  // If tokens are stored in ENV, we can't persist updates at runtime.
+  // (ENV is read-only.) Keep it as a no-op in that mode.
+  const envJson = (process.env.GOOGLE_TOKENS_JSON || "").trim();
+  if (envJson) return;
+
   fs.writeFileSync(TOKENS_PATH, JSON.stringify(tokens, null, 2), "utf-8");
 }
 
