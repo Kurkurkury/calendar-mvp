@@ -1,0 +1,6 @@
+{
+  "appId": "ch.noah.kalender",
+  "appName": "calendar-mvp",
+  "webDir": ".",
+  "bundledWebRuntime": false
+}

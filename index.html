@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Kalender MVP</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="left">
+      <button id="prevWeekBtn" class="btn ghost" title="Vorherige Woche">←</button>
+      <button id="todayBtn" class="btn ghost">Heute</button>
+      <button id="nextWeekBtn" class="btn ghost" title="Nächste Woche">→</button>
+      <div class="title">
+        <div class="h1">Woche</div>
+        <div id="weekLabel" class="sub"></div>
+
+        <!-- Status + Google Controls -->
+        <div id="statusLine" class="sub"></div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px;">
+          <button id="googleConnectBtn" class="btn ghost" type="button">Mit Google verbinden</button>
+          <button id="googleDisconnectBtn" class="btn ghost" type="button">Trennen</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="right">
+      <button id="newBtn" class="btn primary">+ Neu</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="calendar">
+      <div class="calHead">
+        <div class="timeColHead"></div>
+        <div id="dayHeaders" class="dayHeaders"></div>
+      </div>
+
+      <div class="calBody">
+        <div id="timeCol" class="timeCol"></div>
+        <div id="grid" class="grid"></div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="card">
+        <div class="cardTitle">Inbox</div>
+        <div class="cardSub">Tasks ohne Planung</div>
+        <div id="inboxList" class="list"></div>
+      </div>
+
+      <div class="card">
+        <div class="cardTitle">Geplant</div>
+        <div class="cardSub">Tasks mit Slot</div>
+        <div id="plannedList" class="list"></div>
+      </div>
+
+      <div class="card">
+        <div class="cardTitle">Time Windows</div>
+        <div class="cardSub">vordefinierte Arbeitszeiten (editierbar in app.js)</div>
+        <div id="windowsList" class="list small"></div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- New menu -->
+  <div id="menuBackdrop" class="backdrop hidden"></div>
+  <div id="newMenu" class="menu hidden" role="dialog" aria-modal="true">
+    <div class="menuTitle">Erstellen</div>
+    <button class="menuItem" data-action="newTask">Task</button>
+    <button class="menuItem" data-action="newEvent">Event</button>
+    <button class="menuItem" data-action="newBlock" disabled title="Kommt im nächsten Schritt">Block (bald)</button>
+    <div class="menuFoot">
+      <button id="closeMenuBtn" class="btn ghost">Schliessen</button>
+    </div>
+  </div>
+
+  <!-- Task modal -->
+  <div id="modalBackdrop" class="backdrop hidden"></div>
+  <div id="taskModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modalHead">
+      <div class="modalTitle">Neue Task</div>
+      <button id="closeModalBtn" class="btn ghost">✕</button>
+    </div>
+
+    <div class="modalBody">
+      <label class="field">
+        <span>Titel</span>
+        <input id="taskTitle" type="text" placeholder="z.B. Bio Zusammenfassung V3" />
+      </label>
+
+      <div class="row">
+        <label class="field">
+          <span>Dauer (Min)</span>
+          <input id="taskDuration" type="number" min="5" step="5" value="45" />
+        </label>
+        <label class="field">
+          <span>Deadline (optional)</span>
+          <input id="taskDeadline" type="date" />
+        </label>
+      </div>
+
+      <div class="eisenhower">
+        <div class="ehTitle">Eisenhower</div>
+        <div class="row">
+          <label class="toggle">
+            <input id="imp" type="checkbox" />
+            <span>Wichtig</span>
+          </label>
+          <label class="toggle">
+            <input id="urg" type="checkbox" />
+            <span>Dringend</span>
+          </label>
+        </div>
+
+        <div class="ehResult">
+          <div class="badge" id="quadrantBadge">Plan</div>
+          <div class="ehHint" id="quadrantHint"></div>
+        </div>
+      </div>
+
+      <label class="toggle big">
+        <input id="autoSchedule" type="checkbox" checked />
+        <span>Automatisch in Arbeitszeit-Slots einplanen</span>
+      </label>
+
+      <div class="modalFoot">
+        <button id="createTaskBtn" class="btn primary">Task erstellen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Event modal -->
+  <div id="eventBackdrop" class="backdrop hidden"></div>
+  <div id="eventModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modalHead">
+      <div class="modalTitle">Neues Event (Quick Add)</div>
+      <button id="closeEventBtn" class="btn ghost">✕</button>
+    </div>
+
+    <div class="modalBody">
+      <label class="field">
+        <span>Text</span>
+        <textarea id="eventText" rows="3" placeholder='z.B. "Coiffeur morgen 13:00 60min"'></textarea>
+      </label>
+
+      <div class="cardMini">
+        <div class="cardMiniTitle">Hinweis</div>
+        <div class="cardMiniSub">
+          Das geht an <code>/api/google/quick-add</code> und erstellt direkt im Google Kalender.
+        </div>
+      </div>
+
+      <div class="modalFoot">
+        <button id="createEventBtn" class="btn primary">Event erstellen</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

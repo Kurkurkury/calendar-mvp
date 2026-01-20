@@ -1,0 +1,154 @@
+openapi: 3.0.3
+info:
+  title: Calendar API
+  version: 1.1.0
+servers:
+  - url: https://DEIN-RENDER-URL-HIER
+
+paths:
+  /api/health:
+    get:
+      operationId: health
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+
+  /api/google/status:
+    get:
+      operationId: googleStatus
+      summary: Get Google OAuth connection status
+      responses:
+        "200":
+          description: OK
+
+  /api/google/quick-add:
+    post:
+      operationId: googleQuickAdd
+      summary: Quick add an event to Google Calendar from natural language
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text:
+                  type: string
+                  description: Natural language input, e.g. "Coiffeur morgen 13:00 60min"
+      responses:
+        "200":
+          description: OK
+
+  /api/events:
+    get:
+      operationId: listEvents
+      summary: List all calendar events (DB/local view)
+      responses:
+        "200":
+          description: OK
+    post:
+      operationId: createEvent
+      summary: Create a calendar event (DB/local view)
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, start, end]
+              properties:
+                title: { type: string }
+                start: { type: string, description: ISO datetime }
+                end: { type: string, description: ISO datetime }
+                location: { type: string }
+                notes: { type: string }
+                color: { type: string }
+      responses:
+        "200":
+          description: OK
+
+  /api/tasks:
+    get:
+      operationId: listTasks
+      summary: List all tasks
+      responses:
+        "200":
+          description: OK
+    post:
+      operationId: createTask
+      summary: Create a task
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, durationMinutes]
+              properties:
+                title: { type: string }
+                durationMinutes: { type: number }
+                deadline: { type: string, nullable: true }
+                importance: { type: boolean }
+                urgency: { type: boolean }
+                status: { type: string }
+                scheduledStart: { type: string, nullable: true }
+                scheduledEnd: { type: string, nullable: true }
+      responses:
+        "200":
+          description: OK
+
+  /api/free-slots:
+    get:
+      operationId: freeSlots
+      summary: Find free time slots for a given date range and duration (computed by backend)
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: dateFrom
+          in: query
+          required: true
+          schema:
+            type: string
+            description: "YYYY-MM-DD"
+        - name: dateTo
+          in: query
+          required: true
+          schema:
+            type: string
+            description: "YYYY-MM-DD"
+        - name: durationMinutes
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 5
+        - name: workStart
+          in: query
+          required: false
+          schema:
+            type: string
+            description: "HH:MM (default 08:00)"
+        - name: workEnd
+          in: query
+          required: false
+          schema:
+            type: string
+            description: "HH:MM (default 20:00)"
+      responses:
+        "200":
+          description: OK
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Api-Key

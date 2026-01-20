@@ -1,0 +1,12 @@
+Phase 3 (Push-Sync / Watch API) - geaenderte Dateien
+
+- server/server.js
+  - Google Watch API (events.watch) + Webhook Route /api/google/watch/notify
+  - Sync Status Route /api/sync/status + Ack /api/sync/ack
+  - Watch State File: server/google-watch.json (wird zur Laufzeit erzeugt)
+  - Startup: Watch init + stündlicher Renew-Check
+
+- www/app.js
+  - Phase 3 App Sync Loop: poll /api/sync/status alle 30s
+  - Bei dirty: refetch /api/google/events und danach /api/sync/ack
+  - Fallback: wenn /api/sync/status fehlt -> altes Verhalten

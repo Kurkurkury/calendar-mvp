@@ -1,0 +1,145 @@
+{
+  "events": [
+    {
+      "id": "gcal_qebjt5v0jiqsrotbf1m3itkmfc",
+      "title": "Coiffeur",
+      "start": "2026-01-16T13:00:00",
+      "end": "2026-01-16T14:00:00",
+      "location": "",
+      "notes": "60min",
+      "color": "",
+      "googleEventId": "qebjt5v0jiqsrotbf1m3itkmfc"
+    },
+    {
+      "id": "gcal_6nalif2r3lbelsg4nm5l1mod1o",
+      "title": "Coiffeur",
+      "start": "2026-01-16T12:00:00.000Z",
+      "end": "2026-01-16T13:00:00.000Z",
+      "location": "",
+      "notes": "",
+      "color": "",
+      "googleEventId": "6nalif2r3lbelsg4nm5l1mod1o"
+    },
+    {
+      "id": "gcal_lqdtplhuf9faff6br7i50h3suo",
+      "title": "Test Termin",
+      "start": "2026-01-19T14:00:00",
+      "end": "2026-01-19T14:30:00",
+      "location": "",
+      "notes": "",
+      "color": "",
+      "googleEventId": "lqdtplhuf9faff6br7i50h3suo"
+    },
+    {
+      "id": "gcal_hs1ei2gibjfv0375p5vj1aggp4",
+      "title": "GMX Test",
+      "start": "2026-01-19T14:10:00",
+      "end": "2026-01-19T14:30:00",
+      "location": "",
+      "notes": "",
+      "color": "",
+      "googleEventId": "hs1ei2gibjfv0375p5vj1aggp4"
+    },
+    {
+      "id": "gcal_d6k05eijgrg106n6871t612rnc",
+      "title": "test",
+      "start": "2026-01-19T14:00:00+01:00",
+      "end": "2026-01-19T14:30:00+01:00",
+      "location": "",
+      "notes": "",
+      "color": "",
+      "googleEventId": "d6k05eijgrg106n6871t612rnc"
+    },
+    {
+      "id": "gcal_42cnd89cbopp7j9oiahdvl52dc",
+      "title": "Mittagessen",
+      "start": "2026-01-20T14:00:00+01:00",
+      "end": "2026-01-20T15:00:00+01:00",
+      "location": "",
+      "notes": "",
+      "color": "",
+      "googleEventId": "42cnd89cbopp7j9oiahdvl52dc"
+    },
+    {
+      "id": "gcal_un27tct34ad3jmp17q6ip4uteo",
+      "title": "Mittagessen",
+      "start": "2026-01-20T14:00:00+01:00",
+      "end": "2026-01-20T15:00:00+01:00",
+      "location": "",
+      "notes": "",
+      "color": "",
+      "googleEventId": "un27tct34ad3jmp17q6ip4uteo"
+    },
+    {
+      "id": "gcal_jt4foqmu9u6hbd0bm25u098edk",
+      "title": "Mittagessen",
+      "start": "2026-01-20T14:00:00+01:00",
+      "end": "2026-01-20T15:00:00+01:00",
+      "location": "",
+      "notes": "",
+      "color": "",
+      "googleEventId": "jt4foqmu9u6hbd0bm25u098edk"
+    },
+    {
+      "id": "gcal_0dqock9usnnlg9pa3a4rffh8b8",
+      "title": "Mittagessen",
+      "start": "2026-01-20T14:00:00+01:00",
+      "end": "2026-01-20T15:00:00+01:00",
+      "location": "",
+      "notes": "",
+      "color": "",
+      "googleEventId": "0dqock9usnnlg9pa3a4rffh8b8"
+    },
+    {
+      "id": "gcal_oibaf3kdb88g5hjqsegsg95ni4",
+      "title": "Mittagessen",
+      "start": "2026-01-20T16:00:00+01:00",
+      "end": "2026-01-20T17:00:00+01:00",
+      "location": "",
+      "notes": "",
+      "color": "",
+      "googleEventId": "oibaf3kdb88g5hjqsegsg95ni4"
+    },
+    {
+      "id": "gcal_ls6rf1p6f1sonlqjrt5h7rpd70",
+      "title": "Mittagessen",
+      "start": "2026-01-20T14:00:00+01:00",
+      "end": "2026-01-20T15:00:00+01:00",
+      "location": "",
+      "notes": "",
+      "color": "",
+      "googleEventId": "ls6rf1p6f1sonlqjrt5h7rpd70"
+    },
+    {
+      "id": "gcal_onk87eacj3allhddo53c6lba8c",
+      "title": "Mittagessen",
+      "start": "2026-01-20T14:00:00+01:00",
+      "end": "2026-01-20T15:00:00+01:00",
+      "location": "",
+      "notes": "",
+      "color": "",
+      "googleEventId": "onk87eacj3allhddo53c6lba8c"
+    },
+    {
+      "id": "gcal_cmgiap83j8q8jeqf2h37s0h9s0",
+      "title": "Mittagessen",
+      "start": "2026-01-20T14:00:00+01:00",
+      "end": "2026-01-20T15:00:00+01:00",
+      "location": "",
+      "notes": "",
+      "color": "",
+      "googleEventId": "cmgiap83j8q8jeqf2h37s0h9s0"
+    },
+    {
+      "id": "gcal_51higv13du4o6s7td7v4091iso",
+      "title": "Mittagessen",
+      "start": "2026-01-20T14:00:00+01:00",
+      "end": "2026-01-20T15:00:00+01:00",
+      "location": "",
+      "notes": "",
+      "color": "",
+      "googleEventId": "51higv13du4o6s7td7v4091iso"
+    }
+  ],
+  "tasks": []
+}
