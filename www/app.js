@@ -1,3 +1,4 @@
+console.log("WWW APP.JS GELADEN");
 
 // -------------------- UI Notify (guaranteed visible, no CSS needed) --------------------
 function uiNotify(type, message) {
