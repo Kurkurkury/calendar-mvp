@@ -1401,3 +1401,41 @@ function escapeHtml(str) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+// ===== LIVE TIMESTAMP (Europe/Zurich) =====
+(function () {
+  const ID = "live-timestamp";
+
+  function ensure() {
+    let el = document.getElementById(ID);
+    if (!el) {
+      el = document.createElement("div");
+      el.id = ID;
+      el.style.fontSize = "12px";
+      el.style.color = "#9aa0a6";
+      el.style.textAlign = "center";
+      el.style.marginTop = "4px";
+      el.style.userSelect = "none";
+
+      const header =
+        document.querySelector(".topbar") ||
+        document.querySelector("header") ||
+        document.body;
+
+      header.appendChild(el);
+    }
+    return el;
+  }
+
+  function tick() {
+    ensure().textContent = new Intl.DateTimeFormat("de-CH", {
+      dateStyle: "full",
+      timeStyle: "medium",
+      timeZone: "Europe/Zurich",
+    }).format(new Date());
+  }
+
+  window.addEventListener("load", () => {
+    tick();
+    setInterval(tick, 1000);
+  });
+})();
