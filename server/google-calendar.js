@@ -244,3 +244,17 @@ export async function listGoogleEvents({ timeMin, timeMax, maxTotal = 2500 } = {
 
   return { ok: true, events: out, truncated: false };
 }
+export async function deleteGoogleEvent(eventId) {
+  const auth = await getAuthClient();
+  if (!auth) {
+    throw new Error("Auth liefert keinen Access Token. Bitte neu verbinden.");
+  }
+
+  const calendar = google.calendar({ version: "v3", auth });
+  await calendar.events.delete({
+    calendarId: cfg.GOOGLE_CALENDAR_ID || "primary",
+    eventId,
+  });
+
+  return { ok: true };
+}
