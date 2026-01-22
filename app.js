@@ -49,7 +49,11 @@ function ensureTimestampElement() {
       document.querySelector("header") ||
       document.body;
 
-    header.prepend(el);
+header.appendChild(el);
+el.style.display = "block";
+el.style.width = "100%";
+el.style.textAlign = "center";
+el.style.paddingTop = "4px";
   }
   return el;
 }
