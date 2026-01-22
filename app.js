@@ -21,6 +21,53 @@ const RAW_API_BASE = "https://calendar-api-v2.onrender.com";
 
 const API_BASE = String(RAW_API_BASE || "").replace(/\/+$/, ""); // wichtig: kein trailing /
 const API_KEY = localStorage.getItem("calendarApiKeyV1") || ""; // optional
+// -------------------- Live Timestamp (Europe/Zurich) --------------------
+
+const TIMESTAMP_ID = "live-timestamp";
+let timestampInterval = null;
+
+function formatZurichNow() {
+  return new Intl.DateTimeFormat("de-CH", {
+    dateStyle: "full",
+    timeStyle: "medium",
+    timeZone: "Europe/Zurich",
+  }).format(new Date());
+}
+
+function ensureTimestampElement() {
+  let el = document.getElementById(TIMESTAMP_ID);
+  if (!el) {
+    el = document.createElement("div");
+    el.id = TIMESTAMP_ID;
+    el.style.fontSize = "12px";
+    el.style.color = "#9aa0a6";
+    el.style.marginTop = "4px";
+    el.style.userSelect = "none";
+
+    const header =
+      document.querySelector(".topbar") ||
+      document.querySelector("header") ||
+      document.body;
+
+    header.prepend(el);
+  }
+  return el;
+}
+
+function startLiveTimestamp() {
+  const el = ensureTimestampElement();
+  el.textContent = formatZurichNow();
+
+  if (timestampInterval) clearInterval(timestampInterval);
+  timestampInterval = setInterval(() => {
+    el.textContent = formatZurichNow();
+  }, 1000);
+}
+
+window.addEventListener("load", startLiveTimestamp);
+window.addEventListener("beforeunload", () => {
+  if (timestampInterval) clearInterval(timestampInterval);
+});
 
 // -------------------- State --------------------
 const state = {
