@@ -21,6 +21,7 @@ import {
   getAuthUrl,
   exchangeCodeForTokens,
   createGoogleEvent,
+  deleteGoogleEvent,
   listGoogleEvents, // ✅ Phase 2 Sync (Read)
   getGoogleConfig,
   loadTokens,
@@ -446,6 +447,31 @@ app.post("/api/google/events", requireApiKey, async (req, res) => {
     writeDb(db);
 
     res.json({ ok: true, googleEvent: out.googleEvent, mirroredEvent: ev });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e?.message || "unknown" });
+  }
+});
+
+// ---- Delete event in Google Calendar ----
+app.delete("/api/google/events/:eventId", requireApiKey, async (req, res) => {
+  try {
+    await assertCorrectGoogleAccount();
+
+    const { eventId } = req.params;
+    if (!eventId) {
+      return res.status(400).json({ ok: false, message: "eventId required" });
+    }
+
+    const out = await deleteGoogleEvent({ eventId });
+    if (!out.ok) {
+      return res.status(400).json(out);
+    }
+
+    const db = readDb();
+    db.events = db.events.filter(e => e.id !== eventId);
+    writeDb(db);
+
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ ok: false, message: e?.message || "unknown" });
   }
