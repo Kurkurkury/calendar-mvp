@@ -22,6 +22,7 @@ import {
   exchangeCodeForTokens,
   createGoogleEvent,
   listGoogleEvents, // ✅ Phase 2 Sync (Read)
+  deleteGoogleEvent,
   getGoogleConfig,
   loadTokens,
 } from "./google-calendar.js";
@@ -726,6 +727,42 @@ app.get("/*", (req, res) => {
 /**
  * ✅ WICHTIG: auf 0.0.0.0 binden, damit Android Emulator (10.0.2.2) / Handy zugreifen kann
  */
+// ======================
+// DELETE Google Event
+// ======================
+app.delete("/api/google/events/:eventId", requireApiKey, async (req, res) => {
+  try {
+    const { eventId } = req.params;
+
+    if (!eventId) {
+      return res.status(400).json({ ok: false, error: "Missing eventId" });
+    }
+
+    // Google Event löschen
+    await deleteGoogleEvent({ eventId });
+
+    // Lokale Spiegelung (db.json) bereinigen
+    try {
+      const dbPath = path.join(__dirname, "..", "db.json");
+      if (fs.existsSync(dbPath)) {
+        const raw = fs.readFileSync(dbPath, "utf-8");
+        const data = raw ? JSON.parse(raw) : {};
+
+        if (Array.isArray(data.events)) {
+          data.events = data.events.filter((e) => e.id !== eventId);
+          fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
+        }
+      }
+    } catch (e) {
+      console.warn("db.json cleanup failed:", e.message);
+    }
+
+    res.json({ ok: true, eventId });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 app.listen(PORT, "0.0.0.0", () => {
   const cfg = getGoogleConfig();
   console.log(`calendar-api running on port ${PORT}`);
