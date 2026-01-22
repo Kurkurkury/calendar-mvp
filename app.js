@@ -17,7 +17,7 @@ const IS_NATIVE =
   window.Capacitor.getPlatform() !== "web";
 
 // ✅ LIVE: fix auf Render (kein localhost / 10.0.2.2)
-const RAW_API_BASE = "https://calendar-api-l9kp.onrender.com";
+const RAW_API_BASE = "https://calendar-api-v2.onrender.com";
 
 const API_BASE = String(RAW_API_BASE || "").replace(/\/+$/, ""); // wichtig: kein trailing /
 const API_KEY = localStorage.getItem("calendarApiKeyV1") || ""; // optional
