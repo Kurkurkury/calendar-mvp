@@ -23,7 +23,7 @@
 body {
   margin: 0;
   font-family: var(--font);
-  background: red;
+  background: var(--bg);
   color: var(--text);
 }
 
