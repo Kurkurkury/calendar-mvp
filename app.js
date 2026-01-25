@@ -253,7 +253,8 @@ function updateGoogleButtons() {
 
 async function onGoogleConnect() {
   try {
-    const out = await apiGet("/api/google/auth-url");
+    const authUrl = IS_NATIVE ? "/api/google/auth-url?platform=android" : "/api/google/auth-url";
+    const out = await apiGet(authUrl);
     const url = out?.url;
     if (!url) throw new Error("auth-url missing");
 

@@ -1,9 +1,12 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "ch.noah.kalender",
-  appName: "calendar-mvp",
-  webDir: "www"
+  appId: "com.calendar.mvp",
+  appName: "Calendar MVP",
+  webDir: "www",
+  server: {
+    androidScheme: "calendar-mvp"
+  }
 };
 
 export default config;

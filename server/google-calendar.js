@@ -49,12 +49,12 @@ export function isGoogleConfigured() {
   return !!(cfg.GOOGLE_CLIENT_ID && cfg.GOOGLE_CLIENT_SECRET && cfg.GOOGLE_REDIRECT_URI);
 }
 
-function buildOAuthClient() {
+function buildOAuthClient(redirectUri) {
   const cfg = getGoogleConfig();
   return new google.auth.OAuth2(
     cfg.GOOGLE_CLIENT_ID,
     cfg.GOOGLE_CLIENT_SECRET,
-    cfg.GOOGLE_REDIRECT_URI
+    redirectUri || cfg.GOOGLE_REDIRECT_URI
   );
 }
 
@@ -102,30 +102,32 @@ export function getGoogleStatus() {
   };
 }
 
-export function getAuthUrl() {
+export function getAuthUrl({ redirectUri, state } = {}) {
   if (!isGoogleConfigured()) {
     return { ok: false, message: "Google OAuth nicht konfiguriert" };
   }
 
   const cfg = getGoogleConfig();
-  const oauth2 = buildOAuthClient();
+  const oauth2 = buildOAuthClient(redirectUri);
 
   const url = oauth2.generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
     scope: cfg.GOOGLE_SCOPES.split(" ").filter(Boolean),
+    ...(redirectUri ? { redirect_uri: redirectUri } : {}),
+    ...(state ? { state } : {}),
   });
 
   return { ok: true, url };
 }
 
-export async function exchangeCodeForTokens(code) {
+export async function exchangeCodeForTokens(code, redirectUri) {
   if (!isGoogleConfigured()) {
     return { ok: false, message: "Google OAuth nicht konfiguriert" };
   }
   if (!code) return { ok: false, message: "code fehlt" };
 
-  const oauth2 = buildOAuthClient();
+  const oauth2 = buildOAuthClient(redirectUri);
   const { tokens } = await oauth2.getToken(code);
   saveTokens(tokens);
 

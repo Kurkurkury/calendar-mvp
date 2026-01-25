@@ -371,7 +371,11 @@ app.get("/api/google/status", async (req, res) => {
 });
 
 app.get("/api/google/auth-url", (req, res) => {
-  res.json(getAuthUrl());
+  const isAndroid = req.query.platform === "android";
+  const redirectUri = isAndroid ? "calendar-mvp://oauth" : getGoogleConfig().GOOGLE_REDIRECT_URI;
+  const state = isAndroid ? "android" : undefined;
+
+  res.json(getAuthUrl({ redirectUri, state }));
 });
 
 // Disconnect (löscht Tokens)
@@ -388,10 +392,16 @@ app.post("/api/google/disconnect", requireApiKey, (req, res) => {
 app.get("/api/google/callback", async (req, res) => {
   try {
     const code = req.query.code ? String(req.query.code) : "";
-    const out = await exchangeCodeForTokens(code);
+    const state = req.query.state ? String(req.query.state) : "";
+    const redirectUri = state === "android" ? "calendar-mvp://oauth" : getGoogleConfig().GOOGLE_REDIRECT_URI;
+    const out = await exchangeCodeForTokens(code, redirectUri);
 
     if (!out.ok) {
       return res.status(400).send(`<h2>❌ Fehler</h2><pre>${escapeHtml(out.message || "unknown")}</pre>`);
+    }
+
+    if (state === "android") {
+      return res.redirect(302, "calendar-mvp://oauth");
     }
 
     let hint = "";
