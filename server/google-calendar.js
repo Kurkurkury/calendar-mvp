@@ -27,6 +27,7 @@ const TOKENS_PATH = path.join(__dirname, "google-tokens.json");
 export function getGoogleConfig() {
   const {
     GOOGLE_CLIENT_ID = "",
+    GOOGLE_ANDROID_CLIENT_ID = "",
     GOOGLE_CLIENT_SECRET = "",
     GOOGLE_REDIRECT_URI = "",
     GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events",
@@ -36,6 +37,7 @@ export function getGoogleConfig() {
 
   return {
     GOOGLE_CLIENT_ID,
+    GOOGLE_ANDROID_CLIENT_ID,
     GOOGLE_CLIENT_SECRET,
     GOOGLE_REDIRECT_URI,
     GOOGLE_SCOPES,
@@ -45,14 +47,20 @@ export function getGoogleConfig() {
 }
 
 export function isGoogleConfigured() {
-  const cfg = getGoogleConfig();
-  return !!(cfg.GOOGLE_CLIENT_ID && cfg.GOOGLE_CLIENT_SECRET && cfg.GOOGLE_REDIRECT_URI);
+  return hasGoogleConfig();
 }
 
-function buildOAuthClient(redirectUri) {
+function hasGoogleConfig({ clientId, redirectUri } = {}) {
+  const cfg = getGoogleConfig();
+  const resolvedClientId = clientId || cfg.GOOGLE_CLIENT_ID;
+  const resolvedRedirectUri = redirectUri || cfg.GOOGLE_REDIRECT_URI;
+  return !!(resolvedClientId && cfg.GOOGLE_CLIENT_SECRET && resolvedRedirectUri);
+}
+
+function buildOAuthClient({ clientId, redirectUri } = {}) {
   const cfg = getGoogleConfig();
   return new google.auth.OAuth2(
-    cfg.GOOGLE_CLIENT_ID,
+    clientId || cfg.GOOGLE_CLIENT_ID,
     cfg.GOOGLE_CLIENT_SECRET,
     redirectUri || cfg.GOOGLE_REDIRECT_URI
   );
@@ -102,13 +110,13 @@ export function getGoogleStatus() {
   };
 }
 
-export function getAuthUrl({ redirectUri, state } = {}) {
-  if (!isGoogleConfigured()) {
+export function getAuthUrl({ redirectUri, state, clientId } = {}) {
+  if (!hasGoogleConfig({ clientId, redirectUri })) {
     return { ok: false, message: "Google OAuth nicht konfiguriert" };
   }
 
   const cfg = getGoogleConfig();
-  const oauth2 = buildOAuthClient(redirectUri);
+  const oauth2 = buildOAuthClient({ clientId, redirectUri });
 
   const url = oauth2.generateAuthUrl({
     access_type: "offline",
@@ -121,13 +129,13 @@ export function getAuthUrl({ redirectUri, state } = {}) {
   return { ok: true, url };
 }
 
-export async function exchangeCodeForTokens(code, redirectUri) {
-  if (!isGoogleConfigured()) {
+export async function exchangeCodeForTokens(code, redirectUri, clientId) {
+  if (!hasGoogleConfig({ clientId, redirectUri })) {
     return { ok: false, message: "Google OAuth nicht konfiguriert" };
   }
   if (!code) return { ok: false, message: "code fehlt" };
 
-  const oauth2 = buildOAuthClient(redirectUri);
+  const oauth2 = buildOAuthClient({ clientId, redirectUri });
   const { tokens } = await oauth2.getToken(code);
   saveTokens(tokens);
 
