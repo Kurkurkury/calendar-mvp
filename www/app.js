@@ -1,8 +1,27 @@
+import { App } from "@capacitor/app";
+
 const API_BASE =
   localStorage.getItem("calendar_api_base") ||
   "https://calendar-api-v2.onrender.com";
 
 console.log("WWW APP.JS GELADEN");
+
+const IS_NATIVE =
+  !!window.Capacitor &&
+  typeof window.Capacitor.getPlatform === "function" &&
+  window.Capacitor.getPlatform() !== "web";
+
+if (IS_NATIVE && App?.addListener) {
+  App.addListener("appUrlOpen", ({ url }) => {
+    if (url && url.startsWith("calendar-mvp://oauth")) {
+      fetch("/api/google/status")
+        .then((r) => r.json())
+        .then(() => {
+          location.reload();
+        });
+    }
+  });
+}
 
 // -------------------- UI Notify (guaranteed visible, no CSS needed) --------------------
 function uiNotify(type, message) {
@@ -55,13 +74,6 @@ function uiNotify(type, message) {
 // -------------------- API BASE (Emulator vs Browser) --------------------
 // Android Emulator: 10.0.2.2 -> Host-PC (dein Node Server)
 // Browser am PC: localhost
-
-// ✅ FIX: zuverlässig unterscheiden Browser vs Native (Capacitor)
-// window.Capacitor kann auch im Browser existieren -> NICHT als Signal nutzen.
-const IS_NATIVE =
-  !!window.Capacitor &&
-  typeof window.Capacitor.getPlatform === "function" &&
-  window.Capacitor.getPlatform() !== "web";
 
 // ✅ LIVE: fix auf Render (kein localhost / 10.0.2.2)
 const RAW_API_BASE = API_BASE;
@@ -350,7 +362,8 @@ async function pollGoogleConnected({ timeoutMs = 90_000, intervalMs = 2000 } = {
 
 async function onGoogleConnect() {
   try {
-    const out = await apiGet('/api/google/auth-url');
+    const authUrl = IS_NATIVE ? "/api/google/auth-url?platform=android" : "/api/google/auth-url";
+    const out = await apiGet(authUrl);
     const url = out?.url;
     if (!url) throw new Error('auth-url missing');
 
