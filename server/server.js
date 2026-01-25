@@ -373,9 +373,9 @@ app.get("/api/google/status", async (req, res) => {
 app.get("/api/google/auth-url", (req, res) => {
   const isAndroid = req.query.platform === "android";
   const cfg = getGoogleConfig();
-  const redirectUri = isAndroid ? "calendar-mvp://oauth" : cfg.GOOGLE_REDIRECT_URI;
-  const clientId = isAndroid ? cfg.GOOGLE_ANDROID_CLIENT_ID : cfg.GOOGLE_CLIENT_ID;
-  const state = isAndroid ? "android" : undefined;
+  const redirectUri = cfg.GOOGLE_REDIRECT_URI;
+  const clientId = cfg.GOOGLE_CLIENT_ID;
+  const state = isAndroid ? "android" : "web";
 
   res.json(getAuthUrl({ redirectUri, state, clientId }));
 });
@@ -395,16 +395,17 @@ app.get("/api/google/callback", async (req, res) => {
   try {
     const code = req.query.code ? String(req.query.code) : "";
     const state = req.query.state ? String(req.query.state) : "";
+    const isAndroid = state === "android" || req.query.platform === "android";
     const cfg = getGoogleConfig();
-    const redirectUri = state === "android" ? "calendar-mvp://oauth" : cfg.GOOGLE_REDIRECT_URI;
-    const clientId = state === "android" ? cfg.GOOGLE_ANDROID_CLIENT_ID : cfg.GOOGLE_CLIENT_ID;
+    const redirectUri = cfg.GOOGLE_REDIRECT_URI;
+    const clientId = cfg.GOOGLE_CLIENT_ID;
     const out = await exchangeCodeForTokens(code, redirectUri, clientId);
 
     if (!out.ok) {
       return res.status(400).send(`<h2>❌ Fehler</h2><pre>${escapeHtml(out.message || "unknown")}</pre>`);
     }
 
-    if (state === "android") {
+    if (isAndroid) {
       return res.redirect(302, "calendar-mvp://oauth");
     }
 
