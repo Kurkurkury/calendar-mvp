@@ -1,3 +1,7 @@
+const API_BASE =
+  localStorage.getItem("calendar_api_base") ||
+  "https://calendar-api-v2.onrender.com";
+
 console.log("WWW APP.JS GELADEN");
 
 // -------------------- UI Notify (guaranteed visible, no CSS needed) --------------------
@@ -60,9 +64,9 @@ const IS_NATIVE =
   window.Capacitor.getPlatform() !== "web";
 
 // ✅ LIVE: fix auf Render (kein localhost / 10.0.2.2)
-const RAW_API_BASE = "https://calendar-api-l9kp.onrender.com";
+const RAW_API_BASE = API_BASE;
 
-const API_BASE = String(RAW_API_BASE || "").replace(/\/+$/, ""); // wichtig: kein trailing /
+const API_BASE_CLEAN = String(RAW_API_BASE || "").replace(/\/+$/, ""); // wichtig: kein trailing /
 const API_KEY = localStorage.getItem("calendarApiKeyV1") || ""; // optional
 
 const GCAL_CACHE_KEY = "gcal_last_events_v1";
@@ -1198,7 +1202,7 @@ function headers() {
 }
 
 function debugEnvLine() {
-  return `base=${API_BASE} • raw=${RAW_API_BASE} • isNative=${IS_NATIVE} • hasCapacitor=${!!window.Capacitor} • ua=${navigator.userAgent.slice(0, 60)}…`;
+  return `base=${API_BASE_CLEAN} • raw=${RAW_API_BASE} • isNative=${IS_NATIVE} • hasCapacitor=${!!window.Capacitor} • ua=${navigator.userAgent.slice(0, 60)}…`;
 }
 
 function parseApiBody(text) {
@@ -1228,7 +1232,7 @@ function makeApiError({ method, url, status, statusText, body }) {
 }
 
 async function apiGet(path) {
-  const url = API_BASE + path;
+  const url = API_BASE_CLEAN + path;
   let res;
   try {
     res = await fetch(url, { method: 'GET', headers: headers() });
@@ -1250,7 +1254,7 @@ async function apiGet(path) {
 }
 
 async function apiPost(path, bodyObj) {
-  const url = API_BASE + path;
+  const url = API_BASE_CLEAN + path;
   let res;
   try {
     res = await fetch(url, {
