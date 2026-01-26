@@ -144,8 +144,6 @@ function startGooglePollingOnce() {
         applyGoogleStatus(g.google || g);
       }
 
-      if (!state.google?.connected) return;
-
       // Phase 3: Push-Sync -> Server sagt uns, ob sich seit letztem Push etwas geaendert hat
       const sync = await apiGet("/api/sync/status");
       if (!sync?.ok) return;
@@ -157,12 +155,14 @@ function startGooglePollingOnce() {
           if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
             state.events = eventsRes.events;
             saveLastKnownGoogleEvents(state.events);
-            await render();
-            // ACK: dirty zuruecksetzen
-            try {
-              await apiPost("/api/sync/ack", { lastChangeAt: sync.lastChangeAt || null });
-            } catch {}
           }
+          await render();
+          // ACK: dirty zuruecksetzen
+          try {
+            await apiPost("/api/sync/ack", { lastChangeAt: sync.lastChangeAt || null });
+          } catch {}
+        } catch (e) {
+          console.error("Fehler beim Laden von /api/google/events", e);
         } finally {
           setSyncLoading(false);
         }
@@ -174,18 +174,19 @@ function startGooglePollingOnce() {
         try {
           const g = await apiGet("/api/google/status");
           applyGoogleStatus(g.google || g);
-          if (state.google?.connected) {
-            setSyncLoading(true);
-            try {
-              const eventsRes = await apiGetGoogleEvents();
-              if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
-                state.events = eventsRes.events;
-                saveLastKnownGoogleEvents(state.events);
-                await render();
-              }
-            } finally {
-              setSyncLoading(false);
+          setSyncLoading(true);
+          try {
+            const eventsRes = await apiGetGoogleEvents();
+            if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
+              state.events = eventsRes.events;
+              saveLastKnownGoogleEvents(state.events);
             }
+            await render();
+          } catch (e) {
+            console.error("Fehler beim Laden von /api/google/events", e);
+            await render();
+          } finally {
+            setSyncLoading(false);
           }
         } catch {}
       }
@@ -773,52 +774,75 @@ function isNetworkFetchFail(err) {
 
 // -------------------- API refresh --------------------
 async function refreshFromApi() {
+  let hadNetworkFailure = false;
+  let hadApiFailure = false;
+  const fallbackEvents = loadLastKnownGoogleEvents() || (Array.isArray(state.events) ? state.events : []);
+
   try {
     await apiGet("/api/health");
-
-    const g = await apiGet("/api/google/status");
-    applyGoogleStatus(g.google || g);
-
-    const [tasksRes] = await Promise.all([
-      apiGet("/api/tasks"),
-    ]);
-
-    state.tasks = tasksRes.tasks || [];
-
-    // Phase 2 Sync: Anzeige basiert ausschließlich auf Google-Events (Single Source of Truth)
-    const fallbackEvents = loadLastKnownGoogleEvents() || (Array.isArray(state.events) ? state.events : []);
-    setSyncLoading(true);
-    try {
-      const eventsRes = await apiGetGoogleEvents();
-      if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
-        state.events = eventsRes.events;
-        saveLastKnownGoogleEvents(state.events);
-      } else {
-        state.events = fallbackEvents;
-      }
-    } catch {
-      // offline/fehler -> last-known
-      state.events = fallbackEvents;
-    } finally {
-      if (!Array.isArray(state.events)) {
-        state.events = [];
-      }
-      setSyncLoading(false);
-    }
-
-    setStatus(`API: verbunden ✅ (${API_BASE}) • ${googleUiStatusLine()}`, !state.google?.wrongAccount);
   } catch (e) {
     if (isNetworkFetchFail(e)) {
-      updateGoogleButtons();
-      updateConnectionStatus();
-      setStatus(`Offline 📴 (${API_BASE}) • ${googleStatusText()}`, true);
-      return;
+      hadNetworkFailure = true;
+    } else {
+      hadApiFailure = true;
     }
-
-    updateGoogleButtons();
-    updateConnectionStatus();
-    setStatus(`API Problem ⚠️ (${API_BASE}) • ${googleStatusText()}`, true);
   }
+
+  try {
+    const g = await apiGet("/api/google/status");
+    applyGoogleStatus(g.google || g);
+  } catch (e) {
+    if (isNetworkFetchFail(e)) {
+      hadNetworkFailure = true;
+    } else {
+      hadApiFailure = true;
+    }
+  }
+
+  try {
+    const tasksRes = await apiGet("/api/tasks");
+    state.tasks = tasksRes.tasks || [];
+  } catch (e) {
+    console.error("Fehler beim Laden von /api/tasks", e);
+    if (isNetworkFetchFail(e)) {
+      hadNetworkFailure = true;
+    } else {
+      hadApiFailure = true;
+    }
+  }
+
+  // Phase 2 Sync: Anzeige basiert ausschließlich auf Google-Events (Single Source of Truth)
+  setSyncLoading(true);
+  try {
+    const eventsRes = await apiGetGoogleEvents();
+    if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
+      state.events = eventsRes.events;
+      saveLastKnownGoogleEvents(state.events);
+    } else {
+      state.events = fallbackEvents;
+    }
+  } catch (e) {
+    console.error("Fehler beim Laden von /api/google/events", e);
+    state.events = fallbackEvents;
+  } finally {
+    if (!Array.isArray(state.events)) {
+      state.events = [];
+    }
+    setSyncLoading(false);
+  }
+
+  updateGoogleButtons();
+  updateConnectionStatus();
+
+  if (hadNetworkFailure) {
+    setStatus(`Offline 📴 (${API_BASE}) • ${googleStatusText()}`, true);
+  } else if (hadApiFailure) {
+    setStatus(`API Problem ⚠️ (${API_BASE}) • ${googleStatusText()}`, true);
+  } else {
+    setStatus(`API: verbunden ✅ (${API_BASE}) • ${googleUiStatusLine()}`, !state.google?.wrongAccount);
+  }
+
+  await render();
 }
 
 // -------------------- Render --------------------
