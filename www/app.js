@@ -789,22 +789,20 @@ async function refreshFromApi() {
     const fallbackEvents = loadLastKnownGoogleEvents() || (Array.isArray(state.events) ? state.events : []);
     setSyncLoading(true);
     try {
-      if (state.google?.connected) {
-        const eventsRes = await apiGetGoogleEvents();
-        if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
-          state.events = eventsRes.events;
-          saveLastKnownGoogleEvents(state.events);
-        } else {
-          state.events = fallbackEvents;
-        }
+      const eventsRes = await apiGetGoogleEvents();
+      if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
+        state.events = eventsRes.events;
+        saveLastKnownGoogleEvents(state.events);
       } else {
-        // nicht verbunden -> last-known anzeigen (gleiche Ebene, kein lokaler Parallelkalender)
         state.events = fallbackEvents;
       }
     } catch {
       // offline/fehler -> last-known
       state.events = fallbackEvents;
     } finally {
+      if (!Array.isArray(state.events)) {
+        state.events = [];
+      }
       setSyncLoading(false);
     }
 
