@@ -63,9 +63,8 @@ function uiNotify(type, message) {
       toast.remove();
       if (line) line.style.fontWeight = "400";
     }, 2500);
-  } catch (e) {
+  } catch {
     // Never recurse in an error handler
-    console.warn('uiNotify failed:', e);
     try { alert(message); } catch {}
   }
 }
@@ -94,9 +93,18 @@ const GCAL_DAYS_FUTURE = 365;
 const GCAL_POLL_MS = 5 * 60 * 1000; // 5 Minuten (Fallback, falls Push-Sync nicht verfuegbar)
 const SYNC_STATUS_POLL_MS = 30 * 1000; // Phase 3 Push-Sync: App fragt Status alle 30s
 const SCROLL_BUFFER_PX = isMobile() ? 220 : 120;
-const DEFAULT_VIEW_START_HOUR = 0;
-const DEFAULT_VIEW_END_HOUR = 24;
+const DEFAULT_VIEW_START_HOUR = 8;
+const DEFAULT_VIEW_END_HOUR = 20;
 const DEFAULT_SLOT_PX = 48;
+const DAY_MODE_STORAGE_KEY = "calendarDayModeV1";
+
+async function openExternal(url) {
+  if (window.Capacitor?.Plugins?.Browser?.open) {
+    await window.Capacitor.Plugins.Browser.open({ url });
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
 
 let gcalPollTimer = null;
 let nowIndicatorTimer = null;
@@ -147,15 +155,20 @@ function startGooglePollingOnce() {
       if (!sync?.ok) return;
 
       if (sync.dirty) {
-        const eventsRes = await apiGetGoogleEvents();
-        if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
-          state.events = eventsRes.events;
-          saveLastKnownGoogleEvents(state.events);
-          await render();
-          // ACK: dirty zuruecksetzen
-          try {
-            await apiPost("/api/sync/ack", { lastChangeAt: sync.lastChangeAt || null });
-          } catch {}
+        setSyncLoading(true);
+        try {
+          const eventsRes = await apiGetGoogleEvents();
+          if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
+            state.events = eventsRes.events;
+            saveLastKnownGoogleEvents(state.events);
+            await render();
+            // ACK: dirty zuruecksetzen
+            try {
+              await apiPost("/api/sync/ack", { lastChangeAt: sync.lastChangeAt || null });
+            } catch {}
+          }
+        } finally {
+          setSyncLoading(false);
         }
       }
     } catch (e) {
@@ -166,11 +179,16 @@ function startGooglePollingOnce() {
           const g = await apiGet("/api/google/status");
           applyGoogleStatus(g.google || g);
           if (state.google?.connected) {
-            const eventsRes = await apiGetGoogleEvents();
-            if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
-              state.events = eventsRes.events;
-              saveLastKnownGoogleEvents(state.events);
-              await render();
+            setSyncLoading(true);
+            try {
+              const eventsRes = await apiGetGoogleEvents();
+              if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
+                state.events = eventsRes.events;
+                saveLastKnownGoogleEvents(state.events);
+                await render();
+              }
+            } finally {
+              setSyncLoading(false);
             }
           }
         } catch {}
@@ -191,7 +209,7 @@ const state = {
     : (loadLocal("calendarViewV1", "week") || "week")),
   activeDate: loadDateLocal("calendarActiveDateV1", new Date()),
   weekStart: startOfWeek(new Date()),
-  dayFit: loadLocal("calendarFitDayV1", isMobile() ? true : false),
+  dayMode: loadLocal(DAY_MODE_STORAGE_KEY, isMobile() ? "fit" : "scroll"),
 
   tasks: [],
   events: [],
@@ -204,11 +222,13 @@ const state = {
     { id: "w3", name: "Samstag Slot", days: [6], start: "10:00", end: "12:00", weight: 1 },
   ]),
 
-  viewStartHour: 0,
-  viewEndHour: 24,
+  viewStartHour: DEFAULT_VIEW_START_HOUR,
+  viewEndHour: DEFAULT_VIEW_END_HOUR,
   stepMinutes: 30,
   slotPx: DEFAULT_SLOT_PX,
-  hasAutoScrolled: false
+  hasAutoScrolled: false,
+  isSyncing: false,
+  isConnecting: false,
 };
 
 const els = {
@@ -509,18 +529,40 @@ async function pollGoogleConnected({ timeoutMs = 90_000, intervalMs = 2000 } = {
       applyGoogleStatus(g.google || g);
       updateGoogleButtons();
 
-      if (state.google?.connected && !state.google?.wrongAccount) {
-        return true;
+      if (state.google?.wrongAccount) {
+        return { connected: false, wrongAccount: true };
+      }
+
+      if (state.google?.connected) {
+        return { connected: true, wrongAccount: false };
       }
     } catch {
       // ignore while polling
     }
     await new Promise(r => setTimeout(r, intervalMs));
   }
-  return false;
+  return { connected: false, wrongAccount: false };
 }
 
 async function onGoogleConnect() {
+  const disclosureText = "Die App greift auf deinen Google Kalender zu, um Termine anzuzeigen und zu erstellen.";
+  const confirmed = window.confirm(`${disclosureText}\n\nMöchtest du fortfahren?`);
+  if (!confirmed) {
+    uiNotify("error", "Login abgebrochen");
+    setStatus("Login abgebrochen.", false);
+    return;
+  }
+
+  const btn = els.googleConnectBtn;
+  const oldText = btn?.textContent || "";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Verbinde…";
+    btn.setAttribute("aria-busy", "true");
+  }
+  state.isConnecting = true;
+  uiNotify("info", "Lädt…");
+  setStatus("Lädt… Verbindung zu Google wird aufgebaut.", true);
   try {
     const authUrl = IS_NATIVE ? "/api/google/auth-url?platform=android" : "/api/google/auth-url";
     const out = await apiGet(authUrl);
@@ -533,13 +575,17 @@ async function onGoogleConnect() {
     uiNotify('success', 'Google Login geöffnet – nach erfolgreichem Login verbindet die App automatisch…');
     setStatus('Google Login geöffnet… warte auf Verbindung…', true);
 
-    const ok = await pollGoogleConnected();
-    if (ok) {
+    const result = await pollGoogleConnected();
+    if (result.connected) {
       uiNotify('success', 'Google verbunden ✅');
       await refreshFromApi();
       await render();
+    } else if (result.wrongAccount) {
+      uiNotify('error', 'Falscher Google-Account');
+      setStatus('Falscher Google-Account – bitte mit dem erlaubten Konto anmelden.', false);
     } else {
-      uiNotify('error', 'Google noch nicht verbunden. Falls du fertig eingeloggt bist: Seite neu laden.');
+      uiNotify('error', 'Login abgebrochen');
+      setStatus('Login abgebrochen oder nicht abgeschlossen.', false);
     }
   } catch (e) {
     const message = e?.message || String(e);
@@ -550,10 +596,19 @@ async function onGoogleConnect() {
         "error",
         "Google OAuth Redirect URI mismatch. Open /api/google/debug-oauth and add computedRedirectUri to Google Console Authorized redirect URIs."
       );
+    } else if (lower.includes("access_denied") || status === 403) {
+      uiNotify('error', 'Keine Berechtigung');
+      setStatus('Keine Berechtigung – Zugriff auf Google Kalender wurde verweigert.', false);
     } else {
       uiNotify('error', 'Google verbinden fehlgeschlagen: ' + message);
     }
-    console.warn('Google connect error:', e);
+  } finally {
+    state.isConnecting = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText;
+      btn.removeAttribute("aria-busy");
+    }
   }
 }
 
@@ -570,7 +625,6 @@ async function onGoogleDisconnect() {
     uiNotify('success', 'Google getrennt ✅');
   } catch (e) {
     uiNotify('error', 'Trennen fehlgeschlagen: ' + (e?.message || String(e)));
-    console.warn('Google disconnect error:', e);
   }
 }
 
@@ -583,6 +637,24 @@ function setStatus(msg, ok = true) {
   if (!els.statusLine) return;
   els.statusLine.textContent = msg || '';
   els.statusLine.style.color = ok ? '' : 'var(--danger)';
+}
+
+function setSyncLoading(active, context = "Events synchronisieren…") {
+  state.isSyncing = active;
+  if (active) {
+    setStatus(`${context} • ${googleUiStatusLine()}`, true);
+  } else if (els.statusLine?.textContent?.includes("synchronisieren")) {
+    setStatus(`API: verbunden ✅ (${API_BASE}) • ${googleUiStatusLine()}`, !state.google?.wrongAccount);
+  }
+
+  if (els.syncStatusBadge) {
+    if (active) {
+      els.syncStatusBadge.textContent = "Sync läuft…";
+      els.syncStatusBadge.className = "statusBadge warn";
+    } else {
+      updateConnectionStatus();
+    }
+  }
 }
 
 // Kleine Toast-Meldung (ohne CSS-Datei anfassen)
@@ -662,6 +734,7 @@ async function refreshFromApi() {
     state.tasks = tasksRes.tasks || [];
 
     // Phase 2 Sync: Anzeige basiert ausschließlich auf Google-Events (Single Source of Truth)
+    setSyncLoading(true);
     try {
       if (state.google?.connected) {
         const eventsRes = await apiGetGoogleEvents();
@@ -678,6 +751,8 @@ async function refreshFromApi() {
     } catch {
       // offline/fehler -> last-known
       state.events = loadLastKnownGoogleEvents() || [];
+    } finally {
+      setSyncLoading(false);
     }
 
     setStatus(`API: verbunden ✅ (${API_BASE}) • ${googleUiStatusLine()}`, !state.google?.wrongAccount);
@@ -692,7 +767,6 @@ async function refreshFromApi() {
     updateGoogleButtons();
     updateConnectionStatus();
     setStatus(`API Problem ⚠️ (${API_BASE}) • ${googleStatusText()}`, true);
-    console.warn("API error:", e);
   }
 }
 
@@ -758,7 +832,8 @@ function renderTopBar() {
     label = `${monthName(state.activeDate)} ${state.activeDate.getFullYear()}`;
   }
 
-  const showFitToggle = isMobile();
+  const showDayModeToggle = state.view === "day";
+  const dayMode = state.dayMode === "fit" ? "fit" : "scroll";
   els.weekLabel.innerHTML = `
     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
       <div style="font-weight:700;">${escapeHtml(label)}</div>
@@ -768,7 +843,12 @@ function renderTopBar() {
           <button data-view="week"  style="${viewBtnStyle(state.view === "week")}">Woche</button>
           <button data-view="month" style="${viewBtnStyle(state.view === "month")}">Monat</button>
         </div>
-        ${showFitToggle ? `<button data-action="toggle-fit" style="${viewBtnStyle(state.dayFit)}">Fit</button>` : ""}
+        ${showDayModeToggle ? `
+          <div style="display:flex; gap:6px; background:rgba(255,255,255,.06); padding:6px; border-radius:12px;">
+            <button data-day-mode="fit" style="${viewBtnStyle(dayMode === "fit")}">Fit (0–24)</button>
+            <button data-day-mode="scroll" style="${viewBtnStyle(dayMode === "scroll")}">Scroll (08–20)</button>
+          </div>
+        ` : ""}
       </div>
     </div>
   `;
@@ -780,14 +860,15 @@ function renderTopBar() {
     });
   });
 
-  const fitBtn = els.weekLabel.querySelector("button[data-action='toggle-fit']");
-  if (fitBtn) {
-    fitBtn.addEventListener("click", async () => {
-      state.dayFit = !state.dayFit;
-      saveLocal("calendarFitDayV1", state.dayFit);
+  const modeButtons = els.weekLabel.querySelectorAll("button[data-day-mode]");
+  modeButtons.forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const nextMode = btn.dataset.dayMode;
+      state.dayMode = nextMode === "fit" ? "fit" : "scroll";
+      saveLocal(DAY_MODE_STORAGE_KEY, state.dayMode);
       await render();
     });
-  }
+  });
 }
 
 function viewBtnStyle(active) {
@@ -808,7 +889,7 @@ function viewBtnStyle(active) {
 }
 
 function getScrollBufferPx() {
-  if (state.view === "day" && state.dayFit && isMobile()) {
+  if (state.view === "day" && state.dayMode === "fit" && isMobile()) {
     return 0;
   }
   return SCROLL_BUFFER_PX;
@@ -820,65 +901,12 @@ function getCalendarAvailableHeight() {
   return Math.max(1, bodyHeight - headHeight);
 }
 
-function getDayFitRange(day) {
-  const dayStart = startOfDay(day);
-  const dayEnd = addDays(dayStart, 1);
-  const ranges = [];
-
-  function pushRange(startValue, endValue) {
-    const start = new Date(startValue);
-    const end = new Date(endValue);
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) return;
-    if (end <= dayStart || start >= dayEnd) return;
-    const clampStart = start < dayStart ? dayStart : start;
-    const clampEnd = end > dayEnd ? dayEnd : end;
-    const startMin = (clampStart - dayStart) / 60000;
-    const endMin = (clampEnd - dayStart) / 60000;
-    ranges.push({ startMin, endMin });
-  }
-
-  (state.events || []).forEach((ev) => {
-    if (!ev?.start || !ev?.end) return;
-    pushRange(ev.start, ev.end);
-  });
-
-  (state.tasks || []).forEach((t) => {
-    if (!t?.scheduledStart || !t?.scheduledEnd) return;
-    pushRange(t.scheduledStart, t.scheduledEnd);
-  });
-
-  if (!ranges.length) {
-    return { startMinutes: 8 * 60, endMinutes: 20 * 60 };
-  }
-
-  let earliest = Infinity;
-  let latest = -Infinity;
-  ranges.forEach(({ startMin, endMin }) => {
-    if (startMin < earliest) earliest = startMin;
-    if (endMin > latest) latest = endMin;
-  });
-
-  let startMinutes = Math.max(0, earliest - 60);
-  let endMinutes = Math.min(24 * 60, latest + 60);
-
-  if (endMinutes - startMinutes < 60) {
-    const mid = (startMinutes + endMinutes) / 2;
-    startMinutes = Math.max(0, Math.floor(mid - 30));
-    endMinutes = Math.min(24 * 60, Math.ceil(mid + 30));
-  }
-
-  if (endMinutes <= startMinutes) {
-    return { startMinutes: 8 * 60, endMinutes: 20 * 60 };
-  }
-
-  return { startMinutes, endMinutes };
-}
-
 function applyDayFitSettings(day, isFit) {
   if (!isFit) {
     state.viewStartHour = DEFAULT_VIEW_START_HOUR;
     state.viewEndHour = DEFAULT_VIEW_END_HOUR;
     state.slotPx = DEFAULT_SLOT_PX;
+    if (els.calBody) els.calBody.style.overflowY = "auto";
     return;
   }
 
@@ -900,7 +928,7 @@ function computeSlotPxToFitDay() {
 // -------------------- Day / Week / Month renderers --------------------
 function renderDayView() {
   const d = startOfDay(state.activeDate);
-  const isFit = isMobile() && state.dayFit === true;
+  const isFit = state.dayMode === "fit";
   applyDayFitSettings(d, isFit);
   renderTimeCol();
 
@@ -919,7 +947,7 @@ function renderWeekView() {
   state.viewStartHour = DEFAULT_VIEW_START_HOUR;
   state.viewEndHour = DEFAULT_VIEW_END_HOUR;
   state.slotPx = DEFAULT_SLOT_PX;
-  if (els.calBody) els.calBody.style.overflowY = "";
+  if (els.calBody) els.calBody.style.overflowY = "auto";
   renderTimeCol();
 
   const days = getWeekDays(state.weekStart);
@@ -937,7 +965,7 @@ function renderMonthView() {
   state.viewStartHour = DEFAULT_VIEW_START_HOUR;
   state.viewEndHour = DEFAULT_VIEW_END_HOUR;
   state.slotPx = DEFAULT_SLOT_PX;
-  if (els.calBody) els.calBody.style.overflowY = "";
+  if (els.calBody) els.calBody.style.overflowY = "auto";
   if (els.timeCol) els.timeCol.innerHTML = "";
   if (els.dayHeaders) els.dayHeaders.innerHTML = "";
   if (!els.grid) return;
@@ -1658,8 +1686,13 @@ async function createEventFromForm() {
   }
 
   if (!state.google?.connected || state.google?.wrongAccount) {
-    setStatus('Google ist nicht (korrekt) verbunden. Bitte oben auf "Mit Google verbinden" klicken.', false);
-    uiNotify('error', 'Google nicht verbunden – bitte verbinden');
+    if (state.google?.wrongAccount) {
+      setStatus('Falscher Google-Account – bitte mit dem erlaubten Konto verbinden.', false);
+      uiNotify('error', 'Falscher Google-Account');
+    } else {
+      setStatus('Google ist nicht (korrekt) verbunden. Bitte oben auf "Mit Google verbinden" klicken.', false);
+      uiNotify('error', 'Google nicht verbunden – bitte verbinden');
+    }
     try { els.googleConnectBtn?.focus?.(); } catch {}
     return;
   }
@@ -1692,7 +1725,8 @@ async function createEventFromForm() {
     btn.textContent = "Erstelle…";
     btn.setAttribute('aria-busy', 'true');
   }
-  uiNotify('info', 'Erstelle Termin…');
+  uiNotify('info', 'Lädt… Termin wird synchronisiert.');
+  setSyncLoading(true, "Lädt… Termin wird synchronisiert");
 
   try {
     const createdRes = await apiPost('/api/google/events', { title, start, end, location, notes });
@@ -1742,6 +1776,7 @@ async function createEventFromForm() {
       uiNotify('error', `Fehler beim Erstellen: ${short}`);
     }
   } finally {
+    setSyncLoading(false);
     if (btn) {
       btn.disabled = false;
       btn.textContent = oldText;
@@ -1760,8 +1795,13 @@ async function createEventFromText() {
   }
 
   if (!state.google?.connected || state.google?.wrongAccount) {
-    setStatus('Google ist nicht (korrekt) verbunden. Bitte oben auf "Mit Google verbinden" klicken.', false);
-    uiNotify('error', '❌ Google nicht verbunden – zuerst "Mit Google verbinden"');
+    if (state.google?.wrongAccount) {
+      setStatus('Falscher Google-Account – bitte mit dem erlaubten Konto verbinden.', false);
+      uiNotify('error', 'Falscher Google-Account');
+    } else {
+      setStatus('Google ist nicht (korrekt) verbunden. Bitte oben auf "Mit Google verbinden" klicken.', false);
+      uiNotify('error', '❌ Google nicht verbunden – zuerst "Mit Google verbinden"');
+    }
     try { els.googleConnectBtn?.focus?.(); } catch {}
     return;
   }
@@ -1779,6 +1819,8 @@ async function createEventFromText() {
   btn.disabled = true;
   btn.textContent = 'Erstelle…';
   btn.setAttribute('aria-busy', 'true');
+  uiNotify('info', 'Lädt… Event wird synchronisiert.');
+  setSyncLoading(true, "Lädt… Event wird synchronisiert");
 
   try {
     const data = await apiPost('/api/google/quick-add', { text });
@@ -1810,6 +1852,7 @@ async function createEventFromText() {
       uiNotify('error', `❌ Event fehlgeschlagen: ${e?.message || 'unbekannt'}`);
     }
   } finally {
+    setSyncLoading(false);
     btn.disabled = false;
     btn.textContent = oldText;
     btn.removeAttribute('aria-busy');

@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "com.calendar.mvp",
-  appName: "Calendar MVP",
+  appId: "com.kurkurkury.calendar",
+  appName: "Kalender",
   webDir: "www",
   server: {
     androidScheme: "calendar-mvp"
