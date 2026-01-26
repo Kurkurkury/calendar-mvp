@@ -349,19 +349,18 @@ app.get("/api/google/status", async (req, res) => {
     const base = getGoogleStatus();
     const tokens = loadTokens?.() || null;
     const hasTokens = !!tokens;
-    const connected = !!base?.google?.connected;
-    if (!hasTokens || !connected) {
-      return res.json({ ok: true, events: [] });
-    }
+
+    // base.google.connected basiert auf isConnected(); wir normalisieren trotzdem
+    const connected = !!(base?.google?.connected && hasTokens);
+
     const watchState = loadWatchState();
     const now = Date.now();
+
     let watchActive = false;
     let watchReason = "";
 
     if (!connected) {
       watchReason = "Google nicht verbunden";
-    } else if (!hasTokens) {
-      watchReason = "Keine Tokens";
     } else if (!watchState?.ok) {
       watchReason = "Status unbekannt";
     } else if (!watchState?.channelId || !watchState?.resourceId) {
@@ -377,7 +376,7 @@ app.get("/api/google/status", async (req, res) => {
     let connectedEmail = null;
     let wrongAccount = false;
 
-    if (base?.google?.connected) {
+    if (connected) {
       try {
         connectedEmail = await getConnectedGoogleEmail();
         if (GOOGLE_ALLOWED_EMAIL && connectedEmail && connectedEmail !== GOOGLE_ALLOWED_EMAIL) {
@@ -388,6 +387,7 @@ app.get("/api/google/status", async (req, res) => {
       }
     }
 
+    // WICHTIG: Immer base/google zurückgeben, auch wenn nicht verbunden.
     res.json({
       ...base,
       google: {
@@ -400,6 +400,7 @@ app.get("/api/google/status", async (req, res) => {
         allowedEmail: GOOGLE_ALLOWED_EMAIL || null,
         wrongAccount,
       },
+      events: [],
     });
   } catch (e) {
     res.status(500).json({ ok: false, message: "status failed", details: e?.message || String(e) });
