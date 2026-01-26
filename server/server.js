@@ -400,15 +400,14 @@ app.get("/api/google/status", async (req, res) => {
 function resolveGoogleOAuthParams({ platform, state } = {}) {
   const cfg = getGoogleConfig();
   const isAndroid = platform === "android" || state === "android";
-  const clientId = isAndroid && cfg.GOOGLE_ANDROID_CLIENT_ID ? cfg.GOOGLE_ANDROID_CLIENT_ID : cfg.GOOGLE_CLIENT_ID;
-  const redirectUri =
-    isAndroid && cfg.GOOGLE_ANDROID_REDIRECT_URI ? cfg.GOOGLE_ANDROID_REDIRECT_URI : cfg.GOOGLE_REDIRECT_URI;
+  const clientId = cfg.GOOGLE_CLIENT_ID;
+  const redirectUri = cfg.GOOGLE_REDIRECT_URI;
   return { cfg, isAndroid, clientId, redirectUri };
 }
 
 app.get("/api/google/auth-url", (req, res) => {
   const { isAndroid, redirectUri, clientId } = resolveGoogleOAuthParams({ platform: req.query.platform });
-  const state = isAndroid ? "android" : "web";
+  const state = isAndroid ? "android" : "";
 
   res.json(getAuthUrl({ redirectUri, state, clientId }));
 });
