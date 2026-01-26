@@ -58,6 +58,13 @@ body {
 }
 .btn:hover { background: rgba(255,255,255,.07); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.small { padding: 6px 10px; font-size: 12px; border-radius: 10px; }
+.btn.delete {
+  border-color: rgba(180, 40, 40, 0.45);
+  background: rgba(180, 40, 40, 0.15);
+  color: #ffd4d4;
+}
+.btn.delete:hover { background: rgba(180, 40, 40, 0.25); }
 
 .btn.primary {
   background: linear-gradient(180deg, rgba(91,140,255,.95), rgba(91,140,255,.7));

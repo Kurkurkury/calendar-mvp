@@ -249,7 +249,11 @@ const els = {
   closeEventBtn: byId("closeEventBtn"),
   eventText: byId("eventText"),
   createEventBtn: byId("createEventBtn"),
+
+  eventsList: byId("eventsList"),
 };
+
+const deletingEvents = new Set();
 
 boot();
 
@@ -912,12 +916,35 @@ function indexWithinRenderedDays(date, daysArray, rangeStart) {
   return idx >= 0 ? idx : dayIndexMon0(date);
 }
 
+function getGoogleEventId(ev) {
+  if (!ev) return "";
+  if (ev.googleEventId) return String(ev.googleEventId);
+  if (typeof ev.id === "string" && ev.id.startsWith("gcal_")) return ev.id.slice(5);
+  return ev.id ? String(ev.id) : "";
+}
+
+function formatEventMeta(ev) {
+  const start = ev?.start ? new Date(ev.start) : null;
+  const end = ev?.end ? new Date(ev.end) : null;
+  const hasStart = start && !Number.isNaN(start.getTime());
+  const hasEnd = end && !Number.isNaN(end.getTime());
+
+  if (hasStart && hasEnd) {
+    return `${fmtDate(start)} • ${fmtTime(start)}–${fmtTime(end)}`;
+  }
+  if (hasStart) {
+    return `${fmtDate(start)} • ${fmtTime(start)}`;
+  }
+  return "Google Event";
+}
+
 // -------------------- Side lists / Windows --------------------
 function renderSideLists() {
   if (!els.inboxList || !els.plannedList) return;
 
   els.inboxList.innerHTML = "";
   els.plannedList.innerHTML = "";
+  if (els.eventsList) els.eventsList.innerHTML = "";
 
   const inbox = (state.tasks || []).filter(t => !t.scheduledStart && t.status !== "done");
   const planned = (state.tasks || []).filter(t => t.scheduledStart && t.status !== "done");
@@ -932,6 +959,49 @@ function renderSideLists() {
     els.plannedList.innerHTML = `<div class="item"><div class="itemTitle">Leer</div><div class="itemMeta">Noch nichts eingeplant.</div></div>`;
   } else {
     planned.sort((a, b) => new Date(a.scheduledStart) - new Date(b.scheduledStart)).forEach(t => els.plannedList.appendChild(taskItem(t, true)));
+  }
+
+  if (els.eventsList) {
+    const events = Array.isArray(state.events) ? [...state.events] : [];
+    events.sort((a, b) => new Date(a.start || 0) - new Date(b.start || 0));
+
+    if (events.length === 0) {
+      els.eventsList.innerHTML = `<div class="item"><div class="itemTitle">Keine Events</div><div class="itemMeta">Aktuell keine Google-Termine.</div></div>`;
+    } else {
+      events.forEach((ev) => {
+        const item = document.createElement("div");
+        item.className = "item";
+
+        const top = document.createElement("div");
+        top.className = "itemTop";
+
+        const title = document.createElement("div");
+        title.className = "itemTitle";
+        title.textContent = ev.title || "Termin";
+
+        const actions = document.createElement("div");
+
+        const deleteId = getGoogleEventId(ev);
+        const delBtn = document.createElement("button");
+        delBtn.className = "btn small delete";
+        delBtn.type = "button";
+        delBtn.textContent = "Löschen";
+        delBtn.disabled = !deleteId || deletingEvents.has(deleteId);
+        delBtn.addEventListener("click", () => deleteEvent(deleteId, ev.title));
+        actions.appendChild(delBtn);
+
+        top.appendChild(title);
+        top.appendChild(actions);
+
+        const meta = document.createElement("div");
+        meta.className = "itemMeta";
+        meta.textContent = formatEventMeta(ev);
+
+        item.appendChild(top);
+        item.appendChild(meta);
+        els.eventsList.appendChild(item);
+      });
+    }
   }
 }
 
@@ -1230,6 +1300,49 @@ async function createEventFromText() {
   }
 }
 
+async function deleteEvent(eventId, title) {
+  if (!eventId) {
+    uiNotify("error", "Kein Event gefunden.");
+    return;
+  }
+
+  const confirmed = window.confirm(`Termin wirklich löschen?\n\n${title || eventId}`);
+  if (!confirmed) return;
+
+  if (!state.google?.connected) {
+    uiNotify("error", "Google nicht verbunden – bitte verbinden");
+    return;
+  }
+
+  deletingEvents.add(eventId);
+  renderSideLists();
+  uiNotify("info", "Lösche Termin…");
+
+  try {
+    await apiDelete(`/api/google/events/${encodeURIComponent(eventId)}`);
+    uiNotify("success", "Termin gelöscht");
+
+    const eventsRes = await apiGetGoogleEvents(GCAL_DAYS_PAST, GCAL_DAYS_FUTURE);
+    if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
+      state.events = eventsRes.events;
+      saveLastKnownGoogleEvents(state.events);
+    }
+
+    await render();
+  } catch (e) {
+    const status = e?._meta?.status;
+    const msg = String(e?.message || "");
+    if (status === 401 || msg.toLowerCase().includes("google nicht verbunden")) {
+      uiNotify("error", "Google nicht verbunden – bitte verbinden");
+      return;
+    }
+    uiNotify("error", `Fehler beim Löschen: ${msg || "unbekannt"}`);
+  } finally {
+    deletingEvents.delete(eventId);
+    renderSideLists();
+  }
+}
+
 function extractEventFromQuickAddResponse(data, fallbackTitle) {
   const ev = data?.event || data?.created || data?.googleEvent || data?.mirroredEvent || null;
   if (!ev) return null;
@@ -1393,6 +1506,27 @@ async function apiPost(path, bodyObj) {
   }
 
   throw makeApiError({ method: 'POST', url, status: res.status, statusText: res.statusText, body });
+}
+
+async function apiDelete(path) {
+  const url = API_BASE_CLEAN + path;
+  let res;
+  try {
+    res = await fetch(url, { method: 'DELETE', headers: headers() });
+  } catch (e) {
+    const err = new Error(`Netzwerkfehler (DELETE) – Backend nicht erreichbar`);
+    err._meta = { method: 'DELETE', url, cause: e };
+    throw err;
+  }
+
+  const text = await res.text();
+  const body = parseApiBody(text);
+
+  if (res.ok && !(body.kind === 'json' && body.json?.ok === false)) {
+    return body.kind === 'json' ? body.json : {};
+  }
+
+  throw makeApiError({ method: 'DELETE', url, status: res.status, statusText: res.statusText, body });
 }
 
 // -------------------- Date/time utils --------------------

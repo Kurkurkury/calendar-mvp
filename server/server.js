@@ -756,36 +756,55 @@ app.get("/*", (req, res) => {
 // ======================
 // DELETE Google Event
 // ======================
-app.delete("/api/google/events/:eventId", requireApiKey, async (req, res) => {
+app.delete("/api/google/events/:id", requireApiKey, async (req, res) => {
+  const rawId = String(req.params.id || "").trim();
+  const eventId = rawId.startsWith("gcal_") ? rawId.slice(5) : rawId;
+
+  if (!eventId) {
+    return res.status(400).json({ ok: false, message: "Missing event id" });
+  }
+
   try {
-    const { eventId } = req.params;
-
-    if (!eventId) {
-      return res.status(400).json({ ok: false, error: "Missing eventId" });
-    }
-
-    // Google Event löschen
     await deleteGoogleEvent({ eventId });
+    console.log(`google delete ok: ${eventId}`);
 
     // Lokale Spiegelung (db.json) bereinigen
     try {
-      const dbPath = path.join(__dirname, "..", "db.json");
-      if (fs.existsSync(dbPath)) {
-        const raw = fs.readFileSync(dbPath, "utf-8");
-        const data = raw ? JSON.parse(raw) : {};
-
-        if (Array.isArray(data.events)) {
-          data.events = data.events.filter((e) => e.id !== eventId);
-          fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
-        }
-      }
+      const db = readDb();
+      const before = db.events.length;
+      db.events = db.events.filter((e) => e.id !== rawId && e.googleEventId !== eventId);
+      if (db.events.length !== before) writeDb(db);
     } catch (e) {
-      console.warn("db.json cleanup failed:", e.message);
+      console.warn(`db.json cleanup failed: ${e?.message || String(e)}`);
     }
 
-    res.json({ ok: true, eventId });
+    return res.json({ ok: true, deletedId: eventId, eventId });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+    const msg = String(e?.message || "");
+    const status = e?.code || e?.response?.status;
+
+    if (status === 404 || status === 410) {
+      console.log(`google delete already gone: ${eventId} (${status})`);
+      return res.json({ ok: true, deletedId: eventId, eventId, alreadyDeleted: true });
+    }
+
+    const isNotConnected =
+      msg.includes("Nicht verbunden") ||
+      msg.includes("keine Tokens") ||
+      msg.includes("Google nicht verbunden") ||
+      msg.includes("Tokens");
+
+    if (isNotConnected) {
+      console.log(`google delete blocked: ${eventId} (not connected)`);
+      return res.status(401).json({
+        ok: false,
+        code: "GOOGLE_NOT_CONNECTED",
+        message: "Google nicht verbunden",
+      });
+    }
+
+    console.log(`google delete failed: ${eventId}`);
+    return res.status(500).json({ ok: false, message: "delete failed", details: msg });
   }
 });
 
