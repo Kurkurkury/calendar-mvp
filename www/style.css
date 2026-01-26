@@ -246,6 +246,27 @@ body {
   background: var(--line);
 }
 
+.nowLine {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--danger);
+  box-shadow: 0 0 12px rgba(255, 91, 110, 0.45);
+  z-index: 3;
+}
+.nowLine span {
+  position: absolute;
+  left: 8px;
+  top: -10px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #fff;
+  background: rgba(255, 91, 110, 0.9);
+}
+
 .taskBlock {
   position: absolute;
   left: 8px;

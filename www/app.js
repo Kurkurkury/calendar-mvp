@@ -88,6 +88,8 @@ const GCAL_POLL_MS = 5 * 60 * 1000; // 5 Minuten (Fallback, falls Push-Sync nich
 const SYNC_STATUS_POLL_MS = 30 * 1000; // Phase 3 Push-Sync: App fragt Status alle 30s
 
 let gcalPollTimer = null;
+let nowIndicatorTimer = null;
+let currentRenderedDays = [];
 
 function saveLastKnownGoogleEvents(events) {
   try {
@@ -190,10 +192,11 @@ const state = {
     { id: "w3", name: "Samstag Slot", days: [6], start: "10:00", end: "12:00", weight: 1 },
   ]),
 
-  viewStartHour: 7,
-  viewEndHour: 22,
+  viewStartHour: 0,
+  viewEndHour: 24,
   stepMinutes: 30,
-  slotPx: 48
+  slotPx: 48,
+  hasAutoScrolled: false
 };
 
 const els = {
@@ -205,6 +208,7 @@ const els = {
   googleStatusBadge: byId("googleStatusBadge"),
   syncStatusBadge: byId("syncStatusBadge"),
 
+  calBody: document.querySelector(".calBody"),
   dayHeaders: byId("dayHeaders"),
   timeCol: byId("timeCol"),
   grid: byId("grid"),
@@ -757,8 +761,11 @@ function renderDayView() {
   renderTimeCol();
 
   const d = startOfDay(state.activeDate);
+  currentRenderedDays = [d];
   renderHeadersForDays([d], true);
   renderGridForDays([d]);
+  renderNowIndicator([d]);
+  autoScrollToNow([d]);
 
   drawBlocksForRange(d, addDays(d, 1), [d]);
 }
@@ -767,8 +774,11 @@ function renderWeekView() {
   renderTimeCol();
 
   const days = getWeekDays(state.weekStart);
+  currentRenderedDays = days;
   renderHeadersForDays(days, false, dateKey(new Date()));
   renderGridForDays(days);
+  renderNowIndicator(days);
+  autoScrollToNow(days);
 
   const weekEnd = addDays(state.weekStart, 7);
   drawBlocksForRange(state.weekStart, weekEnd, days);
@@ -781,6 +791,11 @@ function renderMonthView() {
 
   els.grid.innerHTML = "";
   els.grid.style.height = "auto";
+  currentRenderedDays = [];
+  if (nowIndicatorTimer) {
+    clearInterval(nowIndicatorTimer);
+    nowIndicatorTimer = null;
+  }
 
   const firstOfMonth = new Date(state.activeDate.getFullYear(), state.activeDate.getMonth(), 1);
   const gridStart = startOfWeek(firstOfMonth);
@@ -945,6 +960,56 @@ function renderGridForDays(days) {
     }
     els.grid.appendChild(col);
   }
+}
+
+function renderNowIndicator(days) {
+  if (!els.grid) return;
+  els.grid.querySelectorAll(".nowLine").forEach((line) => line.remove());
+
+  const now = new Date();
+  const todayKey = dateKey(now);
+  const totalSlots = timeSlots(state.viewStartHour, state.viewEndHour, state.stepMinutes).length;
+  const gridHeightPx = totalSlots * state.slotPx;
+  const pxPerMin = state.slotPx / state.stepMinutes;
+  const top = minutesFromViewStart(now) * pxPerMin;
+
+  if (top < 0 || top > gridHeightPx) return;
+
+  days.forEach((day, idx) => {
+    if (dateKey(day) !== todayKey) return;
+    const col = els.grid.children[idx];
+    if (!col) return;
+    const line = document.createElement("div");
+    line.className = "nowLine";
+    line.style.top = `${top}px`;
+    line.innerHTML = `<span>Jetzt</span>`;
+    col.appendChild(line);
+  });
+
+  if (!nowIndicatorTimer) {
+    nowIndicatorTimer = window.setInterval(() => {
+      if (state.view === "month") return;
+      renderNowIndicator(currentRenderedDays);
+    }, 60 * 1000);
+  }
+}
+
+function autoScrollToNow(days) {
+  if (state.hasAutoScrolled || !els.calBody || !els.grid) return;
+  const now = new Date();
+  const todayKey = dateKey(now);
+  const isTodayVisible = days.some((day) => dateKey(day) === todayKey);
+  if (!isTodayVisible) return;
+
+  const totalSlots = timeSlots(state.viewStartHour, state.viewEndHour, state.stepMinutes).length;
+  const gridHeightPx = totalSlots * state.slotPx;
+  const pxPerMin = state.slotPx / state.stepMinutes;
+  const top = minutesFromViewStart(now) * pxPerMin;
+  const target = Math.max(0, top - els.calBody.clientHeight / 2);
+  const maxScroll = Math.max(0, gridHeightPx - els.calBody.clientHeight);
+
+  els.calBody.scrollTop = Math.min(target, maxScroll);
+  state.hasAutoScrolled = true;
 }
 
 /* -------------- REST OF YOUR ORIGINAL FILE -------------- */
