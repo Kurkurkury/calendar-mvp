@@ -124,7 +124,7 @@ function startGooglePollingOnce() {
       tickCount++;
       if (tickCount == 1 || tickCount % 4 == 0) {
         const g = await apiGet("/api/google/status");
-        state.google = (g.google || g || { configured: false, connected: false, scopes: "" });
+        applyGoogleStatus(g.google || g);
       }
 
       if (!state.google?.connected) return;
@@ -151,7 +151,7 @@ function startGooglePollingOnce() {
       if (msg.includes("404") || msg.includes("Not Found")) {
         try {
           const g = await apiGet("/api/google/status");
-          state.google = (g.google || g || { configured: false, connected: false, scopes: "" });
+          applyGoogleStatus(g.google || g);
           if (state.google?.connected) {
             const eventsRes = await apiGetGoogleEvents();
             if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
@@ -181,7 +181,7 @@ const state = {
 
   tasks: [],
   events: [],
-  google: { configured: false, connected: false, scopes: "" },
+  google: { configured: false, connected: false, hasTokens: false, watchActive: false, reason: "", scopes: "" },
   editingEvent: null,
 
   windows: loadLocal("windowsV1", [
@@ -199,6 +199,11 @@ const state = {
 const els = {
   weekLabel: byId("weekLabel"),
   statusLine: byId("statusLine"),
+  googleConnectionState: byId("googleConnectionState"),
+  liveSyncState: byId("liveSyncState"),
+  reconnectHint: byId("reconnectHint"),
+  googleStatusBadge: byId("googleStatusBadge"),
+  syncStatusBadge: byId("syncStatusBadge"),
 
   dayHeaders: byId("dayHeaders"),
   timeCol: byId("timeCol"),
@@ -364,6 +369,96 @@ function updateGoogleButtons() {
   }
 }
 
+function normalizeGoogleStatus(raw) {
+  const g = raw || {};
+  return {
+    configured: !!g.configured,
+    connected: !!g.connected,
+    hasTokens: g.hasTokens ?? !!g.connected,
+    watchActive: typeof g.watchActive === "boolean" ? g.watchActive : false,
+    reason: g.reason || "",
+    scopes: g.scopes || "",
+    calendarId: g.calendarId,
+    timezone: g.timezone,
+    connectedEmail: g.connectedEmail,
+    allowedEmail: g.allowedEmail,
+    wrongAccount: !!g.wrongAccount,
+  };
+}
+
+function applyGoogleStatus(raw) {
+  state.google = normalizeGoogleStatus(raw);
+  updateGoogleButtons();
+  updateConnectionStatus();
+}
+
+function updateConnectionStatus() {
+  const g = state.google || {};
+  const connected = !!g.connected;
+  const configured = !!g.configured;
+
+  if (els.googleConnectionState) {
+    let text = "Nicht verbunden";
+    let color = "var(--danger)";
+
+    if (!configured) {
+      text = "Google nicht konfiguriert";
+      color = "var(--muted)";
+    } else if (connected) {
+      text = "Google verbunden";
+      color = "var(--ok)";
+    }
+
+    els.googleConnectionState.textContent = text;
+    els.googleConnectionState.style.color = color;
+  }
+
+  if (els.liveSyncState) {
+    if (typeof g.watchActive !== "boolean") {
+      els.liveSyncState.textContent = "Live-Sync: Status unbekannt";
+    } else if (g.watchActive) {
+      els.liveSyncState.textContent = "Live-Sync: aktiv";
+    } else {
+      const reason = g.reason ? ` – ${g.reason}` : "";
+      els.liveSyncState.textContent = `Live-Sync: inaktiv${reason}`;
+    }
+  }
+
+  if (els.reconnectHint) {
+    if (!connected) {
+      els.reconnectHint.textContent = "Bitte Google verbinden, um Events zu erstellen und Live-Sync zu aktivieren.";
+    } else {
+      els.reconnectHint.textContent = "";
+    }
+  }
+
+  if (els.googleStatusBadge) {
+    if (!configured) {
+      els.googleStatusBadge.textContent = "Google: nicht konfiguriert";
+      els.googleStatusBadge.className = "statusBadge warn";
+    } else if (connected) {
+      els.googleStatusBadge.textContent = "Connected";
+      els.googleStatusBadge.className = "statusBadge ok";
+    } else {
+      els.googleStatusBadge.textContent = "Not connected";
+      els.googleStatusBadge.className = "statusBadge warn";
+    }
+  }
+
+  if (els.syncStatusBadge) {
+    if (!configured || !connected) {
+      els.syncStatusBadge.textContent = "Live-Sync: inaktiv";
+      els.syncStatusBadge.className = "statusBadge warn";
+    } else if (g.watchActive) {
+      els.syncStatusBadge.textContent = "Live-Sync: aktiv";
+      els.syncStatusBadge.className = "statusBadge ok";
+    } else {
+      els.syncStatusBadge.textContent = "Live-Sync: inaktiv";
+      els.syncStatusBadge.className = "statusBadge warn";
+    }
+  }
+}
+
 function googleUiStatusLine() {
   const g = state.google || {};
   if (!g.configured) return 'Google: nicht konfiguriert ⚪';
@@ -382,7 +477,7 @@ async function pollGoogleConnected({ timeoutMs = 90_000, intervalMs = 2000 } = {
   while (Date.now() - t0 < timeoutMs) {
     try {
       const g = await apiGet('/api/google/status');
-      state.google = (g.google || g || { configured: false, connected: false, scopes: '' });
+      applyGoogleStatus(g.google || g);
       updateGoogleButtons();
 
       if (state.google?.connected && !state.google?.wrongAccount) {
@@ -519,9 +614,7 @@ async function refreshFromApi() {
     await apiGet("/api/health");
 
     const g = await apiGet("/api/google/status");
-    state.google = (g.google || g || { configured: false, connected: false, scopes: "" });
-
-    updateGoogleButtons();
+    applyGoogleStatus(g.google || g);
 
     const [tasksRes] = await Promise.all([
       apiGet("/api/tasks"),
@@ -552,11 +645,13 @@ async function refreshFromApi() {
   } catch (e) {
     if (isNetworkFetchFail(e)) {
       updateGoogleButtons();
+      updateConnectionStatus();
       setStatus(`Offline 📴 (${API_BASE}) • ${googleStatusText()}`, true);
       return;
     }
 
     updateGoogleButtons();
+    updateConnectionStatus();
     setStatus(`API Problem ⚠️ (${API_BASE}) • ${googleStatusText()}`, true);
     console.warn("API error:", e);
   }
@@ -582,6 +677,7 @@ async function render() {
   saveLocal("windowsV1", state.windows);
 
   updateGoogleButtons();
+  updateConnectionStatus();
 
   if (els.statusLine?.textContent?.includes("API verbunden")) {
     setStatus(`API: verbunden ✅ (${API_BASE}) • ${googleUiStatusLine()}`, !state.google?.wrongAccount);
@@ -1601,6 +1697,31 @@ function makeApiError({ method, url, status, statusText, body }) {
   return err;
 }
 
+function isGoogleNotConnected(body) {
+  if (body?.kind !== "json") return false;
+  const code = body.json?.error || body.json?.code;
+  return code === "GOOGLE_NOT_CONNECTED";
+}
+
+function markGoogleDisconnected(reason = "Reconnect nötig") {
+  state.google = {
+    ...state.google,
+    connected: false,
+    hasTokens: false,
+    watchActive: false,
+    reason,
+  };
+  updateGoogleButtons();
+  updateConnectionStatus();
+}
+
+function handleGoogleAuthError(res, body) {
+  if (res?.status === 401 && isGoogleNotConnected(body)) {
+    markGoogleDisconnected("Reconnect nötig");
+    uiNotify("error", "Google nicht verbunden – bitte verbinden");
+  }
+}
+
 async function apiGet(path) {
   const url = API_BASE_CLEAN + path;
   let res;
@@ -1614,6 +1735,7 @@ async function apiGet(path) {
 
   const text = await res.text();
   const body = parseApiBody(text);
+  handleGoogleAuthError(res, body);
 
   // If JSON: allow { ok:false, message }
   if (res.ok && !(body.kind === 'json' && body.json?.ok === false)) {
@@ -1640,6 +1762,7 @@ async function apiPost(path, bodyObj) {
 
   const text = await res.text();
   const body = parseApiBody(text);
+  handleGoogleAuthError(res, body);
 
   if (res.ok && !(body.kind === 'json' && body.json?.ok === false)) {
     return body.kind === 'json' ? body.json : {};
@@ -1665,6 +1788,7 @@ async function apiPatch(path, bodyObj) {
 
   const text = await res.text();
   const body = parseApiBody(text);
+  handleGoogleAuthError(res, body);
 
   if (res.ok && !(body.kind === 'json' && body.json?.ok === false)) {
     return body.kind === 'json' ? body.json : {};
@@ -1686,6 +1810,7 @@ async function apiDelete(path) {
 
   const text = await res.text();
   const body = parseApiBody(text);
+  handleGoogleAuthError(res, body);
 
   if (res.ok && !(body.kind === 'json' && body.json?.ok === false)) {
     return body.kind === 'json' ? body.json : {};
