@@ -771,9 +771,16 @@ async function refreshFromApi() {
 }
 
 // -------------------- Render --------------------
+function setBodyViewClass(view) {
+  document.body.classList.toggle("view-day", view === "day");
+  document.body.classList.toggle("view-week", view === "week");
+  document.body.classList.toggle("view-month", view === "month");
+}
+
 async function render() {
   saveLocal("calendarViewV1", state.view);
   saveDateLocal("calendarActiveDateV1", state.activeDate);
+  setBodyViewClass(state.view);
 
   renderTopBar();
 
@@ -800,6 +807,7 @@ async function render() {
 // -------------------- View handling --------------------
 function setView(nextView) {
   state.view = nextView;
+  setBodyViewClass(state.view);
   state.weekStart = startOfWeek(state.activeDate);
   if (isMobile()) {
     closeSidebarDrawer();
