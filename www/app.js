@@ -880,11 +880,24 @@ function applyDayFitSettings(day, isFit) {
   }
 }
 
+function computeSlotPxToFitDay() {
+  const totalSlots = ((state.viewEndHour - state.viewStartHour) * 60) / state.stepMinutes;
+  if (!totalSlots) return DEFAULT_SLOT_PX;
+  const availableHeight = Math.max(1, (els.calBody?.clientHeight || 0) - 12);
+  const px = Math.floor(availableHeight / totalSlots);
+  const minPx = 16;
+  const maxPx = DEFAULT_SLOT_PX;
+  return Math.min(maxPx, Math.max(minPx, px));
+}
+
 // -------------------- Day / Week / Month renderers --------------------
 function renderDayView() {
   const d = startOfDay(state.activeDate);
   const isFit = isMobile() && state.dayFit === true;
   applyDayFitSettings(d, isFit);
+  if (isMobile()) {
+    state.slotPx = computeSlotPxToFitDay();
+  }
   renderTimeCol();
 
   currentRenderedDays = [d];
@@ -1061,6 +1074,12 @@ function renderTimeCol() {
     const div = document.createElement("div");
     div.className = "timeLabel";
     div.textContent = t.endsWith(":00") ? t : "";
+    div.style.height = `${state.slotPx}px`;
+    if (state.slotPx <= 18) {
+      div.style.fontSize = "10px";
+    } else if (state.slotPx <= 22) {
+      div.style.fontSize = "11px";
+    }
     els.timeCol.appendChild(div);
   });
   const spacer = document.createElement("div");
