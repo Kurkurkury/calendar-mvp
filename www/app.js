@@ -234,6 +234,15 @@ const els = {
   autoSchedule: byId("autoSchedule"),
   createTaskBtn: byId("createTaskBtn"),
 
+  // Create event form
+  eventTitle: byId("eventTitle"),
+  eventDate: byId("eventDate"),
+  eventStartTime: byId("eventStartTime"),
+  eventDuration: byId("eventDuration"),
+  eventLocation: byId("eventLocation"),
+  eventNotes: byId("eventNotes"),
+  createEventFormBtn: byId("createEventFormBtn"),
+
   // Event modal
   eventBackdrop: byId("eventBackdrop"),
   eventModal: byId("eventModal"),
@@ -279,6 +288,9 @@ async function boot() {
   els.imp?.addEventListener("change", updateQuadrantUI);
   els.urg?.addEventListener("change", updateQuadrantUI);
   els.createTaskBtn?.addEventListener("click", createTask);
+
+  // Create event form
+  els.createEventFormBtn?.addEventListener("click", createEventFromForm);
 
   // Event modal
   els.closeEventBtn?.addEventListener("click", closeEventModal);
@@ -1005,6 +1017,16 @@ function updateQuadrantUI() {
   els.quadrantHint.textContent = q.hint;
 }
 
+function resetCreateEventForm() {
+  if (!els.eventTitle) return;
+  els.eventTitle.value = "";
+  if (els.eventDate) els.eventDate.value = "";
+  if (els.eventStartTime) els.eventStartTime.value = "";
+  if (els.eventDuration) els.eventDuration.value = "60";
+  if (els.eventLocation) els.eventLocation.value = "";
+  if (els.eventNotes) els.eventNotes.value = "";
+}
+
 // -------------------- Create task + scheduling --------------------
 async function createTask() {
   const title = (els.taskTitle.value || "").trim();
@@ -1057,6 +1079,88 @@ async function createTask() {
   } finally {
     btn.disabled = false;
     btn.textContent = oldText;
+  }
+}
+
+// -------------------- Create structured event --------------------
+async function createEventFromForm() {
+  if (!state.google?.configured) {
+    setStatus('Google OAuth ist im Backend nicht konfiguriert. (Render ENV prüfen)', false);
+    uiNotify('error', 'Google OAuth ist im Backend nicht konfiguriert.');
+    return;
+  }
+
+  if (!state.google?.connected || state.google?.wrongAccount) {
+    setStatus('Google ist nicht (korrekt) verbunden. Bitte oben auf "Mit Google verbinden" klicken.', false);
+    uiNotify('error', 'Google nicht verbunden – bitte verbinden');
+    try { els.googleConnectBtn?.focus?.(); } catch {}
+    return;
+  }
+
+  const title = (els.eventTitle?.value || "").trim();
+  const dateStr = els.eventDate?.value || "";
+  const timeStr = els.eventStartTime?.value || "";
+  const durationMin = clamp(parseInt(els.eventDuration?.value || "60", 10), 5, 24 * 60);
+  const location = (els.eventLocation?.value || "").trim();
+  const notes = (els.eventNotes?.value || "").trim();
+
+  if (!title || !dateStr || !timeStr || !durationMin) {
+    setStatus("Bitte Titel, Datum, Startzeit und Dauer ausfüllen.", false);
+    uiNotify('error', 'Bitte Titel, Datum, Startzeit und Dauer ausfüllen.');
+    return;
+  }
+
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const [hour, minute] = timeStr.split(":").map(Number);
+  const startLocal = new Date(year, (month || 1) - 1, day || 1, hour || 0, minute || 0, 0, 0);
+  const endLocal = addMinutes(new Date(startLocal), durationMin);
+
+  const start = toLocalIsoWithOffset(startLocal);
+  const end = toLocalIsoWithOffset(endLocal);
+
+  const btn = els.createEventFormBtn;
+  const oldText = btn?.textContent || "Termin erstellen";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Erstelle…";
+    btn.setAttribute('aria-busy', 'true');
+  }
+  uiNotify('info', 'Erstelle Termin…');
+
+  try {
+    await apiPost('/api/google/events', { title, start, end, location, notes });
+
+    const eventsRes = await apiGetGoogleEvents(GCAL_DAYS_PAST, GCAL_DAYS_FUTURE);
+    if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
+      state.events = eventsRes.events;
+      saveLastKnownGoogleEvents(state.events);
+    }
+
+    await render();
+    uiNotify('success', 'Termin erstellt');
+    resetCreateEventForm();
+  } catch (e) {
+    const status = e?._meta?.status;
+    const msg = String(e?.message || "");
+    const lower = msg.toLowerCase();
+
+    if (status === 401 || msg.includes("GOOGLE_NOT_CONNECTED") || lower.includes("nicht verbunden")) {
+      await refreshFromApi();
+      updateGoogleButtons();
+      setStatus('Google nicht verbunden – bitte verbinden.', false);
+      uiNotify('error', 'Google nicht verbunden – bitte verbinden');
+      try { els.googleConnectBtn?.focus?.(); } catch {}
+    } else {
+      const short = msg.split("\n")[0].slice(0, 160);
+      setStatus(`Fehler beim Erstellen: ${short}`, false);
+      uiNotify('error', `Fehler beim Erstellen: ${short}`);
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText;
+      btn.removeAttribute('aria-busy');
+    }
   }
 }
 
@@ -1410,6 +1514,15 @@ function fmtDate(d) { return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${d
 function fmtTime(d) { return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
 function fmtDateTime(d) { return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)} ${fmtTime(d)}`; }
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
+function toLocalIsoWithOffset(date) {
+  const d = new Date(date);
+  const offset = -d.getTimezoneOffset();
+  const sign = offset >= 0 ? "+" : "-";
+  const abs = Math.abs(offset);
+  const offH = pad2(Math.floor(abs / 60));
+  const offM = pad2(abs % 60);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}${sign}${offH}:${offM}`;
+}
 function escapeHtml(str) {
   return String(str)
     .replaceAll("&", "&amp;")

@@ -54,6 +54,49 @@
 
     <aside class="side">
       <div class="card">
+        <div class="cardTitle">Neuer Termin</div>
+        <div class="cardSub">Google muss verbunden sein, damit der Termin erstellt wird.</div>
+
+        <div class="list">
+          <label class="field">
+            <span>Titel</span>
+            <input id="eventTitle" type="text" placeholder="z.B. Projekt-Meeting" />
+          </label>
+
+          <div class="row">
+            <label class="field">
+              <span>Datum</span>
+              <input id="eventDate" type="date" />
+            </label>
+            <label class="field">
+              <span>Startzeit</span>
+              <input id="eventStartTime" type="time" />
+            </label>
+          </div>
+
+          <div class="row">
+            <label class="field">
+              <span>Dauer (Min)</span>
+              <input id="eventDuration" type="number" min="5" step="5" value="60" />
+            </label>
+            <label class="field">
+              <span>Ort (optional)</span>
+              <input id="eventLocation" type="text" placeholder="z.B. Büro Zürich" />
+            </label>
+          </div>
+
+          <label class="field">
+            <span>Notizen (optional)</span>
+            <textarea id="eventNotes" rows="3" placeholder="Agenda, Links, Vorbereitung..."></textarea>
+          </label>
+
+          <div class="modalFoot">
+            <button id="createEventFormBtn" class="btn primary" type="button">Termin erstellen</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
         <div class="cardTitle">Inbox</div>
         <div class="cardSub">Tasks ohne Planung</div>
         <div id="inboxList" class="list"></div>
