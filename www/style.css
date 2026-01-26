@@ -583,12 +583,12 @@ code{
   }
 
   /* Header: nur 1 Spalte */
-  #dayHeaders {
+  body.view-day #dayHeaders {
     grid-template-columns: 1fr !important;
   }
 
   /* Kalender-Grid: nur 1 Spalte */
-  #grid {
+  body.view-day #grid {
     grid-template-columns: 1fr !important;
   }
 
