@@ -1,20 +1,34 @@
-import { App } from "@capacitor/app";
-
 const API_BASE = "https://calendar-api-v2.onrender.com";
+const API_BASE_CLEAN = String(API_BASE || "").replace(/\/+$/, "");
 
 const IS_NATIVE =
   !!window.Capacitor &&
   typeof window.Capacitor.getPlatform === "function" &&
   window.Capacitor.getPlatform() !== "web";
 
-if (IS_NATIVE && App?.addListener) {
-  App.addListener("appUrlOpen", ({ url }) => {
-    if (url && url.startsWith("calendar-mvp://oauth")) {
-      apiGet("/api/google/status")
-        .then(() => location.reload())
-        .catch(() => location.reload());
+if (IS_NATIVE) {
+  (async () => {
+    try {
+      const mod = await import("@capacitor/app");
+      const App = mod?.App;
+      if (!App?.addListener) return;
+
+      App.addListener("appUrlOpen", async ({ url }) => {
+        try {
+          if (url && url.startsWith("calendar-mvp://oauth")) {
+            // Use API base (works both native + web)
+            await fetch(`${API_BASE_CLEAN}/api/google/status`, { credentials: "include" })
+              .then((r) => r.json())
+              .catch(() => null);
+
+            location.reload();
+          }
+        } catch {}
+      });
+    } catch {
+      // In web: ignore (no capacitor module)
     }
-  });
+  })();
 }
 
 // -------------------- UI Notify (guaranteed visible, no CSS needed) --------------------
@@ -69,9 +83,6 @@ function uiNotify(type, message) {
 // Browser am PC: localhost
 
 // ✅ LIVE: fix auf Render (kein localhost / 10.0.2.2)
-const RAW_API_BASE = API_BASE;
-
-const API_BASE_CLEAN = String(RAW_API_BASE || "").replace(/\/+$/, ""); // wichtig: kein trailing /
 const API_KEY = localStorage.getItem("calendarApiKeyV1") || ""; // optional
 
 const GCAL_CACHE_KEY = "gcal_last_events_v1";
