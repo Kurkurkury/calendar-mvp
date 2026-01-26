@@ -14,13 +14,13 @@
   </script>
 </head>
 <body>
-  <!-- DEPLOY TEST: phase2 -->
-
   <header class="topbar">
     <div class="left">
-      <button id="prevWeekBtn" class="btn ghost" title="Vorherige Woche">←</button>
-      <button id="todayBtn" class="btn ghost">Heute</button>
-      <button id="nextWeekBtn" class="btn ghost" title="Nächste Woche">→</button>
+      <nav class="weekNav" aria-label="Kalender Navigation">
+        <button id="prevWeekBtn" class="btn ghost" title="Vorherige Woche" aria-label="Vorherige Woche">←</button>
+        <button id="todayBtn" class="btn ghost" aria-label="Heute anzeigen">Heute</button>
+        <button id="nextWeekBtn" class="btn ghost" title="Nächste Woche" aria-label="Nächste Woche">→</button>
+      </nav>
       <div class="title">
         <div class="h1">Woche</div>
         <div id="weekLabel" class="sub"></div>
@@ -33,9 +33,10 @@
           <div id="reconnectHint" class="connectionHint"></div>
         </div>
         <div class="googleActions">
-          <button id="googleConnectBtn" class="btn ghost" type="button">Mit Google verbinden</button>
-          <button id="googleDisconnectBtn" class="btn ghost" type="button">Trennen</button>
+          <button id="googleConnectBtn" class="btn ghost" type="button" aria-label="Mit Google verbinden">Mit Google verbinden</button>
+          <button id="googleDisconnectBtn" class="btn ghost" type="button" aria-label="Google Verbindung trennen">Trennen</button>
         </div>
+        <div class="consentNote">Google Calendar Zugriff nur nach expliziter Zustimmung.</div>
       </div>
     </div>
 
@@ -44,7 +45,7 @@
         <span id="googleStatusBadge" class="statusBadge"></span>
         <span id="syncStatusBadge" class="statusBadge"></span>
       </div>
-      <button id="btnNew" class="btn primary">+ Neu</button>
+      <button id="btnNew" class="btn primary" aria-label="Neuen Eintrag erstellen">+ Neu</button>
     </div>
   </header>
 
@@ -100,7 +101,7 @@
           </label>
 
           <div class="modalFoot">
-            <button id="createEventFormBtn" class="btn primary" type="button">Termin erstellen</button>
+            <button id="createEventFormBtn" class="btn primary" type="button" aria-label="Termin erstellen">Termin erstellen</button>
           </div>
         </div>
       </div>
@@ -137,11 +138,11 @@
   <div id="menuBackdrop" class="backdrop hidden"></div>
   <div id="newMenu" class="menu hidden" role="dialog" aria-modal="true">
     <div class="menuTitle">Erstellen</div>
-    <button class="menuItem" data-action="newTask">Task</button>
-    <button class="menuItem" data-action="newEvent">Event</button>
-    <button class="menuItem" data-action="newBlock" disabled title="Kommt im nächsten Schritt">Block (bald)</button>
+    <button class="menuItem" data-action="newTask" aria-label="Neue Task erstellen">Task</button>
+    <button class="menuItem" data-action="newEvent" aria-label="Neues Event erstellen">Event</button>
+    <button class="menuItem" data-action="newBlock" disabled title="Kommt im nächsten Schritt" aria-label="Block erstellen (bald verfügbar)">Block (bald)</button>
     <div class="menuFoot">
-      <button id="closeMenuBtn" class="btn ghost">Schliessen</button>
+      <button id="closeMenuBtn" class="btn ghost" aria-label="Menü schließen">Schliessen</button>
     </div>
   </div>
 
@@ -150,7 +151,7 @@
   <div id="taskModal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modalHead">
       <div class="modalTitle">Neue Task</div>
-      <button id="closeModalBtn" class="btn ghost">✕</button>
+      <button id="closeModalBtn" class="btn ghost" aria-label="Task-Dialog schließen">✕</button>
     </div>
 
     <div class="modalBody">
@@ -195,7 +196,7 @@
       </label>
 
       <div class="modalFoot">
-        <button id="createTaskBtn" class="btn primary">Task erstellen</button>
+        <button id="createTaskBtn" class="btn primary" aria-label="Task erstellen">Task erstellen</button>
       </div>
     </div>
   </div>
@@ -205,7 +206,7 @@
   <div id="eventModal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modalHead">
       <div class="modalTitle">Neues Event (Quick Add)</div>
-      <button id="closeEventBtn" class="btn ghost">✕</button>
+      <button id="closeEventBtn" class="btn ghost" aria-label="Event-Dialog schließen">✕</button>
     </div>
 
     <div class="modalBody">
@@ -222,7 +223,7 @@
       </div>
 
       <div class="modalFoot">
-        <button id="createEventBtn" class="btn primary">Event erstellen</button>
+        <button id="createEventBtn" class="btn primary" aria-label="Event erstellen">Event erstellen</button>
       </div>
     </div>
   </div>
@@ -232,7 +233,7 @@
   <div id="editEventModal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modalHead">
       <div class="modalTitle">Termin bearbeiten</div>
-      <button id="closeEditEventBtn" class="btn ghost">✕</button>
+      <button id="closeEditEventBtn" class="btn ghost" aria-label="Termin bearbeiten schließen">✕</button>
     </div>
 
     <div class="modalBody">
@@ -269,11 +270,15 @@
       </label>
 
       <div class="modalFoot">
-        <button id="cancelEditEventBtn" class="btn ghost" type="button">Abbrechen</button>
-        <button id="saveEditEventBtn" class="btn primary" type="button">Speichern</button>
+        <button id="cancelEditEventBtn" class="btn ghost" type="button" aria-label="Bearbeiten abbrechen">Abbrechen</button>
+        <button id="saveEditEventBtn" class="btn primary" type="button" aria-label="Änderungen speichern">Speichern</button>
       </div>
     </div>
   </div>
+
+  <footer class="appFooter">
+    <a href="/privacy.html" aria-label="Datenschutzerklärung öffnen">Datenschutz</a>
+  </footer>
 
   <script type="module" src="/app.js?v=1"></script>
 </body>

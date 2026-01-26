@@ -1,11 +1,19 @@
 import { App } from "@capacitor/app";
-import { Browser } from "@capacitor/browser";
 
 const API_BASE =
   localStorage.getItem("calendar_api_base") ||
   "https://calendar-api-v2.onrender.com";
 
-console.log("WWW APP.JS GELADEN");
+const openExternal = async (url) => {
+  const browser = window.Capacitor?.Plugins?.Browser;
+  if (browser?.open) {
+    try {
+      await browser.open({ url });
+      return true;
+    } catch {}
+  }
+  return !!window.open(url, "_blank", "noopener,noreferrer");
+};
 
 const IS_NATIVE =
   !!window.Capacitor &&
@@ -520,20 +528,7 @@ async function onGoogleConnect() {
     if (!url) throw new Error('auth-url missing');
 
     // Open OAuth in a new tab/window
-    if (IS_NATIVE) {
-      let opened = false;
-      if (Browser?.open) {
-        try {
-          await Browser.open({ url });
-          opened = true;
-        } catch {}
-      }
-      if (!opened) {
-        window.open(url, '_blank', 'noopener,noreferrer');
-      }
-    } else {
-      window.open(url, '_blank', 'noopener,noreferrer');
-    }
+    await openExternal(url);
 
     uiNotify('success', 'Google Login geöffnet – nach erfolgreichem Login verbindet die App automatisch…');
     setStatus('Google Login geöffnet… warte auf Verbindung…', true);
@@ -884,34 +879,20 @@ function applyDayFitSettings(day, isFit) {
     state.viewStartHour = DEFAULT_VIEW_START_HOUR;
     state.viewEndHour = DEFAULT_VIEW_END_HOUR;
     state.slotPx = DEFAULT_SLOT_PX;
-    if (els.calBody) els.calBody.style.overflowY = "";
     return;
   }
 
-  const { startMinutes, endMinutes } = getDayFitRange(day);
-  const startHour = Math.min(23, Math.max(0, Math.floor(startMinutes / 60)));
-  const endHour = Math.min(24, Math.ceil(endMinutes / 60));
-
-  state.viewStartHour = startHour;
-  state.viewEndHour = endHour > startHour ? endHour : Math.min(24, startHour + 1);
-  if (state.viewEndHour <= state.viewStartHour) {
-    state.viewStartHour = DEFAULT_VIEW_START_HOUR;
-    state.viewEndHour = DEFAULT_VIEW_END_HOUR;
-  }
-
+  state.viewStartHour = 0;
+  state.viewEndHour = 24;
   state.slotPx = computeSlotPxToFitDay();
-
-  if (els.calBody) {
-    els.calBody.style.overflowY = "hidden";
-  }
 }
 
 function computeSlotPxToFitDay() {
-  const totalSlots = ((state.viewEndHour - state.viewStartHour) * 60) / state.stepMinutes;
+  const totalSlots = (24 * 60) / state.stepMinutes;
   if (!totalSlots) return DEFAULT_SLOT_PX;
   const availableHeight = getCalendarAvailableHeight();
   const px = Math.floor(availableHeight / totalSlots);
-  const minPx = 20;
+  const minPx = 16;
   const maxPx = DEFAULT_SLOT_PX;
   return Math.min(maxPx, Math.max(minPx, px));
 }
@@ -1978,10 +1959,6 @@ function headers() {
   const h = { "Content-Type": "application/json" };
   if (API_KEY) h["X-Api-Key"] = API_KEY;
   return h;
-}
-
-function debugEnvLine() {
-  return `base=${API_BASE_CLEAN} • raw=${RAW_API_BASE} • isNative=${IS_NATIVE} • hasCapacitor=${!!window.Capacitor} • ua=${navigator.userAgent.slice(0, 60)}…`;
 }
 
 function parseApiBody(text) {
