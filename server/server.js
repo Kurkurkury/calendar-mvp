@@ -341,6 +341,29 @@ app.get("/api/health", (req, res) => {
 app.get("/api/google/status", async (req, res) => {
   try {
     const base = getGoogleStatus();
+    const tokens = loadTokens?.() || null;
+    const hasTokens = !!tokens;
+    const connected = !!base?.google?.connected;
+    const watchState = loadWatchState();
+    const now = Date.now();
+    let watchActive = false;
+    let watchReason = "";
+
+    if (!connected) {
+      watchReason = "Google nicht verbunden";
+    } else if (!hasTokens) {
+      watchReason = "Keine Tokens";
+    } else if (!watchState?.ok) {
+      watchReason = "Status unbekannt";
+    } else if (!watchState?.channelId || !watchState?.resourceId) {
+      watchReason = "Watch nicht registriert";
+    } else if (!watchState?.expiration) {
+      watchReason = "Status unbekannt";
+    } else if (int(watchState.expiration) <= now) {
+      watchReason = "Watch abgelaufen";
+    } else {
+      watchActive = true;
+    }
 
     let connectedEmail = null;
     let wrongAccount = false;
@@ -360,6 +383,10 @@ app.get("/api/google/status", async (req, res) => {
       ...base,
       google: {
         ...base.google,
+        connected,
+        hasTokens,
+        watchActive,
+        reason: watchActive ? "" : watchReason,
         connectedEmail,
         allowedEmail: GOOGLE_ALLOWED_EMAIL || null,
         wrongAccount,
@@ -474,6 +501,22 @@ app.post("/api/google/events", requireApiKey, async (req, res) => {
 
     res.json({ ok: true, googleEvent: out.googleEvent, mirroredEvent: ev });
   } catch (e) {
+    const msg = String(e?.message || "");
+    const isNotConnected =
+      msg.includes("Nicht verbunden") ||
+      msg.includes("keine Tokens") ||
+      msg.includes("Google nicht verbunden") ||
+      msg.includes("Access Token") ||
+      msg.includes("Tokens");
+
+    if (isNotConnected) {
+      return res.status(401).json({
+        ok: false,
+        error: "GOOGLE_NOT_CONNECTED",
+        message: "Google nicht verbunden",
+      });
+    }
+
     res.status(500).json({ ok: false, message: e?.message || "unknown" });
   }
 });
@@ -837,11 +880,12 @@ app.patch("/api/google/events/:id", requireApiKey, async (req, res) => {
       msg.includes("Nicht verbunden") ||
       msg.includes("keine Tokens") ||
       msg.includes("Google nicht verbunden") ||
+      msg.includes("Access Token") ||
       msg.includes("Tokens");
 
     if (isNotConnected) {
       console.log(`google patch blocked: ${eventId} (not connected)`);
-      return res.status(401).json({ ok: false, code: "GOOGLE_NOT_CONNECTED", message: "Google nicht verbunden" });
+      return res.status(401).json({ ok: false, error: "GOOGLE_NOT_CONNECTED", message: "Google nicht verbunden" });
     }
 
     console.log(`google patch failed: ${eventId}`);
@@ -885,13 +929,14 @@ app.delete("/api/google/events/:id", requireApiKey, async (req, res) => {
       msg.includes("Nicht verbunden") ||
       msg.includes("keine Tokens") ||
       msg.includes("Google nicht verbunden") ||
+      msg.includes("Access Token") ||
       msg.includes("Tokens");
 
     if (isNotConnected) {
       console.log(`google delete blocked: ${eventId} (not connected)`);
       return res.status(401).json({
         ok: false,
-        code: "GOOGLE_NOT_CONNECTED",
+        error: "GOOGLE_NOT_CONNECTED",
         message: "Google nicht verbunden",
       });
     }

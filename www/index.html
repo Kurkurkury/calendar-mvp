@@ -27,7 +27,12 @@
 
         <!-- Status + Google Controls -->
         <div id="statusLine" class="sub"></div>
-        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px;">
+        <div id="connectionStatus" class="connectionStatus">
+          <div id="googleConnectionState" class="connectionMain"></div>
+          <div id="liveSyncState" class="connectionSub"></div>
+          <div id="reconnectHint" class="connectionHint"></div>
+        </div>
+        <div class="googleActions">
           <button id="googleConnectBtn" class="btn ghost" type="button">Mit Google verbinden</button>
           <button id="googleDisconnectBtn" class="btn ghost" type="button">Trennen</button>
         </div>
@@ -35,6 +40,10 @@
     </div>
 
     <div class="right">
+      <div class="statusBadges">
+        <span id="googleStatusBadge" class="statusBadge"></span>
+        <span id="syncStatusBadge" class="statusBadge"></span>
+      </div>
       <button id="newBtn" class="btn primary">+ Neu</button>
     </div>
   </header>
