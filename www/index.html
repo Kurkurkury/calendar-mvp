@@ -44,7 +44,7 @@
         <span id="googleStatusBadge" class="statusBadge"></span>
         <span id="syncStatusBadge" class="statusBadge"></span>
       </div>
-      <button id="newBtn" class="btn primary">+ Neu</button>
+      <button id="btnNew" class="btn primary">+ Neu</button>
     </div>
   </header>
 
@@ -61,7 +61,7 @@
       </div>
     </section>
 
-    <aside class="side">
+    <aside id="sidebar" class="side sidebar" aria-label="Seitenleiste">
       <div class="card">
         <div class="cardTitle">Neuer Termin</div>
         <div class="cardSub">Google muss verbunden sein, damit der Termin erstellt wird.</div>
@@ -130,6 +130,8 @@
       </div>
     </aside>
   </main>
+
+  <div id="sidebarOverlay" class="sidebarOverlay hidden" aria-hidden="true"></div>
 
   <!-- New menu -->
   <div id="menuBackdrop" class="backdrop hidden"></div>
