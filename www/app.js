@@ -1,19 +1,6 @@
 import { App } from "@capacitor/app";
 
-const API_BASE =
-  localStorage.getItem("calendar_api_base") ||
-  "https://calendar-api-v2.onrender.com";
-
-const openExternal = async (url) => {
-  const browser = window.Capacitor?.Plugins?.Browser;
-  if (browser?.open) {
-    try {
-      await browser.open({ url });
-      return true;
-    } catch {}
-  }
-  return !!window.open(url, "_blank", "noopener,noreferrer");
-};
+const API_BASE = "https://calendar-api-v2.onrender.com";
 
 const IS_NATIVE =
   !!window.Capacitor &&
