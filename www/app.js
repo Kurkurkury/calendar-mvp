@@ -259,6 +259,8 @@ const els = {
   // ✅ Google UI (wird dynamisch in die Topbar eingefügt)
   googleConnectBtn: null,
   googleDisconnectBtn: null,
+  googleConnectBtns: [],
+  googleDisconnectBtns: [],
 
   menuBackdrop: byId("menuBackdrop"),
   newMenu: byId("newMenu"),
@@ -310,6 +312,42 @@ const els = {
   eventsList: byId("eventsList"),
 };
 
+function warnDuplicateIds(ids) {
+  ids.forEach((id) => {
+    const matches = document.querySelectorAll(`#${id}`);
+    if (matches.length > 1) {
+      console.warn(`[ui] Duplicate id "${id}" detected (${matches.length}).`);
+    }
+  });
+}
+
+function bindButtonsById(id, handler) {
+  const buttons = Array.from(document.querySelectorAll(`#${id}`));
+  if (buttons.length > 1) {
+    console.warn(`[ui] Duplicate id "${id}" detected (${buttons.length}).`);
+  }
+  buttons.forEach(btn => btn.addEventListener("click", handler));
+  return buttons;
+}
+
+function bindViewportResize() {
+  let resizeTimer = null;
+  const handleResize = () => {
+    if (!isMobile() || state.view !== "day") return;
+    if (state.dayMode === "fit") {
+      state.slotPx = computeSlotPxToFitDay();
+    } else {
+      state.slotPx = DEFAULT_SLOT_PX;
+    }
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      void render();
+    }, 120);
+  };
+  window.addEventListener("resize", handleResize);
+  window.addEventListener("orientationchange", handleResize);
+}
+
 const deletingEvents = new Set();
 
 boot();
@@ -318,11 +356,19 @@ boot();
 async function boot() {
   state.weekStart = startOfWeek(state.activeDate);
 
+  warnDuplicateIds([
+    "prevWeekBtn",
+    "todayBtn",
+    "nextWeekBtn",
+    "btnNew",
+    "googleConnectBtn",
+    "googleDisconnectBtn",
+  ]);
 
   // Nav (view-aware)
-  els.prevWeekBtn?.addEventListener("click", async () => { shiftView(-1); await render(); });
-  els.nextWeekBtn?.addEventListener("click", async () => { shiftView(1); await render(); });
-  els.todayBtn?.addEventListener("click", async () => {
+  bindButtonsById("prevWeekBtn", async () => { shiftView(-1); await render(); });
+  bindButtonsById("nextWeekBtn", async () => { shiftView(1); await render(); });
+  bindButtonsById("todayBtn", async () => {
     state.activeDate = new Date();
     state.weekStart = startOfWeek(state.activeDate);
     saveDateLocal("calendarActiveDateV1", state.activeDate);
@@ -330,7 +376,7 @@ async function boot() {
   });
 
   // New menu
-  els.btnNew?.addEventListener("click", handleNewButtonClick);
+  bindButtonsById("btnNew", handleNewButtonClick);
   els.closeMenuBtn?.addEventListener("click", closeMenu);
   els.menuBackdrop?.addEventListener("click", closeMenu);
 
@@ -382,6 +428,7 @@ async function boot() {
   }
 
   bindGoogleButtons();
+  bindViewportResize();
   await refreshFromApi();
   startGooglePollingOnce();
   await render();
@@ -390,11 +437,20 @@ async function boot() {
 // -------------------- Google UI --------------------
 function bindGoogleButtons() {
   // Prefer existing buttons from index.html
-  els.googleConnectBtn = byId('googleConnectBtn');
-  els.googleDisconnectBtn = byId('googleDisconnectBtn');
+  els.googleConnectBtns = Array.from(document.querySelectorAll('#googleConnectBtn'));
+  els.googleDisconnectBtns = Array.from(document.querySelectorAll('#googleDisconnectBtn'));
+  if (els.googleConnectBtns.length > 1) {
+    console.warn(`[ui] Duplicate id "googleConnectBtn" detected (${els.googleConnectBtns.length}).`);
+  }
+  if (els.googleDisconnectBtns.length > 1) {
+    console.warn(`[ui] Duplicate id "googleDisconnectBtn" detected (${els.googleDisconnectBtns.length}).`);
+  }
 
-  els.googleConnectBtn?.addEventListener('click', onGoogleConnect);
-  els.googleDisconnectBtn?.addEventListener('click', onGoogleDisconnect);
+  els.googleConnectBtn = els.googleConnectBtns[0] || null;
+  els.googleDisconnectBtn = els.googleDisconnectBtns[0] || null;
+
+  els.googleConnectBtns.forEach(btn => btn.addEventListener('click', onGoogleConnect));
+  els.googleDisconnectBtns.forEach(btn => btn.addEventListener('click', onGoogleDisconnect));
 
   updateGoogleButtons();
 }
@@ -405,17 +461,17 @@ function updateGoogleButtons() {
   const configured = !!g.configured;
   const wrong = !!g.wrongAccount;
 
-  if (els.googleConnectBtn) {
-    els.googleConnectBtn.disabled = !configured;
-    els.googleConnectBtn.title = configured ? '' : 'Backend: Google OAuth ist nicht konfiguriert (ENV Vars fehlen)';
+  els.googleConnectBtns.forEach(btn => {
+    btn.disabled = !configured;
+    btn.title = configured ? '' : 'Backend: Google OAuth ist nicht konfiguriert (ENV Vars fehlen)';
     // If wrong account: keep connect visible so user can reconnect
-    els.googleConnectBtn.style.display = connected && !wrong ? 'none' : '';
-  }
+    btn.style.display = connected && !wrong ? 'none' : '';
+  });
 
-  if (els.googleDisconnectBtn) {
+  els.googleDisconnectBtns.forEach(btn => {
     // Disconnect is optional (server may require API key)
-    els.googleDisconnectBtn.style.display = connected ? '' : 'none';
-  }
+    btn.style.display = connected ? '' : 'none';
+  });
 }
 
 function normalizeGoogleStatus(raw) {
@@ -921,15 +977,18 @@ function applyDayFitSettings(day, isFit) {
   state.viewStartHour = 0;
   state.viewEndHour = 24;
   state.slotPx = computeSlotPxToFitDay();
+  if (els.calBody) els.calBody.style.overflowY = "hidden";
 }
 
 function computeSlotPxToFitDay() {
   const totalSlots = (24 * 60) / state.stepMinutes;
   if (!totalSlots) return DEFAULT_SLOT_PX;
   const availableHeight = getCalendarAvailableHeight();
-  const px = Math.floor(availableHeight / totalSlots);
-  const minPx = 16;
-  const maxPx = DEFAULT_SLOT_PX;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const baseHeight = Math.max(availableHeight, viewportHeight || 0);
+  const px = Math.floor(baseHeight / totalSlots);
+  const minPx = 18;
+  const maxPx = 48;
   return Math.min(maxPx, Math.max(minPx, px));
 }
 
