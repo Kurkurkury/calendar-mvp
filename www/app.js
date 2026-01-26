@@ -86,6 +86,7 @@ const GCAL_DAYS_PAST = 365;
 const GCAL_DAYS_FUTURE = 365;
 const GCAL_POLL_MS = 5 * 60 * 1000; // 5 Minuten (Fallback, falls Push-Sync nicht verfuegbar)
 const SYNC_STATUS_POLL_MS = 30 * 1000; // Phase 3 Push-Sync: App fragt Status alle 30s
+const SCROLL_BUFFER_PX = isMobile() ? 220 : 120;
 
 let gcalPollTimer = null;
 let nowIndicatorTimer = null;
@@ -943,6 +944,10 @@ function renderTimeCol() {
     div.textContent = t.endsWith(":00") ? t : "";
     els.timeCol.appendChild(div);
   });
+  const spacer = document.createElement("div");
+  spacer.style.height = `${SCROLL_BUFFER_PX}px`;
+  spacer.style.borderBottom = "0";
+  els.timeCol.appendChild(spacer);
 }
 
 function renderGridForDays(days) {
@@ -951,7 +956,8 @@ function renderGridForDays(days) {
 
   const todayKey = dateKey(new Date());
   const totalSlots = timeSlots(state.viewStartHour, state.viewEndHour, state.stepMinutes).length;
-  const gridHeightPx = totalSlots * state.slotPx;
+  const slotHeightPx = totalSlots * state.slotPx;
+  const gridHeightPx = slotHeightPx + SCROLL_BUFFER_PX;
   els.grid.style.height = `${gridHeightPx}px`;
 
   if (days.length === 1) {
@@ -1018,7 +1024,8 @@ function autoScrollToNow(days) {
   if (!isTodayVisible) return;
 
   const totalSlots = timeSlots(state.viewStartHour, state.viewEndHour, state.stepMinutes).length;
-  const gridHeightPx = totalSlots * state.slotPx;
+  const slotHeightPx = totalSlots * state.slotPx;
+  const gridHeightPx = slotHeightPx + SCROLL_BUFFER_PX;
   const pxPerMin = state.slotPx / state.stepMinutes;
   const top = minutesFromViewStart(now) * pxPerMin;
   const target = Math.max(0, top - els.calBody.clientHeight / 2);
