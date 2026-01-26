@@ -776,7 +776,10 @@ function isNetworkFetchFail(err) {
 async function refreshFromApi() {
   let hadNetworkFailure = false;
   let hadApiFailure = false;
-  const fallbackEvents = loadLastKnownGoogleEvents() || (Array.isArray(state.events) ? state.events : []);
+  const cachedEvents = loadLastKnownGoogleEvents();
+  const existingEvents = Array.isArray(state.events) ? state.events : [];
+  let usedCachedEvents = false;
+  let googleEventsNotice = "";
 
   try {
     await apiGet("/api/health");
@@ -814,27 +817,54 @@ async function refreshFromApi() {
   // Phase 2 Sync: Anzeige basiert ausschließlich auf Google-Events (Single Source of Truth)
   setSyncLoading(true);
   try {
-    const eventsRes = await apiGetGoogleEvents();
-    if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
+    let eventsRes = null;
+    try {
+      eventsRes = await apiGetGoogleEvents();
+    } catch (e) {
+      console.error("Fehler beim Laden von /api/google/events", e);
+      uiNotify("error", "Google-Events konnten nicht geladen werden – zeige letzte gespeicherte Daten (Cache).");
+      googleEventsNotice = "Google-Events konnten nicht geladen werden – zeige letzte gespeicherte Daten (Cache).";
+      if (Array.isArray(cachedEvents)) {
+        state.events = cachedEvents;
+        usedCachedEvents = true;
+      }
+      throw e;
+    }
+
+    if (eventsRes?.ok === true && Array.isArray(eventsRes.events)) {
       state.events = eventsRes.events;
       saveLastKnownGoogleEvents(state.events);
     } else {
-      state.events = fallbackEvents;
+      uiNotify("error", "Google-Events konnten nicht geladen werden – zeige letzte gespeicherte Daten (Cache).");
+      googleEventsNotice = "Google-Events konnten nicht geladen werden – zeige letzte gespeicherte Daten (Cache).";
+      if (Array.isArray(cachedEvents)) {
+        state.events = cachedEvents;
+        usedCachedEvents = true;
+      }
     }
   } catch (e) {
-    console.error("Fehler beim Laden von /api/google/events", e);
-    state.events = fallbackEvents;
+    if (!usedCachedEvents) {
+      state.events = existingEvents;
+    }
   } finally {
     if (!Array.isArray(state.events)) {
-      state.events = [];
+      state.events = existingEvents;
     }
     setSyncLoading(false);
+  }
+
+  if (state.google?.connected === false && Array.isArray(cachedEvents)) {
+    state.events = cachedEvents;
+    usedCachedEvents = true;
+    googleEventsNotice = "Nicht verbunden – zeige letzte Daten (Cache).";
   }
 
   updateGoogleButtons();
   updateConnectionStatus();
 
-  if (hadNetworkFailure) {
+  if (googleEventsNotice) {
+    setStatus(googleEventsNotice, false);
+  } else if (hadNetworkFailure) {
     setStatus(`Offline 📴 (${API_BASE}) • ${googleStatusText()}`, true);
   } else if (hadApiFailure) {
     setStatus(`API Problem ⚠️ (${API_BASE}) • ${googleStatusText()}`, true);
