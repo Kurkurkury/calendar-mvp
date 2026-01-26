@@ -30,6 +30,7 @@ export function getGoogleConfig() {
     GOOGLE_ANDROID_CLIENT_ID = "",
     GOOGLE_CLIENT_SECRET = "",
     GOOGLE_REDIRECT_URI = "",
+    GOOGLE_ANDROID_REDIRECT_URI = "",
     GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events",
     GOOGLE_CALENDAR_ID = "primary",
     GOOGLE_TIMEZONE = "Europe/Zurich",
@@ -40,6 +41,7 @@ export function getGoogleConfig() {
     GOOGLE_ANDROID_CLIENT_ID,
     GOOGLE_CLIENT_SECRET,
     GOOGLE_REDIRECT_URI,
+    GOOGLE_ANDROID_REDIRECT_URI,
     GOOGLE_SCOPES,
     GOOGLE_CALENDAR_ID,
     GOOGLE_TIMEZONE,
@@ -67,14 +69,21 @@ function buildOAuthClient({ clientId, redirectUri } = {}) {
 }
 
 export function loadTokens() {
-  try {
-    // 1) ENV (Render free)
-    const envJson = (process.env.GOOGLE_TOKENS_JSON || "").trim();
-    if (envJson) {
-      return JSON.parse(envJson);
+  // 1) ENV (Render free)
+  const envJson = (process.env.GOOGLE_TOKENS_JSON || "").trim();
+  if (envJson) {
+    try {
+      const parsed = JSON.parse(envJson);
+      if (parsed && (parsed.access_token || parsed.refresh_token)) {
+        return parsed;
+      }
+    } catch {
+      // ignore invalid ENV payload and fall back to file
     }
+  }
 
-    // 2) File (local dev)
+  // 2) File (local dev)
+  try {
     if (!fs.existsSync(TOKENS_PATH)) return null;
     return JSON.parse(fs.readFileSync(TOKENS_PATH, "utf-8"));
   } catch {

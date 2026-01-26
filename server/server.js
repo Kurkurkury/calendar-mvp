@@ -370,11 +370,17 @@ app.get("/api/google/status", async (req, res) => {
   }
 });
 
-app.get("/api/google/auth-url", (req, res) => {
-  const isAndroid = req.query.platform === "android";
+function resolveGoogleOAuthParams({ platform, state } = {}) {
   const cfg = getGoogleConfig();
-  const redirectUri = cfg.GOOGLE_REDIRECT_URI;
-  const clientId = cfg.GOOGLE_CLIENT_ID;
+  const isAndroid = platform === "android" || state === "android";
+  const clientId = isAndroid && cfg.GOOGLE_ANDROID_CLIENT_ID ? cfg.GOOGLE_ANDROID_CLIENT_ID : cfg.GOOGLE_CLIENT_ID;
+  const redirectUri =
+    isAndroid && cfg.GOOGLE_ANDROID_REDIRECT_URI ? cfg.GOOGLE_ANDROID_REDIRECT_URI : cfg.GOOGLE_REDIRECT_URI;
+  return { cfg, isAndroid, clientId, redirectUri };
+}
+
+app.get("/api/google/auth-url", (req, res) => {
+  const { isAndroid, redirectUri, clientId } = resolveGoogleOAuthParams({ platform: req.query.platform });
   const state = isAndroid ? "android" : "web";
 
   res.json(getAuthUrl({ redirectUri, state, clientId }));
@@ -391,14 +397,14 @@ app.post("/api/google/disconnect", requireApiKey, (req, res) => {
 });
 
 // Callback: Google redirectet zu GOOGLE_REDIRECT_URI?code=...
-app.get("/api/google/callback", async (req, res) => {
+async function handleGoogleCallback(req, res) {
   try {
     const code = req.query.code ? String(req.query.code) : "";
     const state = req.query.state ? String(req.query.state) : "";
-    const isAndroid = state === "android" || req.query.platform === "android";
-    const cfg = getGoogleConfig();
-    const redirectUri = cfg.GOOGLE_REDIRECT_URI;
-    const clientId = cfg.GOOGLE_CLIENT_ID;
+    const { isAndroid, redirectUri, clientId } = resolveGoogleOAuthParams({
+      platform: req.query.platform,
+      state,
+    });
     const out = await exchangeCodeForTokens(code, redirectUri, clientId);
 
     if (!out.ok) {
@@ -435,7 +441,12 @@ app.get("/api/google/callback", async (req, res) => {
   } catch (e) {
     res.status(500).send(`<h2>❌ Fehler</h2><pre>${escapeHtml(e?.message || "unknown")}</pre>`);
   }
-});
+}
+
+// Callback: Google redirectet zu GOOGLE_REDIRECT_URI?code=...
+app.get("/api/google/callback", handleGoogleCallback);
+// Alias for legacy redirect URIs like /auth/google/callback
+app.get("/auth/google/callback", handleGoogleCallback);
 
 // ---- Create event in Google Calendar (insert) + Spiegelung in db.json ----
 app.post("/api/google/events", requireApiKey, async (req, res) => {
