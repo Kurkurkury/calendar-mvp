@@ -27,10 +27,8 @@ const TOKENS_PATH = path.join(__dirname, "google-tokens.json");
 export function getGoogleConfig() {
   const {
     GOOGLE_CLIENT_ID = "",
-    GOOGLE_ANDROID_CLIENT_ID = "",
     GOOGLE_CLIENT_SECRET = "",
     GOOGLE_REDIRECT_URI = "",
-    GOOGLE_ANDROID_REDIRECT_URI = "",
     GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events",
     GOOGLE_CALENDAR_ID = "primary",
     GOOGLE_TIMEZONE = "Europe/Zurich",
@@ -38,10 +36,8 @@ export function getGoogleConfig() {
 
   return {
     GOOGLE_CLIENT_ID,
-    GOOGLE_ANDROID_CLIENT_ID,
     GOOGLE_CLIENT_SECRET,
     GOOGLE_REDIRECT_URI,
-    GOOGLE_ANDROID_REDIRECT_URI,
     GOOGLE_SCOPES,
     GOOGLE_CALENDAR_ID,
     GOOGLE_TIMEZONE,

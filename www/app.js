@@ -87,6 +87,9 @@ const GCAL_DAYS_FUTURE = 365;
 const GCAL_POLL_MS = 5 * 60 * 1000; // 5 Minuten (Fallback, falls Push-Sync nicht verfuegbar)
 const SYNC_STATUS_POLL_MS = 30 * 1000; // Phase 3 Push-Sync: App fragt Status alle 30s
 const SCROLL_BUFFER_PX = isMobile() ? 220 : 120;
+const DEFAULT_VIEW_START_HOUR = 0;
+const DEFAULT_VIEW_END_HOUR = 24;
+const DEFAULT_SLOT_PX = 48;
 
 let gcalPollTimer = null;
 let nowIndicatorTimer = null;
@@ -181,6 +184,7 @@ const state = {
     : (loadLocal("calendarViewV1", "week") || "week")),
   activeDate: loadDateLocal("calendarActiveDateV1", new Date()),
   weekStart: startOfWeek(new Date()),
+  dayFit: loadLocal("dayFitV1", false),
 
   tasks: [],
   events: [],
@@ -196,7 +200,7 @@ const state = {
   viewStartHour: 0,
   viewEndHour: 24,
   stepMinutes: 30,
-  slotPx: 48,
+  slotPx: DEFAULT_SLOT_PX,
   hasAutoScrolled: false
 };
 
@@ -455,10 +459,10 @@ function updateConnectionStatus() {
       els.googleStatusBadge.textContent = "Google: nicht konfiguriert";
       els.googleStatusBadge.className = "statusBadge warn";
     } else if (connected) {
-      els.googleStatusBadge.textContent = "Connected";
+      els.googleStatusBadge.textContent = "Google: verbunden";
       els.googleStatusBadge.className = "statusBadge ok";
     } else {
-      els.googleStatusBadge.textContent = "Not connected";
+      els.googleStatusBadge.textContent = "Google: nicht verbunden";
       els.googleStatusBadge.className = "statusBadge warn";
     }
   }
@@ -740,10 +744,13 @@ function renderTopBar() {
   els.weekLabel.innerHTML = `
     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
       <div style="font-weight:700;">${escapeHtml(label)}</div>
-      <div style="display:flex; gap:6px; background:rgba(255,255,255,.06); padding:6px; border-radius:12px;">
-        <button data-view="day"   style="${viewBtnStyle(state.view === "day")}">Tag</button>
-        <button data-view="week"  style="${viewBtnStyle(state.view === "week")}">Woche</button>
-        <button data-view="month" style="${viewBtnStyle(state.view === "month")}">Monat</button>
+      <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+        <div style="display:flex; gap:6px; background:rgba(255,255,255,.06); padding:6px; border-radius:12px;">
+          <button data-view="day"   style="${viewBtnStyle(state.view === "day")}">Tag</button>
+          <button data-view="week"  style="${viewBtnStyle(state.view === "week")}">Woche</button>
+          <button data-view="month" style="${viewBtnStyle(state.view === "month")}">Monat</button>
+        </div>
+        <button data-action="toggle-fit" style="${viewBtnStyle(state.dayFit)}">Fit</button>
       </div>
     </div>
   `;
@@ -754,6 +761,15 @@ function renderTopBar() {
       await render();
     });
   });
+
+  const fitBtn = els.weekLabel.querySelector("button[data-action='toggle-fit']");
+  if (fitBtn) {
+    fitBtn.addEventListener("click", async () => {
+      state.dayFit = !state.dayFit;
+      saveLocal("dayFitV1", state.dayFit);
+      await render();
+    });
+  }
 }
 
 function viewBtnStyle(active) {
@@ -773,21 +789,120 @@ function viewBtnStyle(active) {
   return base.join(";");
 }
 
+function getScrollBufferPx() {
+  if (state.view === "day" && state.dayFit && isMobile()) {
+    return 0;
+  }
+  return SCROLL_BUFFER_PX;
+}
+
+function getDayFitRange(day) {
+  const dayStart = startOfDay(day);
+  const dayEnd = addDays(dayStart, 1);
+  const ranges = [];
+
+  function pushRange(startValue, endValue) {
+    const start = new Date(startValue);
+    const end = new Date(endValue);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return;
+    if (end <= dayStart || start >= dayEnd) return;
+    const clampStart = start < dayStart ? dayStart : start;
+    const clampEnd = end > dayEnd ? dayEnd : end;
+    const startMin = (clampStart - dayStart) / 60000;
+    const endMin = (clampEnd - dayStart) / 60000;
+    ranges.push({ startMin, endMin });
+  }
+
+  (state.events || []).forEach((ev) => {
+    if (!ev?.start || !ev?.end) return;
+    pushRange(ev.start, ev.end);
+  });
+
+  (state.tasks || []).forEach((t) => {
+    if (!t?.scheduledStart || !t?.scheduledEnd) return;
+    pushRange(t.scheduledStart, t.scheduledEnd);
+  });
+
+  if (!ranges.length) {
+    return { startMinutes: 8 * 60, endMinutes: 20 * 60 };
+  }
+
+  let earliest = Infinity;
+  let latest = -Infinity;
+  ranges.forEach(({ startMin, endMin }) => {
+    if (startMin < earliest) earliest = startMin;
+    if (endMin > latest) latest = endMin;
+  });
+
+  let startMinutes = Math.max(0, earliest - 60);
+  let endMinutes = Math.min(24 * 60, latest + 60);
+
+  if (endMinutes - startMinutes < 60) {
+    const mid = (startMinutes + endMinutes) / 2;
+    startMinutes = Math.max(0, Math.floor(mid - 30));
+    endMinutes = Math.min(24 * 60, Math.ceil(mid + 30));
+  }
+
+  if (endMinutes <= startMinutes) {
+    return { startMinutes: 8 * 60, endMinutes: 20 * 60 };
+  }
+
+  return { startMinutes, endMinutes };
+}
+
+function applyDayFitSettings(day, isFit) {
+  if (!isFit) {
+    state.viewStartHour = DEFAULT_VIEW_START_HOUR;
+    state.viewEndHour = DEFAULT_VIEW_END_HOUR;
+    state.slotPx = DEFAULT_SLOT_PX;
+    if (els.calBody) els.calBody.style.overflowY = "";
+    return;
+  }
+
+  const { startMinutes, endMinutes } = getDayFitRange(day);
+  const startHour = Math.min(23, Math.max(0, Math.floor(startMinutes / 60)));
+  const endHour = Math.min(24, Math.ceil(endMinutes / 60));
+
+  state.viewStartHour = startHour;
+  state.viewEndHour = endHour > startHour ? endHour : Math.min(24, startHour + 1);
+  if (state.viewEndHour <= state.viewStartHour) {
+    state.viewStartHour = DEFAULT_VIEW_START_HOUR;
+    state.viewEndHour = DEFAULT_VIEW_END_HOUR;
+  }
+
+  const totalSlots = ((state.viewEndHour - state.viewStartHour) * 60) / state.stepMinutes;
+  const availableHeight = Math.max(1, els.calBody?.clientHeight || 0);
+  const nextSlotPx = Math.floor(availableHeight / totalSlots);
+  state.slotPx = Math.max(16, nextSlotPx);
+
+  if (els.calBody) {
+    els.calBody.style.overflowY = "hidden";
+  }
+}
+
 // -------------------- Day / Week / Month renderers --------------------
 function renderDayView() {
+  const d = startOfDay(state.activeDate);
+  const isFit = isMobile() && state.dayFit === true;
+  applyDayFitSettings(d, isFit);
   renderTimeCol();
 
-  const d = startOfDay(state.activeDate);
   currentRenderedDays = [d];
   renderHeadersForDays([d], true);
   renderGridForDays([d]);
   renderNowIndicator([d]);
-  autoScrollToNow([d]);
+  if (!isFit) {
+    autoScrollToNow([d]);
+  }
 
   drawBlocksForRange(d, addDays(d, 1), [d]);
 }
 
 function renderWeekView() {
+  state.viewStartHour = DEFAULT_VIEW_START_HOUR;
+  state.viewEndHour = DEFAULT_VIEW_END_HOUR;
+  state.slotPx = DEFAULT_SLOT_PX;
+  if (els.calBody) els.calBody.style.overflowY = "";
   renderTimeCol();
 
   const days = getWeekDays(state.weekStart);
@@ -802,6 +917,10 @@ function renderWeekView() {
 }
 
 function renderMonthView() {
+  state.viewStartHour = DEFAULT_VIEW_START_HOUR;
+  state.viewEndHour = DEFAULT_VIEW_END_HOUR;
+  state.slotPx = DEFAULT_SLOT_PX;
+  if (els.calBody) els.calBody.style.overflowY = "";
   if (els.timeCol) els.timeCol.innerHTML = "";
   if (els.dayHeaders) els.dayHeaders.innerHTML = "";
   if (!els.grid) return;
@@ -945,7 +1064,7 @@ function renderTimeCol() {
     els.timeCol.appendChild(div);
   });
   const spacer = document.createElement("div");
-  spacer.style.height = `${SCROLL_BUFFER_PX}px`;
+  spacer.style.height = `${getScrollBufferPx()}px`;
   spacer.style.borderBottom = "0";
   els.timeCol.appendChild(spacer);
 }
@@ -957,7 +1076,7 @@ function renderGridForDays(days) {
   const todayKey = dateKey(new Date());
   const totalSlots = timeSlots(state.viewStartHour, state.viewEndHour, state.stepMinutes).length;
   const slotHeightPx = totalSlots * state.slotPx;
-  const gridHeightPx = slotHeightPx + SCROLL_BUFFER_PX;
+  const gridHeightPx = slotHeightPx + getScrollBufferPx();
   els.grid.style.height = `${gridHeightPx}px`;
 
   if (days.length === 1) {
@@ -1025,7 +1144,7 @@ function autoScrollToNow(days) {
 
   const totalSlots = timeSlots(state.viewStartHour, state.viewEndHour, state.stepMinutes).length;
   const slotHeightPx = totalSlots * state.slotPx;
-  const gridHeightPx = slotHeightPx + SCROLL_BUFFER_PX;
+  const gridHeightPx = slotHeightPx + getScrollBufferPx();
   const pxPerMin = state.slotPx / state.stepMinutes;
   const top = minutesFromViewStart(now) * pxPerMin;
   const target = Math.max(0, top - els.calBody.clientHeight / 2);
