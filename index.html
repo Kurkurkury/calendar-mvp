@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Kalender</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="/www/style.css" />
 </head>
 <body>
   <header class="topbar">
@@ -58,7 +58,7 @@
 
       <div class="card">
         <div class="cardTitle">Time Windows</div>
-        <div class="cardSub">vordefinierte Arbeitszeiten (editierbar in app.js)</div>
+        <div class="cardSub">vordefinierte Arbeitszeiten (editierbar in www/app.js)</div>
         <div id="windowsList" class="list small"></div>
       </div>
     </aside>
@@ -163,6 +163,6 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script type="module" src="/www/app.js"></script>
 </body>
 </html>
