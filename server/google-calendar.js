@@ -66,22 +66,28 @@ function buildOAuthClient({ clientId, redirectUri } = {}) {
 
 export function loadTokens() {
   // 1) ENV (Render free)
-  const envJson = (process.env.GOOGLE_TOKENS_JSON || "").trim();
-  if (envJson) {
-    try {
-      const parsed = JSON.parse(envJson);
-      if (parsed && (parsed.access_token || parsed.refresh_token)) {
-        return parsed;
+  try {
+    const envJson = (process.env.GOOGLE_TOKENS_JSON || "").trim();
+    if (envJson) {
+      try {
+        const parsed = JSON.parse(envJson);
+        if (parsed && (parsed.access_token || parsed.refresh_token)) {
+          return parsed;
+        }
+        return null;
+      } catch {
+        return null;
       }
-    } catch {
-      // ignore invalid ENV payload and fall back to file
     }
+  } catch {
+    return null;
   }
 
   // 2) File (local dev)
   try {
     if (!fs.existsSync(TOKENS_PATH)) return null;
-    return JSON.parse(fs.readFileSync(TOKENS_PATH, "utf-8"));
+    const raw = fs.readFileSync(TOKENS_PATH, "utf-8");
+    return JSON.parse(raw);
   } catch {
     return null;
   }

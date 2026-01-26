@@ -630,12 +630,12 @@ app.post("/api/google/events", requireApiKey, async (req, res) => {
 // ❗ bewusst ohne requireApiKey, damit die App im LAN/Emulator ohne Key lesen kann
 // Query: ?daysPast=365&daysFuture=365
 app.get("/api/google/events", async (req, res) => {
+  const tokens = loadTokens?.() || null;
+  if (!tokens) {
+    return res.status(200).json({ ok: true, events: [] });
+  }
+
   try {
-    const status = getGoogleStatus();
-    const tokens = loadTokens?.() || null;
-    if (!tokens || !status?.google?.connected) {
-      return res.json({ ok: true, events: [] });
-    }
     await assertCorrectGoogleAccount();
 
     const daysPast = Number(req.query.daysPast || 365);
@@ -645,20 +645,15 @@ app.get("/api/google/events", async (req, res) => {
     const timeMin = new Date(now.getTime() - daysPast * 24 * 60 * 60 * 1000).toISOString();
     const timeMax = new Date(now.getTime() + daysFuture * 24 * 60 * 60 * 1000).toISOString();
 
-    try {
-      const out = await listGoogleEvents({ timeMin, timeMax });
-      if (!out?.ok) {
-        console.warn(`google events list failed: ${out?.message || "unknown"}`);
-        return res.json({ ok: true, events: [] });
-      }
-      return res.json(out);
-    } catch (err) {
-      console.warn(`google events list error: ${err?.message || String(err)}`);
-      return res.json({ ok: true, events: [] });
+    const out = await listGoogleEvents({ timeMin, timeMax });
+    if (!out?.ok) {
+      console.error("[/api/google/events] error:", out?.message || "unknown");
+      return res.status(200).json({ ok: false, error: "google_events_failed", events: [] });
     }
-  } catch (e) {
-    console.warn(`google events error: ${e?.message || String(e)}`);
-    res.json({ ok: true, events: [] });
+    return res.status(200).json(out);
+  } catch (err) {
+    console.error("[/api/google/events] error:", err);
+    return res.status(200).json({ ok: false, error: "google_events_failed", events: [] });
   }
 });
 
