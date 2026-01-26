@@ -150,7 +150,7 @@ body {
   border: 1px solid var(--line);
   border-radius: var(--r);
   background: rgba(255,255,255,.03);
-  overflow: hidden;
+  overflow: visible;
   display: flex;
   flex-direction: column;
   height: 100%;
