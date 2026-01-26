@@ -350,6 +350,9 @@ app.get("/api/google/status", async (req, res) => {
     const tokens = loadTokens?.() || null;
     const hasTokens = !!tokens;
     const connected = !!base?.google?.connected;
+    if (!hasTokens || !connected) {
+      return res.json({ ok: true, events: [] });
+    }
     const watchState = loadWatchState();
     const now = Date.now();
     let watchActive = false;
@@ -628,6 +631,11 @@ app.post("/api/google/events", requireApiKey, async (req, res) => {
 // Query: ?daysPast=365&daysFuture=365
 app.get("/api/google/events", async (req, res) => {
   try {
+    const status = getGoogleStatus();
+    const tokens = loadTokens?.() || null;
+    if (!tokens || !status?.google?.connected) {
+      return res.json({ ok: true, events: [] });
+    }
     await assertCorrectGoogleAccount();
 
     const daysPast = Number(req.query.daysPast || 365);
@@ -637,12 +645,20 @@ app.get("/api/google/events", async (req, res) => {
     const timeMin = new Date(now.getTime() - daysPast * 24 * 60 * 60 * 1000).toISOString();
     const timeMax = new Date(now.getTime() + daysFuture * 24 * 60 * 60 * 1000).toISOString();
 
-    const out = await listGoogleEvents({ timeMin, timeMax });
-
-    if (!out?.ok) return res.status(400).json(out || { ok: false, message: "list failed" });
-    res.json(out);
+    try {
+      const out = await listGoogleEvents({ timeMin, timeMax });
+      if (!out?.ok) {
+        console.warn(`google events list failed: ${out?.message || "unknown"}`);
+        return res.json({ ok: true, events: [] });
+      }
+      return res.json(out);
+    } catch (err) {
+      console.warn(`google events list error: ${err?.message || String(err)}`);
+      return res.json({ ok: true, events: [] });
+    }
   } catch (e) {
-    res.status(500).json({ ok: false, message: e?.message || "unknown" });
+    console.warn(`google events error: ${e?.message || String(e)}`);
+    res.json({ ok: true, events: [] });
   }
 });
 
@@ -655,6 +671,9 @@ app.get("/api/sync/status", async (req, res) => {
     const st = loadWatchState();
     const cfg = getGoogleConfig();
     const connected = !!(loadTokens?.() || null);
+    if (!connected) {
+      return res.json({ ok: true, events: [] });
+    }
     const webhookUrl = getWebhookUrl() || null;
 
     res.json({
