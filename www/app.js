@@ -777,6 +777,7 @@ async function refreshFromApi() {
     state.tasks = tasksRes.tasks || [];
 
     // Phase 2 Sync: Anzeige basiert ausschließlich auf Google-Events (Single Source of Truth)
+    const fallbackEvents = loadLastKnownGoogleEvents() || (Array.isArray(state.events) ? state.events : []);
     setSyncLoading(true);
     try {
       if (state.google?.connected) {
@@ -785,15 +786,15 @@ async function refreshFromApi() {
           state.events = eventsRes.events;
           saveLastKnownGoogleEvents(state.events);
         } else {
-          state.events = [];
+          state.events = fallbackEvents;
         }
       } else {
         // nicht verbunden -> last-known anzeigen (gleiche Ebene, kein lokaler Parallelkalender)
-        state.events = loadLastKnownGoogleEvents() || [];
+        state.events = fallbackEvents;
       }
     } catch {
       // offline/fehler -> last-known
-      state.events = loadLastKnownGoogleEvents() || [];
+      state.events = fallbackEvents;
     } finally {
       setSyncLoading(false);
     }
