@@ -1,4 +1,5 @@
 import { App } from "@capacitor/app";
+import { Browser } from "@capacitor/browser";
 
 const API_BASE =
   localStorage.getItem("calendar_api_base") ||
@@ -14,11 +15,9 @@ const IS_NATIVE =
 if (IS_NATIVE && App?.addListener) {
   App.addListener("appUrlOpen", ({ url }) => {
     if (url && url.startsWith("calendar-mvp://oauth")) {
-      fetch("/api/google/status")
-        .then((r) => r.json())
-        .then(() => {
-          location.reload();
-        });
+      apiGet("/api/google/status")
+        .then(() => location.reload())
+        .catch(() => location.reload());
     }
   });
 }
@@ -184,7 +183,7 @@ const state = {
     : (loadLocal("calendarViewV1", "week") || "week")),
   activeDate: loadDateLocal("calendarActiveDateV1", new Date()),
   weekStart: startOfWeek(new Date()),
-  dayFit: loadLocal("calendarFitDayV1", loadLocal("dayFitV1", false)),
+  dayFit: loadLocal("calendarFitDayV1", isMobile() ? true : false),
 
   tasks: [],
   events: [],
@@ -521,7 +520,20 @@ async function onGoogleConnect() {
     if (!url) throw new Error('auth-url missing');
 
     // Open OAuth in a new tab/window
-    window.open(url, '_blank', 'noopener,noreferrer');
+    if (IS_NATIVE) {
+      let opened = false;
+      if (Browser?.open) {
+        try {
+          await Browser.open({ url });
+          opened = true;
+        } catch {}
+      }
+      if (!opened) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
 
     uiNotify('success', 'Google Login geöffnet – nach erfolgreichem Login verbindet die App automatisch…');
     setStatus('Google Login geöffnet… warte auf Verbindung…', true);
