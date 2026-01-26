@@ -263,16 +263,23 @@ export async function listGoogleEvents({ timeMin, timeMax, maxTotal = 2500 } = {
 
   return { ok: true, events: out, truncated: false };
 }
-export async function deleteGoogleEvent(eventId) {
-  const auth = await getAuthClient();
-  if (!auth) {
-    throw new Error("Auth liefert keinen Access Token. Bitte neu verbinden.");
+export async function deleteGoogleEvent({ eventId }) {
+  if (!eventId) {
+    throw new Error("eventId fehlt");
+  }
+
+  const cfg = getGoogleConfig();
+  const auth = getAuthedClient();
+
+  const tokenResult = await auth.getAccessToken();
+  if (!tokenResult?.token) {
+    throw new Error("OAuth liefert keinen Access Token. Bitte neu verbinden.");
   }
 
   const calendar = google.calendar({ version: "v3", auth });
   await calendar.events.delete({
     calendarId: cfg.GOOGLE_CALENDAR_ID || "primary",
-    eventId,
+    eventId: String(eventId),
   });
 
   return { ok: true };
