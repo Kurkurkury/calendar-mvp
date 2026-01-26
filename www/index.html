@@ -216,6 +216,54 @@
     </div>
   </div>
 
+  <!-- Edit event modal -->
+  <div id="editEventBackdrop" class="backdrop hidden"></div>
+  <div id="editEventModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modalHead">
+      <div class="modalTitle">Termin bearbeiten</div>
+      <button id="closeEditEventBtn" class="btn ghost">✕</button>
+    </div>
+
+    <div class="modalBody">
+      <label class="field">
+        <span>Titel</span>
+        <input id="editEventTitle" type="text" placeholder="z.B. Projekt-Meeting" />
+      </label>
+
+      <div class="row">
+        <label class="field">
+          <span>Datum</span>
+          <input id="editEventDate" type="date" />
+        </label>
+        <label class="field">
+          <span>Startzeit</span>
+          <input id="editEventStartTime" type="time" />
+        </label>
+      </div>
+
+      <div class="row">
+        <label class="field">
+          <span>Dauer (Min)</span>
+          <input id="editEventDuration" type="number" min="5" step="5" value="60" />
+        </label>
+        <label class="field">
+          <span>Ort (optional)</span>
+          <input id="editEventLocation" type="text" placeholder="z.B. Büro Zürich" />
+        </label>
+      </div>
+
+      <label class="field">
+        <span>Notizen (optional)</span>
+        <textarea id="editEventNotes" rows="3" placeholder="Agenda, Links, Vorbereitung..."></textarea>
+      </label>
+
+      <div class="modalFoot">
+        <button id="cancelEditEventBtn" class="btn ghost" type="button">Abbrechen</button>
+        <button id="saveEditEventBtn" class="btn primary" type="button">Speichern</button>
+      </div>
+    </div>
+  </div>
+
   <script type="module" src="/app.js?v=1"></script>
 </body>
 </html>

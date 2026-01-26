@@ -247,6 +247,7 @@ body {
 .itemTop { display:flex; align-items:center; justify-content: space-between; gap: 8px; }
 .itemTitle { font-weight: 800; font-size: 13px; }
 .itemMeta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.itemActions { display:flex; align-items:center; gap: 6px; flex-wrap: wrap; }
 
 .backdrop {
   position: fixed;

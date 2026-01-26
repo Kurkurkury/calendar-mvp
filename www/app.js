@@ -182,6 +182,7 @@ const state = {
   tasks: [],
   events: [],
   google: { configured: false, connected: false, scopes: "" },
+  editingEvent: null,
 
   windows: loadLocal("windowsV1", [
     { id: "w1", name: "Fokus", days: [1, 2, 3, 4, 5], start: "09:00", end: "12:00", weight: 3 },
@@ -250,6 +251,19 @@ const els = {
   eventText: byId("eventText"),
   createEventBtn: byId("createEventBtn"),
 
+  // Edit event modal
+  editEventBackdrop: byId("editEventBackdrop"),
+  editEventModal: byId("editEventModal"),
+  closeEditEventBtn: byId("closeEditEventBtn"),
+  cancelEditEventBtn: byId("cancelEditEventBtn"),
+  saveEditEventBtn: byId("saveEditEventBtn"),
+  editEventTitle: byId("editEventTitle"),
+  editEventDate: byId("editEventDate"),
+  editEventStartTime: byId("editEventStartTime"),
+  editEventDuration: byId("editEventDuration"),
+  editEventLocation: byId("editEventLocation"),
+  editEventNotes: byId("editEventNotes"),
+
   eventsList: byId("eventsList"),
 };
 
@@ -306,6 +320,12 @@ async function boot() {
       els.createEventBtn?.click();
     }
   });
+
+  // Edit event modal
+  els.closeEditEventBtn?.addEventListener("click", closeEditEventModal);
+  els.cancelEditEventBtn?.addEventListener("click", closeEditEventModal);
+  els.editEventBackdrop?.addEventListener("click", closeEditEventModal);
+  els.saveEditEventBtn?.addEventListener("click", saveEditEvent);
 
   bindGoogleButtons();
   await refreshFromApi();
@@ -980,8 +1000,18 @@ function renderSideLists() {
         title.textContent = ev.title || "Termin";
 
         const actions = document.createElement("div");
+        actions.className = "itemActions";
 
         const deleteId = getGoogleEventId(ev);
+
+        const editBtn = document.createElement("button");
+        editBtn.className = "btn small";
+        editBtn.type = "button";
+        editBtn.textContent = "Bearbeiten";
+        editBtn.disabled = !deleteId;
+        editBtn.addEventListener("click", () => openEditEventModal(ev));
+        actions.appendChild(editBtn);
+
         const delBtn = document.createElement("button");
         delBtn.className = "btn small delete";
         delBtn.type = "button";
@@ -1079,6 +1109,116 @@ function openEventModal() {
 function closeEventModal() {
   els.eventBackdrop?.classList.add("hidden");
   els.eventModal?.classList.add("hidden");
+}
+
+function openEditEventModal(event) {
+  if (!event) return;
+  const eventId = getGoogleEventId(event);
+  if (!eventId) {
+    uiNotify("error", "Kein Google-Event gefunden.");
+    return;
+  }
+
+  state.editingEvent = { ...event, _eventId: eventId };
+
+  const start = event?.start ? new Date(event.start) : null;
+  const end = event?.end ? new Date(event.end) : null;
+  const hasStart = start && !Number.isNaN(start.getTime());
+  const hasEnd = end && !Number.isNaN(end.getTime());
+
+  const durationMin = hasStart && hasEnd
+    ? clamp(Math.round((end - start) / 60000), 5, 24 * 60)
+    : 60;
+
+  if (els.editEventTitle) els.editEventTitle.value = event?.title || event?.summary || "";
+  if (els.editEventDate) els.editEventDate.value = hasStart ? toInputDate(start) : "";
+  if (els.editEventStartTime) els.editEventStartTime.value = hasStart ? toInputTime(start) : "";
+  if (els.editEventDuration) els.editEventDuration.value = String(durationMin);
+  if (els.editEventLocation) els.editEventLocation.value = event?.location || "";
+  if (els.editEventNotes) els.editEventNotes.value = event?.notes || event?.description || "";
+
+  els.editEventBackdrop?.classList.remove("hidden");
+  els.editEventModal?.classList.remove("hidden");
+}
+
+function closeEditEventModal() {
+  state.editingEvent = null;
+  els.editEventBackdrop?.classList.add("hidden");
+  els.editEventModal?.classList.add("hidden");
+}
+
+async function saveEditEvent() {
+  const editing = state.editingEvent;
+  const eventId = editing?._eventId || getGoogleEventId(editing);
+
+  if (!eventId) {
+    uiNotify("error", "Kein Event ausgewählt.");
+    return;
+  }
+
+  const title = (els.editEventTitle?.value || "").trim();
+  const dateStr = els.editEventDate?.value || "";
+  const timeStr = els.editEventStartTime?.value || "";
+  const durationMin = clamp(parseInt(els.editEventDuration?.value || "60", 10), 5, 24 * 60);
+  const location = (els.editEventLocation?.value || "").trim();
+  const notes = (els.editEventNotes?.value || "").trim();
+
+  if (!title || !dateStr || !timeStr || !durationMin) {
+    uiNotify("error", "Bitte Titel, Datum, Startzeit und Dauer ausfüllen.");
+    return;
+  }
+
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const [hour, minute] = timeStr.split(":").map(Number);
+  const startLocal = new Date(year, (month || 1) - 1, day || 1, hour || 0, minute || 0, 0, 0);
+  const endLocal = addMinutes(new Date(startLocal), durationMin);
+
+  const start = toLocalIsoWithOffset(startLocal);
+  const end = toLocalIsoWithOffset(endLocal);
+
+  const btn = els.saveEditEventBtn;
+  const oldText = btn?.textContent || "Speichern";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Speichere…";
+    btn.setAttribute("aria-busy", "true");
+  }
+  uiNotify("info", "Speichere Änderungen…");
+
+  try {
+    await apiPatch(`/api/google/events/${encodeURIComponent(eventId)}`, {
+      title,
+      start,
+      end,
+      location,
+      notes,
+    });
+
+    uiNotify("success", "Gespeichert");
+    closeEditEventModal();
+
+    const eventsRes = await apiGetGoogleEvents(GCAL_DAYS_PAST, GCAL_DAYS_FUTURE);
+    if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
+      state.events = eventsRes.events;
+      saveLastKnownGoogleEvents(state.events);
+    }
+
+    await render();
+  } catch (e) {
+    const status = e?._meta?.status;
+    const msg = String(e?.message || "");
+    if (status === 401 || msg.toLowerCase().includes("google nicht verbunden")) {
+      uiNotify("error", "Google nicht verbunden – bitte verbinden");
+      return;
+    }
+    uiNotify("error", `Fehler beim Speichern: ${msg || "unbekannt"}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText;
+      btn.removeAttribute("aria-busy");
+    }
+  }
 }
 
 function updateQuadrantUI() {
@@ -1508,6 +1648,31 @@ async function apiPost(path, bodyObj) {
   throw makeApiError({ method: 'POST', url, status: res.status, statusText: res.statusText, body });
 }
 
+async function apiPatch(path, bodyObj) {
+  const url = API_BASE_CLEAN + path;
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'PATCH',
+      headers: headers(),
+      body: JSON.stringify(bodyObj || {}),
+    });
+  } catch (e) {
+    const err = new Error(`Netzwerkfehler (PATCH) – Backend nicht erreichbar`);
+    err._meta = { method: 'PATCH', url, cause: e };
+    throw err;
+  }
+
+  const text = await res.text();
+  const body = parseApiBody(text);
+
+  if (res.ok && !(body.kind === 'json' && body.json?.ok === false)) {
+    return body.kind === 'json' ? body.json : {};
+  }
+
+  throw makeApiError({ method: 'PATCH', url, status: res.status, statusText: res.statusText, body });
+}
+
 async function apiDelete(path) {
   const url = API_BASE_CLEAN + path;
   let res;
@@ -1647,6 +1812,8 @@ function pad2(n) { return String(n).padStart(2, "0"); }
 function fmtDate(d) { return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${d.getFullYear()}`; }
 function fmtTime(d) { return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
 function fmtDateTime(d) { return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)} ${fmtTime(d)}`; }
+function toInputDate(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+function toInputTime(d) { return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 function toLocalIsoWithOffset(date) {
   const d = new Date(date);

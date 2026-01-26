@@ -756,6 +756,99 @@ app.get("/*", (req, res) => {
 // ======================
 // DELETE Google Event
 // ======================
+app.patch("/api/google/events/:id", requireApiKey, async (req, res) => {
+  const rawId = String(req.params.id || "").trim();
+  const eventId = rawId.startsWith("gcal_") ? rawId.slice(5) : rawId;
+
+  if (!eventId) {
+    return res.status(400).json({ ok: false, message: "Missing event id" });
+  }
+
+  try {
+    await assertCorrectGoogleAccount();
+
+    const { title, start, end, location = "", notes = "" } = req.body || {};
+    if (!title || !start || !end) {
+      return res.status(400).json({ ok: false, message: "title/start/end required" });
+    }
+
+    const auth = buildAuthedOAuthClient();
+    const tokenResult = await auth.getAccessToken();
+    if (!tokenResult?.token) {
+      throw new Error("OAuth liefert keinen Access Token. Bitte neu verbinden.");
+    }
+
+    const calendar = google.calendar({ version: "v3", auth });
+    const requestBody = {
+      summary: String(title),
+      location: String(location || ""),
+      description: String(notes || ""),
+      start: {
+        dateTime: String(start),
+        timeZone: "Europe/Zurich",
+      },
+      end: {
+        dateTime: String(end),
+        timeZone: "Europe/Zurich",
+      },
+    };
+
+    await calendar.events.patch({
+      calendarId: "primary",
+      eventId: String(eventId),
+      requestBody,
+    });
+
+    console.log(`google patch ok: ${eventId}`);
+
+    try {
+      const db = readDb();
+      let changed = false;
+      db.events = db.events.map((ev) => {
+        if (ev.id === rawId || ev.googleEventId === eventId) {
+          changed = true;
+          return {
+            ...ev,
+            title: String(title),
+            start: String(start),
+            end: String(end),
+            location: String(location || ""),
+            notes: String(notes || ""),
+          };
+        }
+        return ev;
+      });
+      if (changed) writeDb(db);
+    } catch (e) {
+      console.warn(`db.json update failed: ${e?.message || String(e)}`);
+    }
+
+    return res.json({ ok: true, updatedId: eventId });
+  } catch (e) {
+    const msg = String(e?.message || "");
+    const status = e?.code || e?.response?.status;
+
+    if (status === 404 || status === 410) {
+      console.log(`google patch not found: ${eventId} (${status})`);
+      return res.status(404).json({ ok: false, message: "Event nicht gefunden/gelöscht" });
+    }
+
+    const isNotConnected =
+      msg.includes("Nicht verbunden") ||
+      msg.includes("keine Tokens") ||
+      msg.includes("Google nicht verbunden") ||
+      msg.includes("Tokens");
+
+    if (isNotConnected) {
+      console.log(`google patch blocked: ${eventId} (not connected)`);
+      return res.status(401).json({ ok: false, code: "GOOGLE_NOT_CONNECTED", message: "Google nicht verbunden" });
+    }
+
+    console.log(`google patch failed: ${eventId}`);
+    return res.status(500).json({ ok: false, message: "update failed", details: msg });
+  }
+});
+
 app.delete("/api/google/events/:id", requireApiKey, async (req, res) => {
   const rawId = String(req.params.id || "").trim();
   const eventId = rawId.startsWith("gcal_") ? rawId.slice(5) : rawId;
