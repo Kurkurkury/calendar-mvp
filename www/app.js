@@ -4,6 +4,16 @@ const API_BASE =
   localStorage.getItem("calendar_api_base") ||
   "https://calendar-api-v2.onrender.com";
 
+const openExternal = async (url) => {
+  const browser = window.Capacitor?.Plugins?.Browser;
+  if (browser?.open) {
+    try {
+      await browser.open({ url });
+      return true;
+    } catch {}
+  }
+  return !!window.open(url, "_blank", "noopener,noreferrer");
+};
 
 const IS_NATIVE =
   !!window.Capacitor &&
@@ -1992,10 +2002,6 @@ function headers() {
   const h = { "Content-Type": "application/json" };
   if (API_KEY) h["X-Api-Key"] = API_KEY;
   return h;
-}
-
-function debugEnvLine() {
-  return `base=${API_BASE_CLEAN} • raw=${RAW_API_BASE} • isNative=${IS_NATIVE} • hasCapacitor=${!!window.Capacitor} • ua=${navigator.userAgent.slice(0, 60)}…`;
 }
 
 function parseApiBody(text) {

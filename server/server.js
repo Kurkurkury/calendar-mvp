@@ -31,6 +31,12 @@ const app = express();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const IS_PROD = process.env.NODE_ENV === "production";
+const logDebug = (...args) => {
+  if (!IS_PROD) {
+    console.log(...args);
+  }
+};
 
 // ---- Paths ----
 const DB_PATH = path.join(__dirname, "db.json");
@@ -327,7 +333,7 @@ function pickWebDir() {
 const WEB_DIR = pickWebDir();
 if (WEB_DIR) {
   app.use(express.static(WEB_DIR));
-  console.log(`Serving static from: ${WEB_DIR}`);
+  logDebug(`Serving static from: ${WEB_DIR}`);
 } else {
   console.warn("⚠️  No static web dir found (expected ../www or ../public with index.html)");
 }
@@ -410,8 +416,10 @@ function normalizeRedirectUri(raw) {
   }
 }
 
-function getRedirectUriInfo(req) {
+function getRedirectUriInfo(req, { platform } = {}) {
   const envRedirect = (process.env.GOOGLE_REDIRECT_URI || "").trim();
+  const envRedirectWeb = (process.env.GOOGLE_REDIRECT_URI_WEB || "").trim();
+  const envRedirectAndroid = (process.env.GOOGLE_REDIRECT_URI_ANDROID || "").trim();
   const forwardedProto = req?.get?.("x-forwarded-proto") || "";
   const forwardedHost = req?.get?.("x-forwarded-host") || "";
   const hostHeader = req?.get?.("host") || "";
@@ -420,9 +428,17 @@ function getRedirectUriInfo(req) {
   const computedRedirectUri = envRedirect
     ? normalizeRedirectUri(envRedirect)
     : (host ? `${proto}://${host}/api/google/callback` : "");
+  const resolvedWeb = normalizeRedirectUri(envRedirectWeb || envRedirect || computedRedirectUri);
+  const resolvedAndroid = normalizeRedirectUri(envRedirectAndroid || envRedirect || computedRedirectUri);
+  const selectedRedirectUri = platform === "android" ? resolvedAndroid : resolvedWeb;
   return {
     computedRedirectUri,
     envRedirect,
+    envRedirectWeb,
+    envRedirectAndroid,
+    resolvedWeb,
+    resolvedAndroid,
+    selectedRedirectUri,
     headers: {
       "x-forwarded-proto": forwardedProto || null,
       "x-forwarded-host": forwardedHost || null,
@@ -431,25 +447,32 @@ function getRedirectUriInfo(req) {
   };
 }
 
-function getRedirectUri(req) {
-  return getRedirectUriInfo(req).computedRedirectUri;
+function getRedirectUri(req, { platform } = {}) {
+  return getRedirectUriInfo(req, { platform }).selectedRedirectUri;
 }
 
 function resolveGoogleOAuthParams(req, { platform, state } = {}) {
   const cfg = getGoogleConfig();
   const isAndroid = platform === "android" || state === "android";
   const clientId = cfg.GOOGLE_CLIENT_ID;
-  const redirectUri = getRedirectUri(req);
+  const redirectUri = getRedirectUri(req, { platform: isAndroid ? "android" : "web" });
   return { cfg, isAndroid, clientId, redirectUri };
 }
 
 app.get("/api/google/debug-oauth", (req, res) => {
-  const info = getRedirectUriInfo(req);
+  const info = getRedirectUriInfo(req, { platform: req.query.platform });
   res.json({
     computedRedirectUri: info.computedRedirectUri,
+    resolvedRedirectUri: info.selectedRedirectUri,
+    platformRedirects: {
+      web: info.resolvedWeb,
+      android: info.resolvedAndroid,
+    },
     headers: info.headers,
     env: {
       GOOGLE_REDIRECT_URI: info.envRedirect || null,
+      GOOGLE_REDIRECT_URI_WEB: info.envRedirectWeb || null,
+      GOOGLE_REDIRECT_URI_ANDROID: info.envRedirectAndroid || null,
     },
     hint: "This exact URI must be in Google Console Authorized redirect URIs",
   });
@@ -466,7 +489,7 @@ app.get("/api/google/auth-url", (req, res) => {
         "Redirect URI konnte nicht berechnet werden (Host fehlt). Setze GOOGLE_REDIRECT_URI oder sende Host/x-forwarded-host.",
     });
   }
-  console.log(
+  logDebug(
     `[google oauth] auth-url redirectUri=${redirectUri} platform=${platform || "-"} state=${state || "-"}`
   );
 
@@ -498,7 +521,7 @@ async function handleGoogleCallback(req, res) {
         .status(500)
         .send("<h2>❌ Fehler</h2><pre>Redirect URI fehlt (Host-Header nicht vorhanden).</pre>");
     }
-    console.log(
+    logDebug(
       `[google oauth] callback redirectUri=${redirectUri} platform=${platform || "-"} state=${state || "-"}`
     );
     const out = await exchangeCodeForTokens(code, redirectUri, clientId);
@@ -921,7 +944,7 @@ app.patch("/api/google/events/:id", requireApiKey, async (req, res) => {
       requestBody,
     });
 
-    console.log(`google patch ok: ${eventId}`);
+    logDebug(`google patch ok: ${eventId}`);
 
     try {
       const db = readDb();
@@ -951,7 +974,7 @@ app.patch("/api/google/events/:id", requireApiKey, async (req, res) => {
     const status = e?.code || e?.response?.status;
 
     if (status === 404 || status === 410) {
-      console.log(`google patch not found: ${eventId} (${status})`);
+      logDebug(`google patch not found: ${eventId} (${status})`);
       return res.status(404).json({ ok: false, message: "Event nicht gefunden/gelöscht" });
     }
 
@@ -963,11 +986,11 @@ app.patch("/api/google/events/:id", requireApiKey, async (req, res) => {
       msg.includes("Tokens");
 
     if (isNotConnected) {
-      console.log(`google patch blocked: ${eventId} (not connected)`);
+      logDebug(`google patch blocked: ${eventId} (not connected)`);
       return res.status(401).json({ ok: false, error: "GOOGLE_NOT_CONNECTED", message: "Google nicht verbunden" });
     }
 
-    console.log(`google patch failed: ${eventId}`);
+    logDebug(`google patch failed: ${eventId}`);
     return res.status(500).json({ ok: false, message: "update failed", details: msg });
   }
 });
@@ -982,7 +1005,7 @@ app.delete("/api/google/events/:id", requireApiKey, async (req, res) => {
 
   try {
     await deleteGoogleEvent({ eventId });
-    console.log(`google delete ok: ${eventId}`);
+    logDebug(`google delete ok: ${eventId}`);
 
     // Lokale Spiegelung (db.json) bereinigen
     try {
@@ -1000,7 +1023,7 @@ app.delete("/api/google/events/:id", requireApiKey, async (req, res) => {
     const status = e?.code || e?.response?.status;
 
     if (status === 404 || status === 410) {
-      console.log(`google delete already gone: ${eventId} (${status})`);
+      logDebug(`google delete already gone: ${eventId} (${status})`);
       return res.json({ ok: true, deletedId: eventId, eventId, alreadyDeleted: true });
     }
 
@@ -1012,7 +1035,7 @@ app.delete("/api/google/events/:id", requireApiKey, async (req, res) => {
       msg.includes("Tokens");
 
     if (isNotConnected) {
-      console.log(`google delete blocked: ${eventId} (not connected)`);
+      logDebug(`google delete blocked: ${eventId} (not connected)`);
       return res.status(401).json({
         ok: false,
         error: "GOOGLE_NOT_CONNECTED",
@@ -1020,28 +1043,28 @@ app.delete("/api/google/events/:id", requireApiKey, async (req, res) => {
       });
     }
 
-    console.log(`google delete failed: ${eventId}`);
+    logDebug(`google delete failed: ${eventId}`);
     return res.status(500).json({ ok: false, message: "delete failed", details: msg });
   }
 });
 
 app.listen(PORT, "0.0.0.0", () => {
   const cfg = getGoogleConfig();
-  console.log(`calendar-api running on port ${PORT}`);
-  console.log(`google timezone: ${cfg.GOOGLE_TIMEZONE || "Europe/Zurich"}`);
-  if (GOOGLE_ALLOWED_EMAIL) console.log(`google allowed email: ${GOOGLE_ALLOWED_EMAIL}`);
+  logDebug(`calendar-api running on port ${PORT}`);
+  logDebug(`google timezone: ${cfg.GOOGLE_TIMEZONE || "Europe/Zurich"}`);
+  if (GOOGLE_ALLOWED_EMAIL) logDebug(`google allowed email: ${GOOGLE_ALLOWED_EMAIL}`);
 
   // Phase 3 Push-Sync: Watch bei Start erstellen + periodisch erneuern
   (async () => {
     try {
       const out = await ensureGoogleWatch({ reason: "startup" });
       if (out?.ok) {
-        console.log(`google watch ok (${out.reused ? "reused" : "created"})`);
+        logDebug(`google watch ok (${out.reused ? "reused" : "created"})`);
       } else {
-        console.log(`google watch skipped: ${out?.message || "unknown"}`);
+        logDebug(`google watch skipped: ${out?.message || "unknown"}`);
       }
     } catch (e) {
-      console.log(`google watch init failed: ${e?.message || String(e)}`);
+      logDebug(`google watch init failed: ${e?.message || String(e)}`);
     }
   })();
 
@@ -1054,7 +1077,7 @@ app.listen(PORT, "0.0.0.0", () => {
       const needsRenew = !st?.channelId || !st?.resourceId || !exp || exp < now + 6 * 60 * 60 * 1000; // <6h
       if (needsRenew) {
         const out = await ensureGoogleWatch({ reason: "renew" });
-        if (out?.ok) console.log(`google watch renewed`);
+        if (out?.ok) logDebug(`google watch renewed`);
       }
     } catch {
       // ignore
