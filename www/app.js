@@ -1434,11 +1434,27 @@ async function createEventFromForm() {
   uiNotify('info', 'Erstelle Termin…');
 
   try {
-    await apiPost('/api/google/events', { title, start, end, location, notes });
+    const createdRes = await apiPost('/api/google/events', { title, start, end, location, notes });
+    const createdEvent = extractEventFromQuickAddResponse(createdRes, title);
+
+    if (createdEvent) {
+      state.events = Array.isArray(state.events) ? state.events : [];
+      const createdKey = getGoogleEventId(createdEvent) || createdEvent.id;
+      const existingIdx = createdKey
+        ? state.events.findIndex((ev) => (getGoogleEventId(ev) || ev.id) === createdKey)
+        : -1;
+      if (existingIdx >= 0) {
+        state.events[existingIdx] = { ...state.events[existingIdx], ...createdEvent };
+      } else {
+        state.events.unshift(createdEvent);
+      }
+    }
 
     const eventsRes = await apiGetGoogleEvents(GCAL_DAYS_PAST, GCAL_DAYS_FUTURE);
     if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
       state.events = eventsRes.events;
+      saveLastKnownGoogleEvents(state.events);
+    } else if (createdEvent) {
       saveLastKnownGoogleEvents(state.events);
     }
 
@@ -1601,11 +1617,25 @@ function extractEventFromQuickAddResponse(data, fallbackTitle) {
 
   if (!start || !end) return null;
 
+  let googleEventId = ev.googleEventId ? String(ev.googleEventId) : "";
+  if (!googleEventId && typeof ev.id === "string" && ev.id.startsWith("gcal_")) {
+    googleEventId = ev.id.slice(5);
+  }
+  if (!googleEventId && ev.id) {
+    googleEventId = String(ev.id);
+  }
+
+  const rawId = ev.id ? String(ev.id) : "";
+  const id = rawId || (googleEventId ? `gcal_${googleEventId}` : `tmp_${Math.random().toString(16).slice(2)}`);
+
   return {
-    id: ev.id || `tmp_${Math.random().toString(16).slice(2)}`,
+    id,
     title,
     start,
-    end
+    end,
+    location: ev.location || "",
+    notes: ev.notes || ev.description || "",
+    googleEventId: googleEventId || undefined,
   };
 }
 
