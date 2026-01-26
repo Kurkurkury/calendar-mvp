@@ -397,17 +397,32 @@ app.get("/api/google/status", async (req, res) => {
   }
 });
 
-function resolveGoogleOAuthParams({ platform, state } = {}) {
+function getRedirectUri(req) {
+  const envRedirect = (process.env.GOOGLE_REDIRECT_URI || "").trim();
+  if (envRedirect) return envRedirect;
+
+  const protoRaw = req?.get?.("x-forwarded-proto") || "https";
+  const hostRaw = req?.get?.("x-forwarded-host") || req?.get?.("host") || "";
+  const proto = String(protoRaw).split(",")[0].trim() || "https";
+  const host = String(hostRaw).split(",")[0].trim();
+  if (!host) return "";
+  return `${proto}://${host}/api/google/callback`;
+}
+
+function resolveGoogleOAuthParams(req, { platform, state } = {}) {
   const cfg = getGoogleConfig();
   const isAndroid = platform === "android" || state === "android";
   const clientId = cfg.GOOGLE_CLIENT_ID;
-  const redirectUri = cfg.GOOGLE_REDIRECT_URI;
+  const redirectUri = getRedirectUri(req);
   return { cfg, isAndroid, clientId, redirectUri };
 }
 
 app.get("/api/google/auth-url", (req, res) => {
-  const { isAndroid, redirectUri, clientId } = resolveGoogleOAuthParams({ platform: req.query.platform });
+  const { isAndroid, redirectUri, clientId } = resolveGoogleOAuthParams(req, { platform: req.query.platform });
   const state = isAndroid ? "android" : "";
+  if (redirectUri) {
+    console.log(`[google oauth] redirectUri (auth-url): ${redirectUri}`);
+  }
 
   res.json(getAuthUrl({ redirectUri, state, clientId }));
 });
@@ -427,10 +442,13 @@ async function handleGoogleCallback(req, res) {
   try {
     const code = req.query.code ? String(req.query.code) : "";
     const state = req.query.state ? String(req.query.state) : "";
-    const { isAndroid, redirectUri, clientId } = resolveGoogleOAuthParams({
+    const { isAndroid, redirectUri, clientId } = resolveGoogleOAuthParams(req, {
       platform: req.query.platform,
       state,
     });
+    if (redirectUri) {
+      console.log(`[google oauth] redirectUri (callback): ${redirectUri}`);
+    }
     const out = await exchangeCodeForTokens(code, redirectUri, clientId);
 
     if (!out.ok) {
