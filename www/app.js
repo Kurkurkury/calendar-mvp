@@ -14,19 +14,17 @@ if (IS_NATIVE) {
       if (!App?.addListener) return;
 
       App.addListener("appUrlOpen", async ({ url }) => {
-        try {
-          if (url && url.startsWith("calendar-mvp://oauth")) {
-            // Use API base (works both native + web)
-            await fetch(`${API_BASE_CLEAN}/api/google/status`, { credentials: "include" })
-              .then((r) => r.json())
-              .catch(() => null);
-
-            location.reload();
-          }
-        } catch {}
+        if (url && url.startsWith("calendar-mvp://oauth")) {
+          try {
+            await fetch(`${API_BASE_CLEAN}/api/google/status`, {
+              credentials: "include"
+            });
+          } catch {}
+          location.reload();
+        }
       });
     } catch {
-      // In web: ignore (no capacitor module)
+      // ignore in web
     }
   })();
 }
