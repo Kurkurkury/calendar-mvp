@@ -12,6 +12,7 @@
   --r: 18px;
   --r2: 12px;
   --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  --timecol: 72px;
 
   /* Neon-Grün Highlight für "Heute" */
   --today: #39ff14;
@@ -25,6 +26,10 @@ body {
   font-family: var(--font);
   background: var(--bg);
   color: var(--text);
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .topbar {
@@ -39,6 +44,7 @@ body {
   border-bottom: 1px solid var(--line);
   background: rgba(11,12,16,.72);
   backdrop-filter: blur(10px);
+  flex: 0 0 auto;
 }
 
 .left { display:flex; align-items:center; gap: 10px; }
@@ -131,6 +137,8 @@ body {
   grid-template-columns: 1fr 320px;
   gap: 14px;
   padding: 14px;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .calendar {
@@ -138,11 +146,15 @@ body {
   border-radius: var(--r);
   background: rgba(255,255,255,.03);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
 }
 
 .calHead {
   display: grid;
-  grid-template-columns: 72px 1fr;
+  grid-template-columns: var(--timecol) 1fr;
   border-bottom: 1px solid var(--line);
   background: rgba(255,255,255,.02);
 }
@@ -190,11 +202,11 @@ body {
 /* ✅ WICHTIG: Scrollbar für den Tag */
 .calBody {
   display: grid;
-  grid-template-columns: 72px 1fr;
-  height: calc(100vh - 140px);
-  min-height: 520px;
-
-  /* NEU: Scroll statt rauszoomen */
+  grid-template-columns: var(--timecol) 1fr;
+  /* Stabil: kein vh-Offset, Flex-Scroll verhindert Double-Scroll */
+  flex: 1;
+  min-height: 0;
+  height: auto;
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -456,11 +468,14 @@ code{
 
 @media (max-width: 980px) {
   .layout { grid-template-columns: 1fr; }
-  .calBody { height: 70vh; }
 }
 
 /* === MOBILE: NUR 1 TAG === */
 @media (max-width: 768px) {
+  :root {
+    --timecol: 54px;
+  }
+
   .topbar {
     flex-direction: column;
     align-items: stretch;
@@ -523,13 +538,14 @@ code{
   }
 
   .calBody {
-    height: calc(100vh - 220px);
-    min-height: 420px;
+    flex: 1;
+    min-height: 0;
+    height: auto;
   }
 
   .timeColHead,
   .timeCol {
-    width: 54px;
+    width: auto;
   }
 
   .timeLabel {
@@ -569,3 +585,4 @@ code{
     transform: translateX(0);
   }
 }
+/* Kommentar: Flex-Layout mit body+topbar verhindert Overflow/Double-Scroll; timecol-Variable hält Grid und Spaltenbreite synchron. */
