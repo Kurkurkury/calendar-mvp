@@ -214,6 +214,7 @@ body {
 .timeCol {
   border-right: 1px solid var(--line);
   background: rgba(255,255,255,.01);
+  padding-bottom: 140px;
 
   /* NEU: nicht verstecken, der Parent scrollt */
   overflow: visible;
@@ -234,6 +235,7 @@ body {
   position: relative;
   display: grid;
   grid-template-columns: repeat(7, 1fr);
+  padding-bottom: 140px;
 
   /* NEU: Parent scrollt, Grid darf "tall" sein */
   overflow: visible;
@@ -586,3 +588,4 @@ code{
   }
 }
 /* Kommentar: Flex-Layout mit body+topbar verhindert Overflow/Double-Scroll; timecol-Variable hält Grid und Spaltenbreite synchron. */
+/* Scroll-Puffer verbessert Mobile Touch/Lesbarkeit am Tagesende */
