@@ -499,7 +499,17 @@ app.post("/api/google/events", requireApiKey, async (req, res) => {
     db.events.push(ev);
     writeDb(db);
 
-    res.json({ ok: true, googleEvent: out.googleEvent, mirroredEvent: ev });
+    const normalizedEvent = {
+      id: `gcal_${googleId}`,
+      title: String(out.googleEvent?.summary || title || "Termin"),
+      start: String(out.googleEvent?.start?.dateTime || start || ""),
+      end: String(out.googleEvent?.end?.dateTime || end || ""),
+      location: String(out.googleEvent?.location || location || ""),
+      notes: String(out.googleEvent?.description || notes || ""),
+      googleEventId: googleId,
+    };
+
+    res.json({ ok: true, event: normalizedEvent, googleEvent: out.googleEvent, mirroredEvent: ev });
   } catch (e) {
     const msg = String(e?.message || "");
     const isNotConnected =
