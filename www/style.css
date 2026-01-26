@@ -113,6 +113,7 @@ body {
   border-radius: 999px;
   cursor: pointer;
   font-weight: 650;
+  touch-action: manipulation;
 }
 .btn:hover { background: rgba(255,255,255,.07); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
@@ -240,6 +241,28 @@ body {
 
   /* NEU: Parent scrollt, Grid darf "tall" sein */
   overflow: visible;
+}
+
+.appFooter {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px 20px;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+
+.appFooter a {
+  color: var(--text);
+  text-decoration: none;
+  border-bottom: 1px dotted rgba(255,255,255,.35);
+}
+
+.appFooter a:hover {
+  border-bottom-color: rgba(255,255,255,.7);
 }
 
 .col {

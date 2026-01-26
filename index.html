@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Kalender MVP</title>
+  <title>Kalender</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="left">
-      <button id="prevWeekBtn" class="btn ghost" title="Vorherige Woche">←</button>
-      <button id="todayBtn" class="btn ghost">Heute</button>
-      <button id="nextWeekBtn" class="btn ghost" title="Nächste Woche">→</button>
+      <button id="prevWeekBtn" class="btn ghost" title="Vorherige Woche" aria-label="Vorherige Woche">←</button>
+      <button id="todayBtn" class="btn ghost" aria-label="Heute">Heute</button>
+      <button id="nextWeekBtn" class="btn ghost" title="Nächste Woche" aria-label="Nächste Woche">→</button>
       <div class="title">
         <div class="h1">Woche</div>
         <div id="weekLabel" class="sub"></div>
@@ -19,14 +19,14 @@
         <!-- Status + Google Controls -->
         <div id="statusLine" class="sub"></div>
         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px;">
-          <button id="googleConnectBtn" class="btn ghost" type="button">Mit Google verbinden</button>
-          <button id="googleDisconnectBtn" class="btn ghost" type="button">Trennen</button>
+          <button id="googleConnectBtn" class="btn ghost" type="button" aria-label="Mit Google verbinden">Mit Google verbinden</button>
+          <button id="googleDisconnectBtn" class="btn ghost" type="button" aria-label="Google trennen">Trennen</button>
         </div>
       </div>
     </div>
 
     <div class="right">
-      <button id="newBtn" class="btn primary">+ Neu</button>
+      <button id="newBtn" class="btn primary" aria-label="Neu erstellen">+ Neu</button>
     </div>
   </header>
 
@@ -63,6 +63,11 @@
       </div>
     </aside>
   </main>
+
+  <footer class="appFooter" aria-label="Rechtliche Hinweise">
+    <span>Datenschutz:</span>
+    <a href="https://example.com/privacy" target="_blank" rel="noopener noreferrer">Datenschutzerklärung</a>
+  </footer>
 
   <!-- New menu -->
   <div id="menuBackdrop" class="backdrop hidden"></div>

@@ -1,6 +1,6 @@
 {
-  "appId": "com.calendar.mvp",
-  "appName": "Calendar MVP",
+  "appId": "com.kurkurkury.calendar",
+  "appName": "Kalender",
   "webDir": "www",
   "server": {
     "androidScheme": "calendar-mvp"
