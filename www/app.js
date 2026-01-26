@@ -220,7 +220,9 @@ const els = {
   todayBtn: byId("todayBtn"),
   nextWeekBtn: byId("nextWeekBtn"),
 
-  newBtn: byId("newBtn"),
+  btnNew: byId("btnNew"),
+  sidebar: byId("sidebar"),
+  sidebarOverlay: byId("sidebarOverlay"),
 
   // ✅ Google UI (wird dynamisch in die Topbar eingefügt)
   googleConnectBtn: null,
@@ -296,9 +298,16 @@ async function boot() {
   });
 
   // New menu
-  els.newBtn?.addEventListener("click", openMenu);
+  els.btnNew?.addEventListener("click", handleNewButtonClick);
   els.closeMenuBtn?.addEventListener("click", closeMenu);
   els.menuBackdrop?.addEventListener("click", closeMenu);
+
+  els.sidebarOverlay?.addEventListener("click", closeSidebarDrawer);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeSidebarDrawer();
+    }
+  });
 
   els.newMenu?.querySelectorAll(".menuItem").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -335,6 +344,10 @@ async function boot() {
   els.cancelEditEventBtn?.addEventListener("click", closeEditEventModal);
   els.editEventBackdrop?.addEventListener("click", closeEditEventModal);
   els.saveEditEventBtn?.addEventListener("click", saveEditEvent);
+
+  if (isMobile() && state.view !== "day") {
+    setView("day");
+  }
 
   bindGoogleButtons();
   await refreshFromApi();
@@ -541,7 +554,7 @@ async function onGoogleDisconnect() {
 
 // -------------------- Helpers --------------------
 function isMobile() {
-  return window.innerWidth < 768;
+  return window.matchMedia?.("(max-width: 768px)").matches ?? window.innerWidth <= 768;
 }
 
 function setStatus(msg, ok = true) {
@@ -692,6 +705,9 @@ async function render() {
 function setView(nextView) {
   state.view = nextView;
   state.weekStart = startOfWeek(state.activeDate);
+  if (isMobile()) {
+    closeSidebarDrawer();
+  }
 }
 
 function shiftView(dir) {
@@ -1235,12 +1251,42 @@ function renderWindows() {
 
 // -------------------- UI helpers --------------------
 function openMenu() {
+  closeSidebarDrawer();
   els.menuBackdrop?.classList.remove("hidden");
   els.newMenu?.classList.remove("hidden");
 }
 function closeMenu() {
   els.menuBackdrop?.classList.add("hidden");
   els.newMenu?.classList.add("hidden");
+}
+
+function handleNewButtonClick() {
+  if (isMobile()) {
+    toggleSidebarDrawer();
+    return;
+  }
+  openMenu();
+}
+
+function openSidebarDrawer() {
+  if (!isMobile()) return;
+  els.sidebar?.classList.add("open");
+  els.sidebarOverlay?.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+}
+
+function closeSidebarDrawer() {
+  els.sidebar?.classList.remove("open");
+  els.sidebarOverlay?.classList.add("hidden");
+  document.body.style.overflow = "";
+}
+
+function toggleSidebarDrawer() {
+  if (els.sidebar?.classList.contains("open")) {
+    closeSidebarDrawer();
+  } else {
+    openSidebarDrawer();
+  }
 }
 
 function openTaskModal() {
@@ -1274,6 +1320,7 @@ function closeEventModal() {
 
 function openEditEventModal(event) {
   if (!event) return;
+  closeSidebarDrawer();
   const eventId = getGoogleEventId(event);
   if (!eventId) {
     uiNotify("error", "Kein Google-Event gefunden.");
@@ -1526,6 +1573,9 @@ async function createEventFromForm() {
     await render();
     uiNotify('success', 'Termin erstellt');
     resetCreateEventForm();
+    if (isMobile()) {
+      closeSidebarDrawer();
+    }
   } catch (e) {
     const status = e?._meta?.status;
     const msg = String(e?.message || "");
