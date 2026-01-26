@@ -184,7 +184,7 @@ const state = {
     : (loadLocal("calendarViewV1", "week") || "week")),
   activeDate: loadDateLocal("calendarActiveDateV1", new Date()),
   weekStart: startOfWeek(new Date()),
-  dayFit: loadLocal("dayFitV1", false),
+  dayFit: loadLocal("calendarFitDayV1", loadLocal("dayFitV1", false)),
 
   tasks: [],
   events: [],
@@ -535,7 +535,17 @@ async function onGoogleConnect() {
       uiNotify('error', 'Google noch nicht verbunden. Falls du fertig eingeloggt bist: Seite neu laden.');
     }
   } catch (e) {
-    uiNotify('error', 'Google verbinden fehlgeschlagen: ' + (e?.message || String(e)));
+    const message = e?.message || String(e);
+    const status = e?._meta?.status || 0;
+    const lower = String(message).toLowerCase();
+    if (status === 400 && (lower.includes("redirect") || lower.includes("redirect_uri_mismatch"))) {
+      uiNotify(
+        "error",
+        "Google OAuth Redirect URI mismatch. Open /api/google/debug-oauth and add computedRedirectUri to Google Console Authorized redirect URIs."
+      );
+    } else {
+      uiNotify('error', 'Google verbinden fehlgeschlagen: ' + message);
+    }
     console.warn('Google connect error:', e);
   }
 }
@@ -741,6 +751,7 @@ function renderTopBar() {
     label = `${monthName(state.activeDate)} ${state.activeDate.getFullYear()}`;
   }
 
+  const showFitToggle = isMobile();
   els.weekLabel.innerHTML = `
     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
       <div style="font-weight:700;">${escapeHtml(label)}</div>
@@ -750,7 +761,7 @@ function renderTopBar() {
           <button data-view="week"  style="${viewBtnStyle(state.view === "week")}">Woche</button>
           <button data-view="month" style="${viewBtnStyle(state.view === "month")}">Monat</button>
         </div>
-        <button data-action="toggle-fit" style="${viewBtnStyle(state.dayFit)}">Fit</button>
+        ${showFitToggle ? `<button data-action="toggle-fit" style="${viewBtnStyle(state.dayFit)}">Fit</button>` : ""}
       </div>
     </div>
   `;
@@ -766,7 +777,7 @@ function renderTopBar() {
   if (fitBtn) {
     fitBtn.addEventListener("click", async () => {
       state.dayFit = !state.dayFit;
-      saveLocal("dayFitV1", state.dayFit);
+      saveLocal("calendarFitDayV1", state.dayFit);
       await render();
     });
   }
@@ -794,6 +805,12 @@ function getScrollBufferPx() {
     return 0;
   }
   return SCROLL_BUFFER_PX;
+}
+
+function getCalendarAvailableHeight() {
+  const bodyHeight = els.calBody?.clientHeight || 0;
+  const headHeight = document.querySelector(".calHead")?.clientHeight || 0;
+  return Math.max(1, bodyHeight - headHeight);
 }
 
 function getDayFitRange(day) {
@@ -870,10 +887,7 @@ function applyDayFitSettings(day, isFit) {
     state.viewEndHour = DEFAULT_VIEW_END_HOUR;
   }
 
-  const totalSlots = ((state.viewEndHour - state.viewStartHour) * 60) / state.stepMinutes;
-  const availableHeight = Math.max(1, els.calBody?.clientHeight || 0);
-  const nextSlotPx = Math.floor(availableHeight / totalSlots);
-  state.slotPx = Math.max(16, nextSlotPx);
+  state.slotPx = computeSlotPxToFitDay();
 
   if (els.calBody) {
     els.calBody.style.overflowY = "hidden";
@@ -883,9 +897,9 @@ function applyDayFitSettings(day, isFit) {
 function computeSlotPxToFitDay() {
   const totalSlots = ((state.viewEndHour - state.viewStartHour) * 60) / state.stepMinutes;
   if (!totalSlots) return DEFAULT_SLOT_PX;
-  const availableHeight = Math.max(1, (els.calBody?.clientHeight || 0) - 12);
+  const availableHeight = getCalendarAvailableHeight();
   const px = Math.floor(availableHeight / totalSlots);
-  const minPx = 16;
+  const minPx = 20;
   const maxPx = DEFAULT_SLOT_PX;
   return Math.min(maxPx, Math.max(minPx, px));
 }
@@ -895,9 +909,6 @@ function renderDayView() {
   const d = startOfDay(state.activeDate);
   const isFit = isMobile() && state.dayFit === true;
   applyDayFitSettings(d, isFit);
-  if (isMobile()) {
-    state.slotPx = computeSlotPxToFitDay();
-  }
   renderTimeCol();
 
   currentRenderedDays = [d];

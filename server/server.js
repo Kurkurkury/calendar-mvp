@@ -397,16 +397,42 @@ app.get("/api/google/status", async (req, res) => {
   }
 });
 
-function getRedirectUri(req) {
-  const envRedirect = (process.env.GOOGLE_REDIRECT_URI || "").trim();
-  if (envRedirect) return envRedirect;
+function normalizeRedirectUri(raw) {
+  if (!raw) return "";
+  try {
+    const u = new URL(raw);
+    u.pathname = "/api/google/callback";
+    u.search = "";
+    u.hash = "";
+    return u.toString();
+  } catch {
+    return raw;
+  }
+}
 
-  const protoRaw = req?.get?.("x-forwarded-proto") || "https";
-  const hostRaw = req?.get?.("x-forwarded-host") || req?.get?.("host") || "";
-  const proto = String(protoRaw).split(",")[0].trim() || "https";
-  const host = String(hostRaw).split(",")[0].trim();
-  if (!host) return "";
-  return `${proto}://${host}/api/google/callback`;
+function getRedirectUriInfo(req) {
+  const envRedirect = (process.env.GOOGLE_REDIRECT_URI || "").trim();
+  const forwardedProto = req?.get?.("x-forwarded-proto") || "";
+  const forwardedHost = req?.get?.("x-forwarded-host") || "";
+  const hostHeader = req?.get?.("host") || "";
+  const proto = String(forwardedProto || "https").split(",")[0].trim() || "https";
+  const host = String(forwardedHost || hostHeader).split(",")[0].trim();
+  const computedRedirectUri = envRedirect
+    ? normalizeRedirectUri(envRedirect)
+    : (host ? `${proto}://${host}/api/google/callback` : "");
+  return {
+    computedRedirectUri,
+    envRedirect,
+    headers: {
+      "x-forwarded-proto": forwardedProto || null,
+      "x-forwarded-host": forwardedHost || null,
+      host: hostHeader || null,
+    },
+  };
+}
+
+function getRedirectUri(req) {
+  return getRedirectUriInfo(req).computedRedirectUri;
 }
 
 function resolveGoogleOAuthParams(req, { platform, state } = {}) {
@@ -417,12 +443,32 @@ function resolveGoogleOAuthParams(req, { platform, state } = {}) {
   return { cfg, isAndroid, clientId, redirectUri };
 }
 
+app.get("/api/google/debug-oauth", (req, res) => {
+  const info = getRedirectUriInfo(req);
+  res.json({
+    computedRedirectUri: info.computedRedirectUri,
+    headers: info.headers,
+    env: {
+      GOOGLE_REDIRECT_URI: info.envRedirect || null,
+    },
+    hint: "This exact URI must be in Google Console Authorized redirect URIs",
+  });
+});
+
 app.get("/api/google/auth-url", (req, res) => {
   const { isAndroid, redirectUri, clientId } = resolveGoogleOAuthParams(req, { platform: req.query.platform });
   const state = isAndroid ? "android" : "";
-  if (redirectUri) {
-    console.log(`[google oauth] redirectUri (auth-url): ${redirectUri}`);
+  const platform = req.query.platform ? String(req.query.platform) : "";
+  if (!redirectUri) {
+    return res.status(500).json({
+      ok: false,
+      message:
+        "Redirect URI konnte nicht berechnet werden (Host fehlt). Setze GOOGLE_REDIRECT_URI oder sende Host/x-forwarded-host.",
+    });
   }
+  console.log(
+    `[google oauth] auth-url redirectUri=${redirectUri} platform=${platform || "-"} state=${state || "-"}`
+  );
 
   res.json(getAuthUrl({ redirectUri, state, clientId }));
 });
@@ -446,9 +492,15 @@ async function handleGoogleCallback(req, res) {
       platform: req.query.platform,
       state,
     });
-    if (redirectUri) {
-      console.log(`[google oauth] redirectUri (callback): ${redirectUri}`);
+    const platform = req.query.platform ? String(req.query.platform) : "";
+    if (!redirectUri) {
+      return res
+        .status(500)
+        .send("<h2>❌ Fehler</h2><pre>Redirect URI fehlt (Host-Header nicht vorhanden).</pre>");
     }
+    console.log(
+      `[google oauth] callback redirectUri=${redirectUri} platform=${platform || "-"} state=${state || "-"}`
+    );
     const out = await exchangeCodeForTokens(code, redirectUri, clientId);
 
     if (!out.ok) {
