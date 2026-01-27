@@ -91,7 +91,9 @@ const SYNC_STATUS_POLL_MS = 30 * 1000; // Phase 3 Push-Sync: App fragt Status al
 const SCROLL_BUFFER_PX = isMobile() ? 220 : 120;
 const DEFAULT_VIEW_START_HOUR = 8;
 const DEFAULT_VIEW_END_HOUR = 20;
-const DEFAULT_SLOT_PX = 48;
+const DEFAULT_STEP_MINUTES = 30;
+const HOUR_HEIGHT_PX = 48;
+const DEFAULT_SLOT_PX = Math.round(HOUR_HEIGHT_PX * (DEFAULT_STEP_MINUTES / 60));
 const DAY_MODE_STORAGE_KEY = "calendarDayModeV1";
 
 async function openExternal(url) {
@@ -221,7 +223,7 @@ const state = {
 
   viewStartHour: DEFAULT_VIEW_START_HOUR,
   viewEndHour: DEFAULT_VIEW_END_HOUR,
-  stepMinutes: 30,
+  stepMinutes: DEFAULT_STEP_MINUTES,
   slotPx: DEFAULT_SLOT_PX,
   hasAutoScrolled: false,
   isSyncing: false,
@@ -1041,8 +1043,8 @@ function computeSlotPxToFitDay() {
   const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
   const baseHeight = Math.max(availableHeight, viewportHeight || 0);
   const px = Math.floor(baseHeight / totalSlots);
-  const minPx = 18;
-  const maxPx = 48;
+  const minPx = Math.max(12, Math.floor(DEFAULT_SLOT_PX * 0.75));
+  const maxPx = DEFAULT_SLOT_PX;
   return Math.min(maxPx, Math.max(minPx, px));
 }
 
@@ -1273,7 +1275,8 @@ function renderGridForDays(days) {
 
     for (let s = 0; s < totalSlots; s++) {
       const line = document.createElement("div");
-      line.className = "slotLine";
+      const minutesFromStart = s * state.stepMinutes;
+      line.className = minutesFromStart % 60 === 0 ? "slotLine" : "slotLine minor";
       line.style.top = `${s * state.slotPx}px`;
       col.appendChild(line);
     }

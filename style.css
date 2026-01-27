@@ -12,6 +12,9 @@
   --r: 18px;
   --r2: 12px;
   --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  --timecol: 64px;
+  --day-gutter: 1px;
+  --event-inset: 6px;
 
   /* Neon-Grün Highlight für "Heute" */
   --today: #39ff14;
@@ -86,7 +89,7 @@ body {
 
 .calHead {
   display: grid;
-  grid-template-columns: 72px 1fr;
+  grid-template-columns: var(--timecol) 1fr;
   border-bottom: 1px solid var(--line);
   background: rgba(255,255,255,.02);
 }
@@ -96,19 +99,20 @@ body {
 .dayHeaders {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
+  column-gap: var(--day-gutter);
   height: 44px;
   padding-right: var(--calendar-scrollbar, 0px);
+  background: var(--line);
 }
 
 .dayHead {
   padding: 10px 10px 8px;
-  border-right: 1px solid var(--line);
+  background: rgba(255,255,255,.02);
   display: flex;
   flex-direction: column;
   justify-content: center;
   position: relative;
 }
-.dayHead:last-child { border-right: 0; }
 
 .dayHead .dow { font-size: 12px; color: var(--muted); }
 .dayHead .date { font-size: 13px; font-weight: 750; }
@@ -135,7 +139,7 @@ body {
 /* ✅ WICHTIG: Scrollbar für den Tag */
 .calBody {
   display: grid;
-  grid-template-columns: 72px 1fr;
+  grid-template-columns: var(--timecol) 1fr;
   height: calc(100vh - 140px);
   min-height: 520px;
 
@@ -156,19 +160,22 @@ body {
 
 .timeLabel {
   height: 48px;
-  padding: 6px 8px;
+  padding: 2px 8px 0 0;
   font-size: 11px;
   color: var(--muted);
   border-bottom: 1px solid var(--line);
-  display:flex;
-  align-items:flex-start;
-  justify-content:flex-end;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  text-align: right;
 }
 
 .grid {
   position: relative;
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
+  column-gap: var(--day-gutter);
+  background: var(--line);
 
   /* NEU: Parent scrollt, Grid darf "tall" sein */
   overflow: visible;
@@ -197,10 +204,9 @@ body {
 
 .col {
   position: relative;
-  border-right: 1px solid var(--line);
+  background: rgba(255,255,255,.01);
   min-width: 0;
 }
-.col:last-child { border-right: 0; }
 
 /* Heute-Highlight in der Spalte */
 .col.today {
@@ -214,13 +220,16 @@ body {
   height: 1px;
   background: var(--line);
 }
+.slotLine.minor {
+  background: rgba(255,255,255,.05);
+}
 
 .taskBlock {
   position: absolute;
-  left: 8px;
-  right: 8px;
-  border-radius: 12px;
-  padding: 8px 10px;
+  left: var(--event-inset);
+  right: var(--event-inset);
+  border-radius: 10px;
+  padding: 6px 8px;
   background: rgba(91,140,255,.22);
   border: 1px solid rgba(91,140,255,.35);
   box-shadow: 0 10px 30px rgba(0,0,0,.25);
