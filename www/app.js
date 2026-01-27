@@ -508,6 +508,11 @@ function normalizeGoogleStatus(raw) {
     configured: !!g.configured,
     connected: !!g.connected,
     hasTokens: g.hasTokens ?? !!g.connected,
+    authenticated: g.authenticated ?? !!g.connected,
+    hasRefreshToken: g.hasRefreshToken ?? !!g.connected,
+    tokenStorage: g.tokenStorage || null,
+    dbConfigured: typeof g.dbConfigured === "boolean" ? g.dbConfigured : true,
+    expiresAt: g.expiresAt || null,
     watchActive: typeof g.watchActive === "boolean" ? g.watchActive : false,
     reason: g.reason || "",
     scopes: g.scopes || "",
@@ -558,11 +563,16 @@ function updateConnectionStatus() {
   }
 
   if (els.reconnectHint) {
+    let hint = "";
     if (!connected) {
-      els.reconnectHint.textContent = "Bitte Google verbinden, um Events zu erstellen und Live-Sync zu aktivieren.";
-    } else {
-      els.reconnectHint.textContent = "";
+      hint = "Bitte Google verbinden, um Events zu erstellen und Live-Sync zu aktivieren.";
     }
+    if (g.dbConfigured === false) {
+      const warning =
+        "⚠️ Tokens werden nur lokal gespeichert. Nach Deploy/Restart musst du dich erneut verbinden.";
+      hint = hint ? `${hint} ${warning}` : warning;
+    }
+    els.reconnectHint.textContent = hint;
   }
 
   if (els.googleStatusBadge) {

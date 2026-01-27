@@ -34,6 +34,14 @@ function getPool() {
   return pool;
 }
 
+export function getTokenStorageInfo() {
+  const dbConfigured = !!DATABASE_URL;
+  return {
+    dbConfigured,
+    tokenStorage: dbConfigured ? "db" : "file",
+  };
+}
+
 async function ensureTable() {
   const client = getPool();
   if (!client) return;

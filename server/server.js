@@ -27,6 +27,7 @@ import {
   loadTokens,
   clearTokens,
   saveTokens,
+  getTokenStorageInfo,
 } from "./google-calendar.js";
 
 const app = express();
@@ -351,6 +352,7 @@ app.get("/api/google/status", async (req, res) => {
     const base = await getGoogleStatus();
     const tokens = (await loadTokens?.()) || null;
     const hasRefresh = !!tokens?.refresh_token;
+    const storageInfo = getTokenStorageInfo();
 
     // base.google.connected basiert auf refresh_token; wir normalisieren trotzdem
     const connected = !!(base?.google?.connected && hasRefresh);
@@ -396,7 +398,11 @@ app.get("/api/google/status", async (req, res) => {
         ...base.google,
         connected,
         authenticated: hasRefresh,
+        hasRefreshToken: hasRefresh,
         hasTokens: !!tokens,
+        tokenStorage: storageInfo.tokenStorage,
+        dbConfigured: storageInfo.dbConfigured,
+        expiresAt: tokens?.expiry_date || null,
         expiry_date: tokens?.expiry_date || null,
         watchActive,
         reason: watchActive ? "" : watchReason,
@@ -410,6 +416,25 @@ app.get("/api/google/status", async (req, res) => {
     res.status(500).json({ ok: false, message: "status failed", details: e?.message || String(e) });
   }
 });
+
+if (!IS_PROD) {
+  app.get("/api/google/debug/storage", async (req, res) => {
+    try {
+      const tokens = (await loadTokens?.()) || null;
+      const storageInfo = getTokenStorageInfo();
+      res.json({
+        ok: true,
+        tokenStorage: storageInfo.tokenStorage,
+        dbConfigured: storageInfo.dbConfigured,
+        hasTokens: !!tokens,
+        hasRefreshToken: !!tokens?.refresh_token,
+        expiresAt: tokens?.expiry_date || null,
+      });
+    } catch (e) {
+      res.status(500).json({ ok: false, message: "debug storage failed", details: e?.message || String(e) });
+    }
+  });
+}
 
 function normalizeRedirectUri(raw) {
   if (!raw) return "";

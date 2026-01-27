@@ -352,6 +352,10 @@ body {
   user-select: none;
   touch-action: none;
 }
+.eventBlock,
+.eventBlock * {
+  cursor: inherit !important;
+}
 .eventBlock.selected {
   border-color: rgba(91, 140, 255, 0.95);
   box-shadow: 0 0 0 2px rgba(91, 140, 255, 0.35), 0 12px 30px rgba(0,0,0,.35);

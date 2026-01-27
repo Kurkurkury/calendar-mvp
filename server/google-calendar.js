@@ -2,9 +2,9 @@
 // Google Calendar OAuth + Create Event
 // Tokens werden persistent gespeichert (DB oder Datei-Fallback).
 import { google } from "googleapis";
-import { clearTokens, loadTokens, saveTokens } from "./token-store.js";
+import { clearTokens, loadTokens, saveTokens, getTokenStorageInfo } from "./token-store.js";
 
-export { clearTokens, loadTokens, saveTokens };
+export { clearTokens, loadTokens, saveTokens, getTokenStorageInfo };
 
 export function getGoogleConfig() {
   const {
@@ -137,6 +137,8 @@ async function getAuthedClient() {
     })();
   });
 
+  await ensureFreshTokens(oauth2, tokens);
+
   try {
     const tokenResult = await oauth2.getAccessToken();
     if (!tokenResult?.token) {
@@ -151,6 +153,24 @@ async function getAuthedClient() {
   }
 
   return oauth2;
+}
+
+async function ensureFreshTokens(oauth2, tokens) {
+  const expiry = tokens?.expiry_date ? Number(tokens.expiry_date) : null;
+  const now = Date.now();
+  const needsRefresh = !tokens?.access_token || !expiry || expiry <= now;
+
+  if (!needsRefresh) return;
+
+  const tokenResult = await oauth2.getAccessToken();
+  const updated = oauth2.credentials || {};
+  const merged = { ...tokens, ...updated };
+
+  if (!tokenResult?.token && !merged?.access_token) {
+    throw new Error("OAuth liefert keinen Access Token. Bitte neu verbinden.");
+  }
+
+  await saveTokens(merged);
 }
 
 export async function createGoogleEvent({ title, start, end, location = "", notes = "" }) {
