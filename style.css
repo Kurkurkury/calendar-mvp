@@ -95,8 +95,9 @@ body {
 
 .dayHeaders {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   height: 44px;
+  padding-right: var(--calendar-scrollbar, 0px);
 }
 
 .dayHead {
@@ -142,6 +143,7 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
 }
 
 .timeCol {
@@ -166,7 +168,7 @@ body {
 .grid {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
 
   /* NEU: Parent scrollt, Grid darf "tall" sein */
   overflow: visible;
@@ -196,6 +198,7 @@ body {
 .col {
   position: relative;
   border-right: 1px solid var(--line);
+  min-width: 0;
 }
 .col:last-child { border-right: 0; }
 

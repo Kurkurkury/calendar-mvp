@@ -426,6 +426,9 @@ async function boot() {
 
   bindGoogleButtons();
   bindViewportResize();
+  window.addEventListener("resize", () => {
+    requestAnimationFrame(updateCalendarScrollbarGutter);
+  });
   await refreshFromApi();
   startGooglePollingOnce();
   await render();
@@ -907,6 +910,8 @@ async function render() {
   if (els.statusLine?.textContent?.includes("API verbunden")) {
     setStatus(`API: verbunden ✅ (${API_BASE}) • ${googleUiStatusLine()}`, !state.google?.wrongAccount);
   }
+
+  requestAnimationFrame(updateCalendarScrollbarGutter);
 }
 
 // -------------------- View handling --------------------
@@ -1212,6 +1217,12 @@ function renderHeadersForDays(days, singleDay = false, todayKey = dateKey(new Da
   } else {
     els.dayHeaders.style.gridTemplateColumns = "";
   }
+}
+
+function updateCalendarScrollbarGutter() {
+  if (!els.calBody) return;
+  const scrollbarWidth = Math.max(0, els.calBody.offsetWidth - els.calBody.clientWidth);
+  document.documentElement.style.setProperty("--calendar-scrollbar", `${scrollbarWidth}px`);
 }
 
 function renderTimeCol() {
