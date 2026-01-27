@@ -1370,7 +1370,6 @@ function renderNowIndicator(days) {
     const line = document.createElement("div");
     line.className = "nowLine";
     line.style.top = `${top}px`;
-    line.innerHTML = `<span>Jetzt</span>`;
     col.appendChild(line);
   });
 
@@ -1477,24 +1476,11 @@ function drawEventBlock(ev, daysArray, rangeStart) {
     div.classList.add("selected");
   }
   const title = ev.title || ev.summary || "Termin";
-  const secondary = getEventSecondaryLine(ev);
   div.innerHTML = `
     <div class="t">${escapeHtml(title)}</div>
-    ${secondary ? `<div class="m">${escapeHtml(secondary)}</div>` : ""}
   `;
   attachEventBlockHandlers(div, ev, dayIdx);
   col.appendChild(div);
-}
-
-function getEventSecondaryLine(ev) {
-  const location = (ev?.location || "").trim();
-  const notes = (ev?.notes || ev?.description || "").trim();
-  const parts = [];
-  if (location) parts.push(location);
-  if (notes && notes !== location) parts.push(notes);
-  const combined = parts.join(" • ");
-  if (!combined) return "";
-  return combined.length <= 40 ? combined : "";
 }
 
 function attachEventBlockHandlers(div, ev, dayIdx) {
@@ -1609,10 +1595,8 @@ function onEventDragMove(event) {
     drag.hasDragged = true;
     const ghost = document.createElement("div");
     ghost.className = "eventGhost";
-    const secondary = getEventSecondaryLine(drag.ev);
     ghost.innerHTML = `
       <div class="t">${escapeHtml(drag.ev.title || "Termin")}</div>
-      ${secondary ? `<div class="m">${escapeHtml(secondary)}</div>` : ""}
     `;
     els.grid.appendChild(ghost);
     drag.ghost = ghost;
@@ -2067,11 +2051,8 @@ function renderEventDetailModal(event) {
   if (els.eventDetailDuration) {
     els.eventDetailDuration.textContent = durationMin ? formatDurationMinutes(durationMin) : "-";
   }
-  if (els.eventDetailNotesRow) {
-    els.eventDetailNotesRow.classList.toggle("hidden", !notes);
-  }
   if (els.eventDetailNotes) {
-    els.eventDetailNotes.textContent = notes;
+    els.eventDetailNotes.value = notes;
   }
   const eventId = getGoogleEventId(event);
   if (els.eventDetailDeleteBtn) {

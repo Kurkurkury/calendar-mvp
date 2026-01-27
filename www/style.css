@@ -165,6 +165,9 @@ body {
   grid-template-columns: var(--timecol) 1fr;
   border-bottom: 1px solid var(--line);
   background: rgba(255,255,255,.02);
+  position: sticky;
+  top: 0;
+  z-index: 4;
 }
 
 .timeColHead { height: 44px; border-right: 1px solid var(--line); }
@@ -313,17 +316,6 @@ body {
   box-shadow: 0 0 12px rgba(255, 91, 110, 0.45);
   z-index: 3;
 }
-.nowLine span {
-  position: absolute;
-  left: 8px;
-  top: -10px;
-  padding: 2px 6px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 800;
-  color: #fff;
-  background: rgba(255, 91, 110, 0.9);
-}
 
 .taskBlock {
   position: absolute;
@@ -383,6 +375,46 @@ body {
 .eventDetails {
   margin-top: 8px;
   gap: 6px;
+}
+.eventDetailGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.detailColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.detailItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.detailItemSmall .detailValue {
+  font-size: 12px;
+  color: rgba(231,231,234,.7);
+}
+.detailNotesBlock {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.detailNotesBlock textarea {
+  min-height: 120px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,.03);
+  color: var(--text);
+  outline: none;
+  resize: vertical;
+  font-family: var(--font);
+}
+.detailNotesBlock textarea:focus {
+  border-color: rgba(91,140,255,.55);
 }
 .detailRow {
   display: grid;
