@@ -12,7 +12,9 @@
   --r: 18px;
   --r2: 12px;
   --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
-  --timecol: 72px;
+  --timecol: 64px;
+  --day-gutter: 1px;
+  --event-inset: 6px;
 
   /* Neon-Grün Highlight für "Heute" */
   --today: #39ff14;
@@ -169,18 +171,20 @@ body {
 .dayHeaders {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
+  column-gap: var(--day-gutter);
   height: 44px;
+  padding-right: var(--calendar-scrollbar, 0px);
+  background: var(--line);
 }
 
 .dayHead {
   padding: 10px 10px 8px;
-  border-right: 1px solid var(--line);
+  background: rgba(255,255,255,.02);
   display: flex;
   flex-direction: column;
   justify-content: center;
   position: relative;
 }
-.dayHead:last-child { border-right: 0; }
 
 .dayHead .dow { font-size: 12px; color: var(--muted); }
 .dayHead .date { font-size: 13px; font-weight: 750; }
@@ -228,19 +232,22 @@ body {
 
 .timeLabel {
   height: 48px;
-  padding: 6px 8px;
+  padding: 2px 8px 0 0;
   font-size: 11px;
   color: var(--muted);
   border-bottom: 1px solid var(--line);
-  display:flex;
-  align-items:flex-start;
-  justify-content:flex-end;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  text-align: right;
 }
 
 .grid {
   position: relative;
   display: grid;
   grid-template-columns: repeat(7, 1fr);
+  column-gap: var(--day-gutter);
+  background: var(--line);
   padding-bottom: 140px;
 
   /* NEU: Parent scrollt, Grid darf "tall" sein */
@@ -271,9 +278,8 @@ body {
 
 .col {
   position: relative;
-  border-right: 1px solid var(--line);
+  background: rgba(255,255,255,.01);
 }
-.col:last-child { border-right: 0; }
 
 /* Heute-Highlight in der Spalte */
 .col.today {
@@ -286,6 +292,9 @@ body {
   left: 0; right: 0;
   height: 1px;
   background: var(--line);
+}
+.slotLine.minor {
+  background: rgba(255,255,255,.05);
 }
 
 .nowLine {
@@ -311,10 +320,10 @@ body {
 
 .taskBlock {
   position: absolute;
-  left: 8px;
-  right: 8px;
-  border-radius: 12px;
-  padding: 8px 10px;
+  left: var(--event-inset);
+  right: var(--event-inset);
+  border-radius: 10px;
+  padding: 6px 8px;
   background: rgba(91,140,255,.22);
   border: 1px solid rgba(91,140,255,.35);
   box-shadow: 0 10px 30px rgba(0,0,0,.25);
@@ -475,13 +484,6 @@ body {
 .toggle { display:flex; gap: 10px; align-items:center; border: 1px solid var(--line); padding: 10px; border-radius: 12px; background: rgba(255,255,255,.02); }
 .toggle input { transform: scale(1.15); }
 .toggle.big { padding: 12px; }
-
-.consentNote {
-  margin-top: 6px;
-  font-size: 11px;
-  color: var(--muted);
-  line-height: 1.35;
-}
 
 .appFooter {
   padding: 10px 16px 16px;
