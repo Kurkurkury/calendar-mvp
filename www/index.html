@@ -62,6 +62,36 @@
     </section>
 
     <aside id="sidebar" class="side sidebar" aria-label="Seitenleiste">
+      <div id="selectedEventCard" class="card hidden">
+        <div class="cardTitle">Ausgewählter Termin</div>
+        <div id="selectedEventMeta" class="cardSub"></div>
+        <div class="list eventDetails">
+          <div class="detailRow">
+            <div class="detailLabel">Titel</div>
+            <div id="selectedEventTitle" class="detailValue"></div>
+          </div>
+          <div class="detailRow">
+            <div class="detailLabel">Datum</div>
+            <div id="selectedEventDate" class="detailValue"></div>
+          </div>
+          <div class="detailRow">
+            <div class="detailLabel">Start</div>
+            <div id="selectedEventTime" class="detailValue"></div>
+          </div>
+          <div class="detailRow">
+            <div class="detailLabel">Dauer</div>
+            <div id="selectedEventDuration" class="detailValue"></div>
+          </div>
+          <div id="selectedEventNotesRow" class="detailRow">
+            <div class="detailLabel">Notiz</div>
+            <div id="selectedEventNotes" class="detailValue detailNotes"></div>
+          </div>
+        </div>
+        <div class="modalFoot">
+          <button id="selectedEventDeleteBtn" class="btn delete" type="button">Löschen</button>
+        </div>
+      </div>
+
       <div class="card">
         <div class="cardTitle">Neuer Termin</div>
         <div class="cardSub">Google muss verbunden sein, damit der Termin erstellt wird.</div>

@@ -214,6 +214,8 @@ const state = {
   events: [],
   google: { configured: false, connected: false, hasTokens: false, watchActive: false, reason: "", scopes: "" },
   editingEvent: null,
+  selectedEventId: null,
+  selectedEventData: null,
 
   windows: loadLocal("windowsV1", [
     { id: "w1", name: "Fokus", days: [1, 2, 3, 4, 5], start: "09:00", end: "12:00", weight: 3 },
@@ -309,6 +311,16 @@ const els = {
   editEventNotes: byId("editEventNotes"),
 
   eventsList: byId("eventsList"),
+
+  selectedEventCard: byId("selectedEventCard"),
+  selectedEventMeta: byId("selectedEventMeta"),
+  selectedEventTitle: byId("selectedEventTitle"),
+  selectedEventDate: byId("selectedEventDate"),
+  selectedEventTime: byId("selectedEventTime"),
+  selectedEventDuration: byId("selectedEventDuration"),
+  selectedEventNotesRow: byId("selectedEventNotesRow"),
+  selectedEventNotes: byId("selectedEventNotes"),
+  selectedEventDeleteBtn: byId("selectedEventDeleteBtn"),
 };
 
 function warnDuplicateIds(ids) {
@@ -348,6 +360,8 @@ function bindViewportResize() {
 }
 
 const deletingEvents = new Set();
+let activeEventDrag = null;
+let pendingUndoToast = null;
 
 boot();
 
@@ -421,6 +435,18 @@ async function boot() {
   els.cancelEditEventBtn?.addEventListener("click", closeEditEventModal);
   els.editEventBackdrop?.addEventListener("click", closeEditEventModal);
   els.saveEditEventBtn?.addEventListener("click", saveEditEvent);
+
+  els.selectedEventDeleteBtn?.addEventListener("click", async () => {
+    const ev = getSelectedEvent();
+    if (!ev) return;
+    await deleteEvent(ev);
+  });
+
+  els.grid?.addEventListener("click", (event) => {
+    if (event.target.closest(".eventBlock")) return;
+    if (event.target.closest(".taskBlock")) return;
+    clearSelectedEvent();
+  });
 
   if (isMobile() && state.view !== "day") {
     setView("day");
@@ -905,6 +931,10 @@ async function render() {
   renderSideLists();
   renderWindows();
   saveLocal("windowsV1", state.windows);
+
+  syncSelectedEvent();
+  renderSelectedEventDetails();
+  updateEventSelectionStyles();
 
   updateGoogleButtons();
   updateConnectionStatus();
@@ -1400,17 +1430,41 @@ function drawEventBlock(ev, daysArray, rangeStart) {
   const height = Math.max(28, (yEndMin - yStartMin) * pxPerMin);
 
   const div = document.createElement("div");
-  div.className = "taskBlock";
+  div.className = "eventBlock";
   div.style.top = `${top + 2}px`;
   div.style.height = `${height - 4}px`;
-  div.style.background = "rgba(62,226,143,.18)";
-  div.style.border = "1px solid rgba(62,226,143,.35)";
-
+  const eventId = getGoogleEventId(ev) || ev.id;
+  if (eventId) {
+    div.dataset.eventId = eventId;
+  }
+  if (state.selectedEventId && eventId === state.selectedEventId) {
+    div.classList.add("selected");
+  }
+  const title = ev.title || ev.summary || "Termin";
   div.innerHTML = `
-    <div class="t">${escapeHtml(ev.title)}</div>
+    <div class="t">${escapeHtml(title)}</div>
     <div class="m">${fmtTime(start)}–${fmtTime(end)} • Event</div>
   `;
+  attachEventBlockHandlers(div, ev, dayIdx);
   col.appendChild(div);
+}
+
+function attachEventBlockHandlers(div, ev, dayIdx) {
+  div.addEventListener("click", (event) => {
+    event.stopPropagation();
+    selectEvent(ev);
+  });
+
+  div.addEventListener("pointerdown", (event) => {
+    startEventDrag(event, ev, dayIdx, div);
+  });
+
+  div.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    selectEvent(ev);
+    void deleteEvent(ev);
+  });
 }
 
 function indexWithinRenderedDays(date, daysArray, rangeStart) {
@@ -1420,11 +1474,211 @@ function indexWithinRenderedDays(date, daysArray, rangeStart) {
   return idx >= 0 ? idx : dayIndexMon0(date);
 }
 
+function startEventDrag(event, ev, dayIdx, block) {
+  if (event.button !== 0) return;
+  const eventId = getGoogleEventId(ev) || ev.id;
+  if (!eventId) return;
+  if (!els.grid) return;
+  if (activeEventDrag) return;
+
+  const start = new Date(ev.start);
+  const end = new Date(ev.end);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  selectEvent(ev);
+
+  const durationMin = Math.max(state.stepMinutes, Math.round((end - start) / 60000));
+  const pxPerMin = state.slotPx / state.stepMinutes;
+  const startTop = minutesFromViewStart(start) * pxPerMin;
+
+  const gridRect = els.grid.getBoundingClientRect();
+  const daysCount = Math.max(1, currentRenderedDays.length || 1);
+  const colWidth = gridRect.width / daysCount;
+
+  activeEventDrag = {
+    eventId,
+    ev,
+    block,
+    start,
+    end,
+    durationMin,
+    startTop,
+    startDayIdx: dayIdx,
+    originClientX: event.clientX,
+    originClientY: event.clientY,
+    daysCount,
+    gridRect,
+    colWidth,
+    hasDragged: false,
+    previewDayIdx: dayIdx,
+    previewMinutes: minutesFromViewStart(start),
+    ghost: null,
+  };
+
+  window.addEventListener("pointermove", onEventDragMove);
+  window.addEventListener("pointerup", onEventDragEnd);
+  window.addEventListener("pointercancel", onEventDragEnd);
+}
+
+function onEventDragMove(event) {
+  if (!activeEventDrag || !els.grid) return;
+
+  const drag = activeEventDrag;
+  const deltaY = event.clientY - drag.originClientY;
+  const deltaX = event.clientX - drag.originClientX;
+  const distance = Math.hypot(deltaX, deltaY);
+
+  const pxPerMin = state.slotPx / state.stepMinutes;
+  const gridRect = els.grid.getBoundingClientRect();
+  const daysCount = Math.max(1, currentRenderedDays.length || 1);
+  const colWidth = gridRect.width / daysCount;
+  const inset = getEventInsetPx();
+
+  const rawTop = drag.startTop + deltaY;
+  const rawMinutes = rawTop / pxPerMin;
+  const snappedMinutes = Math.round(rawMinutes / state.stepMinutes) * state.stepMinutes;
+  const maxMinutes = Math.max(0, (state.viewEndHour - state.viewStartHour) * 60 - drag.durationMin);
+  const clampedMinutes = clamp(snappedMinutes, 0, maxMinutes);
+
+  let nextDayIdx = drag.startDayIdx;
+  if (daysCount > 1) {
+    const relativeX = event.clientX - gridRect.left;
+    nextDayIdx = clamp(Math.floor(relativeX / colWidth), 0, daysCount - 1);
+  }
+
+  drag.previewMinutes = clampedMinutes;
+  drag.previewDayIdx = nextDayIdx;
+
+  if (!drag.hasDragged && distance > 4) {
+    drag.hasDragged = true;
+    const ghost = document.createElement("div");
+    ghost.className = "eventGhost";
+    ghost.innerHTML = `
+      <div class="t">${escapeHtml(drag.ev.title || "Termin")}</div>
+      <div class="m"></div>
+    `;
+    els.grid.appendChild(ghost);
+    drag.ghost = ghost;
+    drag.block.classList.add("dragging");
+  }
+
+  if (!drag.hasDragged || !drag.ghost) return;
+
+  const top = clampedMinutes * pxPerMin;
+  const height = Math.max(28, drag.durationMin * pxPerMin);
+  const left = nextDayIdx * colWidth + inset;
+  const width = Math.max(32, colWidth - inset * 2);
+
+  drag.ghost.style.top = `${top + 2}px`;
+  drag.ghost.style.left = `${left}px`;
+  drag.ghost.style.width = `${width}px`;
+  drag.ghost.style.height = `${height - 4}px`;
+
+  const previewStart = minutesToDate(currentRenderedDays[nextDayIdx], clampedMinutes);
+  const previewEnd = addMinutes(new Date(previewStart), drag.durationMin);
+  const meta = drag.ghost.querySelector(".m");
+  if (meta) {
+    meta.textContent = `${fmtTime(previewStart)}–${fmtTime(previewEnd)} • Drag`;
+  }
+}
+
+function onEventDragEnd() {
+  if (!activeEventDrag) return;
+  const drag = activeEventDrag;
+
+  window.removeEventListener("pointermove", onEventDragMove);
+  window.removeEventListener("pointerup", onEventDragEnd);
+  window.removeEventListener("pointercancel", onEventDragEnd);
+
+  if (drag.ghost) drag.ghost.remove();
+  drag.block?.classList.remove("dragging");
+
+  activeEventDrag = null;
+
+  if (!drag.hasDragged) return;
+
+  const targetDay = currentRenderedDays[drag.previewDayIdx] || state.activeDate;
+  const newStart = minutesToDate(targetDay, drag.previewMinutes);
+  const newEnd = addMinutes(new Date(newStart), drag.durationMin);
+
+  const originalStart = new Date(drag.ev.start);
+  const originalKey = dateKey(originalStart);
+  const nextKey = dateKey(newStart);
+  const timeChanged = originalStart.getTime() !== newStart.getTime() || originalKey !== nextKey;
+
+  if (timeChanged) {
+    void persistEventMove(drag.ev, newStart, newEnd);
+  }
+}
+
+function minutesToDate(dayDate, minutesFromViewStart) {
+  const d = new Date(dayDate);
+  d.setHours(state.viewStartHour, 0, 0, 0);
+  return addMinutes(d, minutesFromViewStart);
+}
+
+function getEventInsetPx() {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--event-inset");
+  const parsed = parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : 6;
+}
+
 function getGoogleEventId(ev) {
   if (!ev) return "";
   if (ev.googleEventId) return String(ev.googleEventId);
   if (typeof ev.id === "string" && ev.id.startsWith("gcal_")) return ev.id.slice(5);
   return ev.id ? String(ev.id) : "";
+}
+
+function getSelectedEvent() {
+  if (!state.selectedEventId) return null;
+  return findEventById(state.selectedEventId) || state.selectedEventData || null;
+}
+
+function findEventById(eventId) {
+  if (!eventId) return null;
+  return (state.events || []).find((ev) => {
+    const id = getGoogleEventId(ev) || ev.id;
+    return id === eventId;
+  }) || null;
+}
+
+function selectEvent(ev) {
+  const eventId = getGoogleEventId(ev) || ev.id;
+  if (!eventId) return;
+  state.selectedEventId = eventId;
+  state.selectedEventData = ev;
+  renderSelectedEventDetails();
+  updateEventSelectionStyles();
+}
+
+function clearSelectedEvent() {
+  state.selectedEventId = null;
+  state.selectedEventData = null;
+  renderSelectedEventDetails();
+  updateEventSelectionStyles();
+}
+
+function syncSelectedEvent() {
+  if (!state.selectedEventId) return;
+  const found = findEventById(state.selectedEventId);
+  if (!found) {
+    clearSelectedEvent();
+    return;
+  }
+  state.selectedEventData = found;
+}
+
+function updateEventSelectionStyles() {
+  const selectedId = state.selectedEventId;
+  document.querySelectorAll(".eventBlock").forEach((block) => {
+    block.classList.toggle("selected", !!selectedId && block.dataset.eventId === selectedId);
+  });
+  document.querySelectorAll(".eventListItem").forEach((item) => {
+    item.classList.toggle("selected", !!selectedId && item.dataset.eventId === selectedId);
+  });
 }
 
 function formatEventMeta(ev) {
@@ -1440,6 +1694,60 @@ function formatEventMeta(ev) {
     return `${fmtDate(start)} • ${fmtTime(start)}`;
   }
   return "Google Event";
+}
+
+function formatDurationMinutes(durationMin) {
+  if (!Number.isFinite(durationMin)) return "";
+  const hours = Math.floor(durationMin / 60);
+  const mins = Math.round(durationMin % 60);
+  if (hours && mins) return `${hours}h ${mins}m`;
+  if (hours) return `${hours}h`;
+  return `${mins}m`;
+}
+
+function renderSelectedEventDetails() {
+  if (!els.selectedEventCard) return;
+  const ev = getSelectedEvent();
+  if (!ev) {
+    els.selectedEventCard.classList.add("hidden");
+    return;
+  }
+
+  const start = ev?.start ? new Date(ev.start) : null;
+  const end = ev?.end ? new Date(ev.end) : null;
+  const hasStart = start && !Number.isNaN(start.getTime());
+  const hasEnd = end && !Number.isNaN(end.getTime());
+
+  const durationMin = hasStart && hasEnd ? Math.max(5, Math.round((end - start) / 60000)) : null;
+  const notes = (ev?.notes || ev?.description || "").trim();
+
+  if (els.selectedEventMeta) {
+    els.selectedEventMeta.textContent = hasStart ? formatEventMeta(ev) : "Google Event";
+  }
+  if (els.selectedEventTitle) {
+    els.selectedEventTitle.textContent = ev?.title || ev?.summary || "Termin";
+  }
+  if (els.selectedEventDate) {
+    els.selectedEventDate.textContent = hasStart ? fmtDate(start) : "-";
+  }
+  if (els.selectedEventTime) {
+    els.selectedEventTime.textContent = hasStart ? fmtTime(start) : "-";
+  }
+  if (els.selectedEventDuration) {
+    els.selectedEventDuration.textContent = durationMin ? formatDurationMinutes(durationMin) : "-";
+  }
+  if (els.selectedEventNotes) {
+    els.selectedEventNotes.textContent = notes || "—";
+  }
+  if (els.selectedEventNotesRow) {
+    els.selectedEventNotesRow.style.display = notes ? "grid" : "none";
+  }
+  if (els.selectedEventDeleteBtn) {
+    const eventId = getGoogleEventId(ev) || ev.id || "";
+    els.selectedEventDeleteBtn.disabled = !eventId || deletingEvents.has(eventId);
+  }
+
+  els.selectedEventCard.classList.remove("hidden");
 }
 
 // -------------------- Side lists / Windows --------------------
@@ -1474,7 +1782,7 @@ function renderSideLists() {
     } else {
       events.forEach((ev) => {
         const item = document.createElement("div");
-        item.className = "item";
+        item.className = "item eventListItem";
 
         const top = document.createElement("div");
         top.className = "itemTop";
@@ -1487,13 +1795,20 @@ function renderSideLists() {
         actions.className = "itemActions";
 
         const deleteId = getGoogleEventId(ev);
+        if (deleteId) item.dataset.eventId = deleteId;
+        if (state.selectedEventId && deleteId === state.selectedEventId) {
+          item.classList.add("selected");
+        }
 
         const editBtn = document.createElement("button");
         editBtn.className = "btn small";
         editBtn.type = "button";
         editBtn.textContent = "Bearbeiten";
         editBtn.disabled = !deleteId;
-        editBtn.addEventListener("click", () => openEditEventModal(ev));
+        editBtn.addEventListener("click", (event) => {
+          event.stopPropagation();
+          openEditEventModal(ev);
+        });
         actions.appendChild(editBtn);
 
         const delBtn = document.createElement("button");
@@ -1501,7 +1816,10 @@ function renderSideLists() {
         delBtn.type = "button";
         delBtn.textContent = "Löschen";
         delBtn.disabled = !deleteId || deletingEvents.has(deleteId);
-        delBtn.addEventListener("click", () => deleteEvent(deleteId, ev.title));
+        delBtn.addEventListener("click", (event) => {
+          event.stopPropagation();
+          void deleteEvent(ev);
+        });
         actions.appendChild(delBtn);
 
         top.appendChild(title);
@@ -1513,6 +1831,7 @@ function renderSideLists() {
 
         item.appendChild(top);
         item.appendChild(meta);
+        item.addEventListener("click", () => selectEvent(ev));
         els.eventsList.appendChild(item);
       });
     }
@@ -1989,38 +2308,111 @@ async function createEventFromText() {
   }
 }
 
-async function deleteEvent(eventId, title) {
+function showUndoToast({ message, actionLabel = "Rückgängig", timeoutMs = 6500, onUndo }) {
+  if (pendingUndoToast) {
+    pendingUndoToast.remove();
+    pendingUndoToast = null;
+  }
+
+  const toast = document.createElement("div");
+  toast.setAttribute("role", "status");
+  toast.style.position = "fixed";
+  toast.style.left = "50%";
+  toast.style.transform = "translateX(-50%)";
+  toast.style.bottom = "18px";
+  toast.style.zIndex = "99999";
+  toast.style.padding = "10px 12px";
+  toast.style.borderRadius = "12px";
+  toast.style.background = "rgba(20, 20, 30, 0.95)";
+  toast.style.color = "white";
+  toast.style.fontWeight = "700";
+  toast.style.fontSize = "14px";
+  toast.style.maxWidth = "92vw";
+  toast.style.boxShadow = "0 10px 24px rgba(0,0,0,0.35)";
+  toast.style.display = "flex";
+  toast.style.alignItems = "center";
+  toast.style.gap = "10px";
+
+  const text = document.createElement("span");
+  text.textContent = message;
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.textContent = actionLabel;
+  btn.style.border = "0";
+  btn.style.borderRadius = "999px";
+  btn.style.padding = "6px 10px";
+  btn.style.fontWeight = "700";
+  btn.style.cursor = "pointer";
+  btn.style.background = "rgba(91, 140, 255, 0.9)";
+  btn.style.color = "white";
+
+  toast.appendChild(text);
+  toast.appendChild(btn);
+  document.body.appendChild(toast);
+
+  let done = false;
+  const cleanup = () => {
+    if (done) return;
+    done = true;
+    toast.remove();
+  };
+
+  const timer = window.setTimeout(cleanup, timeoutMs);
+  btn.addEventListener("click", () => {
+    clearTimeout(timer);
+    cleanup();
+    if (typeof onUndo === "function") onUndo();
+  });
+
+  return { remove: cleanup };
+}
+
+async function deleteEvent(ev) {
+  const eventId = getGoogleEventId(ev) || ev?.id;
   if (!eventId) {
     uiNotify("error", "Kein Event gefunden.");
     return;
   }
-
-  const confirmed = window.confirm(`Termin wirklich löschen?\n\n${title || eventId}`);
-  if (!confirmed) return;
 
   if (!state.google?.connected) {
     uiNotify("error", "Google nicht verbunden – bitte verbinden");
     return;
   }
 
+  if (deletingEvents.has(eventId)) return;
+
   deletingEvents.add(eventId);
-  renderSideLists();
   uiNotify("info", "Lösche Termin…");
+
+  const snapshot = { ...ev };
+  const previousEvents = Array.isArray(state.events) ? [...state.events] : [];
+  state.events = previousEvents.filter((e) => (getGoogleEventId(e) || e.id) !== eventId);
+  if (state.selectedEventId === eventId) clearSelectedEvent();
+  await render();
 
   try {
     await apiDelete(`/api/google/events/${encodeURIComponent(eventId)}`);
     uiNotify("success", "Termin gelöscht");
 
+    pendingUndoToast = showUndoToast({
+      message: "Termin gelöscht.",
+      onUndo: async () => {
+        await undoDeleteEvent(snapshot);
+      },
+    });
+
     const eventsRes = await apiGetGoogleEvents(GCAL_DAYS_PAST, GCAL_DAYS_FUTURE);
     if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
       state.events = eventsRes.events;
       saveLastKnownGoogleEvents(state.events);
+      await render();
     }
-
-    await render();
   } catch (e) {
     const status = e?._meta?.status;
     const msg = String(e?.message || "");
+    state.events = previousEvents;
+    await render();
     if (status === 401 || msg.toLowerCase().includes("google nicht verbunden")) {
       uiNotify("error", "Google nicht verbunden – bitte verbinden");
       return;
@@ -2029,6 +2421,98 @@ async function deleteEvent(eventId, title) {
   } finally {
     deletingEvents.delete(eventId);
     renderSideLists();
+  }
+}
+
+async function undoDeleteEvent(ev) {
+  if (!ev) return;
+  if (!state.google?.connected) {
+    uiNotify("error", "Google nicht verbunden – bitte verbinden");
+    return;
+  }
+
+  const title = ev.title || ev.summary || "Termin";
+  const startDate = ev.start ? new Date(ev.start) : null;
+  const endDate = ev.end ? new Date(ev.end) : null;
+  if (!startDate || Number.isNaN(startDate.getTime()) || !endDate || Number.isNaN(endDate.getTime())) {
+    uiNotify("error", "Undo nicht möglich (fehlende Zeitdaten).");
+    return;
+  }
+
+  uiNotify("info", "Stelle Termin wieder her…");
+  try {
+    await apiPost("/api/google/events", {
+      title,
+      start: toLocalIsoWithOffset(startDate),
+      end: toLocalIsoWithOffset(endDate),
+      location: ev.location || "",
+      notes: ev.notes || ev.description || "",
+    });
+
+    const eventsRes = await apiGetGoogleEvents(GCAL_DAYS_PAST, GCAL_DAYS_FUTURE);
+    if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
+      state.events = eventsRes.events;
+      saveLastKnownGoogleEvents(state.events);
+    }
+    await render();
+    uiNotify("success", "Termin wiederhergestellt");
+  } catch (e) {
+    const msg = String(e?.message || "");
+    uiNotify("error", `Undo fehlgeschlagen: ${msg || "unbekannt"}`);
+  }
+}
+
+async function persistEventMove(ev, newStart, newEnd) {
+  const eventId = getGoogleEventId(ev) || ev?.id;
+  if (!eventId) {
+    uiNotify("error", "Kein Event gefunden.");
+    return;
+  }
+
+  if (!state.google?.connected) {
+    uiNotify("error", "Google nicht verbunden – bitte verbinden");
+    return;
+  }
+
+  const startIso = toLocalIsoWithOffset(newStart);
+  const endIso = toLocalIsoWithOffset(newEnd);
+  const previousEvents = Array.isArray(state.events) ? [...state.events] : [];
+
+  state.events = previousEvents.map((item) => {
+    const id = getGoogleEventId(item) || item.id;
+    if (id !== eventId) return item;
+    return { ...item, start: startIso, end: endIso };
+  });
+  await render();
+
+  uiNotify("info", "Speichere neue Zeit…");
+
+  try {
+    await apiPatch(`/api/google/events/${encodeURIComponent(eventId)}`, {
+      title: ev.title || ev.summary || "Termin",
+      start: startIso,
+      end: endIso,
+      location: ev.location || "",
+      notes: ev.notes || ev.description || "",
+    });
+
+    uiNotify("success", "Termin verschoben");
+    const eventsRes = await apiGetGoogleEvents(GCAL_DAYS_PAST, GCAL_DAYS_FUTURE);
+    if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
+      state.events = eventsRes.events;
+      saveLastKnownGoogleEvents(state.events);
+      await render();
+    }
+  } catch (e) {
+    const status = e?._meta?.status;
+    const msg = String(e?.message || "");
+    state.events = previousEvents;
+    await render();
+    if (status === 401 || msg.toLowerCase().includes("google nicht verbunden")) {
+      uiNotify("error", "Google nicht verbunden – bitte verbinden");
+      return;
+    }
+    uiNotify("error", `Fehler beim Verschieben: ${msg || "unbekannt"}`);
   }
 }
 
