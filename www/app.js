@@ -1060,8 +1060,8 @@ function renderDayView() {
 }
 
 function renderWeekView() {
-  state.viewStartHour = DEFAULT_VIEW_START_HOUR;
-  state.viewEndHour = DEFAULT_VIEW_END_HOUR;
+  state.viewStartHour = 0;
+  state.viewEndHour = 24;
   state.slotPx = DEFAULT_SLOT_PX;
   if (els.calBody) els.calBody.style.overflowY = "auto";
   renderTimeCol();
