@@ -216,6 +216,7 @@ const state = {
   editingEvent: null,
   selectedEventId: null,
   selectedEventData: null,
+  detailEvent: null,
 
   windows: loadLocal("windowsV1", [
     { id: "w1", name: "Fokus", days: [1, 2, 3, 4, 5], start: "09:00", end: "12:00", weight: 3 },
@@ -310,6 +311,20 @@ const els = {
   editEventLocation: byId("editEventLocation"),
   editEventNotes: byId("editEventNotes"),
 
+  // Event detail modal
+  eventDetailBackdrop: byId("eventDetailBackdrop"),
+  eventDetailModal: byId("eventDetailModal"),
+  closeEventDetailBtn: byId("closeEventDetailBtn"),
+  eventDetailCloseBtn: byId("eventDetailCloseBtn"),
+  eventDetailDeleteBtn: byId("eventDetailDeleteBtn"),
+  eventDetailTitle: byId("eventDetailTitle"),
+  eventDetailDate: byId("eventDetailDate"),
+  eventDetailStart: byId("eventDetailStart"),
+  eventDetailEnd: byId("eventDetailEnd"),
+  eventDetailDuration: byId("eventDetailDuration"),
+  eventDetailNotesRow: byId("eventDetailNotesRow"),
+  eventDetailNotes: byId("eventDetailNotes"),
+
   eventsList: byId("eventsList"),
 
   selectedEventCard: byId("selectedEventCard"),
@@ -397,6 +412,7 @@ async function boot() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       closeSidebarDrawer();
+      closeEventDetailModal();
     }
   });
 
@@ -435,6 +451,16 @@ async function boot() {
   els.cancelEditEventBtn?.addEventListener("click", closeEditEventModal);
   els.editEventBackdrop?.addEventListener("click", closeEditEventModal);
   els.saveEditEventBtn?.addEventListener("click", saveEditEvent);
+
+  // Event detail modal
+  els.closeEventDetailBtn?.addEventListener("click", closeEventDetailModal);
+  els.eventDetailCloseBtn?.addEventListener("click", closeEventDetailModal);
+  els.eventDetailBackdrop?.addEventListener("click", closeEventDetailModal);
+  els.eventDetailDeleteBtn?.addEventListener("click", async () => {
+    if (!state.detailEvent) return;
+    await deleteEvent(state.detailEvent);
+    closeEventDetailModal();
+  });
 
   els.selectedEventDeleteBtn?.addEventListener("click", async () => {
     const ev = getSelectedEvent();
@@ -1451,18 +1477,36 @@ function drawEventBlock(ev, daysArray, rangeStart) {
     div.classList.add("selected");
   }
   const title = ev.title || ev.summary || "Termin";
+  const secondary = getEventSecondaryLine(ev);
   div.innerHTML = `
     <div class="t">${escapeHtml(title)}</div>
-    <div class="m">${fmtTime(start)}–${fmtTime(end)} • Event</div>
+    ${secondary ? `<div class="m">${escapeHtml(secondary)}</div>` : ""}
   `;
   attachEventBlockHandlers(div, ev, dayIdx);
   col.appendChild(div);
+}
+
+function getEventSecondaryLine(ev) {
+  const location = (ev?.location || "").trim();
+  const notes = (ev?.notes || ev?.description || "").trim();
+  const parts = [];
+  if (location) parts.push(location);
+  if (notes && notes !== location) parts.push(notes);
+  const combined = parts.join(" • ");
+  if (!combined) return "";
+  return combined.length <= 40 ? combined : "";
 }
 
 function attachEventBlockHandlers(div, ev, dayIdx) {
   div.addEventListener("click", (event) => {
     event.stopPropagation();
     selectEvent(ev);
+  });
+
+  div.addEventListener("dblclick", (event) => {
+    event.stopPropagation();
+    selectEvent(ev);
+    openEventDetailModal(ev);
   });
 
   div.addEventListener("pointerdown", (event) => {
@@ -1565,9 +1609,10 @@ function onEventDragMove(event) {
     drag.hasDragged = true;
     const ghost = document.createElement("div");
     ghost.className = "eventGhost";
+    const secondary = getEventSecondaryLine(drag.ev);
     ghost.innerHTML = `
       <div class="t">${escapeHtml(drag.ev.title || "Termin")}</div>
-      <div class="m"></div>
+      ${secondary ? `<div class="m">${escapeHtml(secondary)}</div>` : ""}
     `;
     els.grid.appendChild(ghost);
     drag.ghost = ghost;
@@ -1585,13 +1630,6 @@ function onEventDragMove(event) {
   drag.ghost.style.left = `${left}px`;
   drag.ghost.style.width = `${width}px`;
   drag.ghost.style.height = `${height - 4}px`;
-
-  const previewStart = minutesToDate(currentRenderedDays[nextDayIdx], clampedMinutes);
-  const previewEnd = addMinutes(new Date(previewStart), drag.durationMin);
-  const meta = drag.ghost.querySelector(".m");
-  if (meta) {
-    meta.textContent = `${fmtTime(previewStart)}–${fmtTime(previewEnd)} • Drag`;
-  }
 }
 
 function onEventDragEnd() {
@@ -1693,15 +1731,10 @@ function updateEventSelectionStyles() {
 
 function formatEventMeta(ev) {
   const start = ev?.start ? new Date(ev.start) : null;
-  const end = ev?.end ? new Date(ev.end) : null;
   const hasStart = start && !Number.isNaN(start.getTime());
-  const hasEnd = end && !Number.isNaN(end.getTime());
 
-  if (hasStart && hasEnd) {
-    return `${fmtDate(start)} • ${fmtTime(start)}–${fmtTime(end)}`;
-  }
   if (hasStart) {
-    return `${fmtDate(start)} • ${fmtTime(start)}`;
+    return `${fmtDate(start)}`;
   }
   return "Google Event";
 }
@@ -1842,6 +1875,11 @@ function renderSideLists() {
         item.appendChild(top);
         item.appendChild(meta);
         item.addEventListener("click", () => selectEvent(ev));
+        item.addEventListener("dblclick", (event) => {
+          event.stopPropagation();
+          selectEvent(ev);
+          openEventDetailModal(ev);
+        });
         els.eventsList.appendChild(item);
       });
     }
@@ -1989,6 +2027,56 @@ function closeEditEventModal() {
   state.editingEvent = null;
   els.editEventBackdrop?.classList.add("hidden");
   els.editEventModal?.classList.add("hidden");
+}
+
+function openEventDetailModal(event) {
+  if (!event) return;
+  state.detailEvent = event;
+  renderEventDetailModal(event);
+  els.eventDetailBackdrop?.classList.remove("hidden");
+  els.eventDetailModal?.classList.remove("hidden");
+  setTimeout(() => els.eventDetailCloseBtn?.focus(), 0);
+}
+
+function closeEventDetailModal() {
+  state.detailEvent = null;
+  els.eventDetailBackdrop?.classList.add("hidden");
+  els.eventDetailModal?.classList.add("hidden");
+}
+
+function renderEventDetailModal(event) {
+  const start = event?.start ? new Date(event.start) : null;
+  const end = event?.end ? new Date(event.end) : null;
+  const hasStart = start && !Number.isNaN(start.getTime());
+  const hasEnd = end && !Number.isNaN(end.getTime());
+  const durationMin = hasStart && hasEnd ? Math.max(5, Math.round((end - start) / 60000)) : null;
+  const notes = (event?.notes || event?.description || "").trim();
+
+  if (els.eventDetailTitle) {
+    els.eventDetailTitle.textContent = event?.title || event?.summary || "Termin";
+  }
+  if (els.eventDetailDate) {
+    els.eventDetailDate.textContent = hasStart ? fmtDate(start) : "-";
+  }
+  if (els.eventDetailStart) {
+    els.eventDetailStart.textContent = hasStart ? fmtTime(start) : "-";
+  }
+  if (els.eventDetailEnd) {
+    els.eventDetailEnd.textContent = hasEnd ? fmtTime(end) : "-";
+  }
+  if (els.eventDetailDuration) {
+    els.eventDetailDuration.textContent = durationMin ? formatDurationMinutes(durationMin) : "-";
+  }
+  if (els.eventDetailNotesRow) {
+    els.eventDetailNotesRow.classList.toggle("hidden", !notes);
+  }
+  if (els.eventDetailNotes) {
+    els.eventDetailNotes.textContent = notes;
+  }
+  const eventId = getGoogleEventId(event);
+  if (els.eventDetailDeleteBtn) {
+    els.eventDetailDeleteBtn.disabled = !eventId || deletingEvents.has(eventId);
+  }
 }
 
 async function saveEditEvent() {
