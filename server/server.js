@@ -25,6 +25,8 @@ import {
   deleteGoogleEvent,
   getGoogleConfig,
   loadTokens,
+  clearTokens,
+  saveTokens,
 } from "./google-calendar.js";
 
 const app = express();
@@ -40,7 +42,7 @@ const logDebug = (...args) => {
 
 // ---- Paths ----
 const DB_PATH = path.join(__dirname, "db.json");
-const TOKENS_PATH = path.join(__dirname, "google-tokens.json"); // fuer Disconnect
+const TOKENS_PATH = path.join(__dirname, "google-tokens.json"); // legacy disconnect fallback
 
 
 // ---- Phase 3 Push-Sync (Google Watch API) ----
@@ -181,9 +183,9 @@ async function ensureGoogleWatch({ reason = "ensure" } = {}) {
     return { ok: false, message: "Google OAuth nicht konfiguriert" };
   }
 
-  const tokens = loadTokens?.() || null;
-  if (!tokens) {
-    return { ok: false, message: "Google nicht verbunden (keine Tokens)" };
+  const tokens = (await loadTokens?.()) || null;
+  if (!tokens?.refresh_token) {
+    return { ok: false, message: "Google nicht verbunden (kein Refresh Token)" };
   }
 
   const webhookUrl = getWebhookUrl();
@@ -194,7 +196,7 @@ async function ensureGoogleWatch({ reason = "ensure" } = {}) {
     return { ok: false, message: "Webhook URL muss https sein" };
   }
 
-  const oauth2 = buildAuthedOAuthClient();
+  const oauth2 = await buildAuthedOAuthClient();
   const calendar = google.calendar({ version: "v3", auth: oauth2 });
 
   const st = loadWatchState();
@@ -346,12 +348,12 @@ app.get("/api/health", (req, res) => {
 // ---- Google OAuth + Status ----
 app.get("/api/google/status", async (req, res) => {
   try {
-    const base = getGoogleStatus();
-    const tokens = loadTokens?.() || null;
-    const hasTokens = !!tokens;
+    const base = await getGoogleStatus();
+    const tokens = (await loadTokens?.()) || null;
+    const hasRefresh = !!tokens?.refresh_token;
 
-    // base.google.connected basiert auf isConnected(); wir normalisieren trotzdem
-    const connected = !!(base?.google?.connected && hasTokens);
+    // base.google.connected basiert auf refresh_token; wir normalisieren trotzdem
+    const connected = !!(base?.google?.connected && hasRefresh);
 
     const watchState = loadWatchState();
     const now = Date.now();
@@ -393,7 +395,9 @@ app.get("/api/google/status", async (req, res) => {
       google: {
         ...base.google,
         connected,
-        hasTokens,
+        authenticated: hasRefresh,
+        hasTokens: !!tokens,
+        expiry_date: tokens?.expiry_date || null,
         watchActive,
         reason: watchActive ? "" : watchReason,
         connectedEmail,
@@ -482,7 +486,7 @@ app.get("/api/google/debug-oauth", (req, res) => {
   });
 });
 
-app.get("/api/google/auth-url", (req, res) => {
+app.get("/api/google/auth-url", async (req, res) => {
   const { isAndroid, redirectUri, clientId } = resolveGoogleOAuthParams(req, { platform: req.query.platform });
   const state = isAndroid ? "android" : "";
   const platform = req.query.platform ? String(req.query.platform) : "";
@@ -497,12 +501,13 @@ app.get("/api/google/auth-url", (req, res) => {
     `[google oauth] auth-url redirectUri=${redirectUri} platform=${platform || "-"} state=${state || "-"}`
   );
 
-  res.json(getAuthUrl({ redirectUri, state, clientId }));
+  res.json(await getAuthUrl({ redirectUri, state, clientId }));
 });
 
 // Disconnect (löscht Tokens)
-app.post("/api/google/disconnect", requireApiKey, (req, res) => {
+app.post("/api/google/disconnect", requireApiKey, async (req, res) => {
   try {
+    await clearTokens();
     if (fs.existsSync(TOKENS_PATH)) fs.unlinkSync(TOKENS_PATH);
     res.json({ ok: true, disconnected: true });
   } catch (e) {
@@ -631,8 +636,8 @@ app.post("/api/google/events", requireApiKey, async (req, res) => {
 // ❗ bewusst ohne requireApiKey, damit die App im LAN/Emulator ohne Key lesen kann
 // Query: ?daysPast=365&daysFuture=365
 app.get("/api/google/events", async (req, res) => {
-  const tokens = loadTokens?.() || null;
-  if (!tokens) {
+  const tokens = (await loadTokens?.()) || null;
+  if (!tokens?.refresh_token) {
     return res.status(200).json({ ok: true, events: [] });
   }
 
@@ -666,7 +671,7 @@ app.get("/api/sync/status", async (req, res) => {
   try {
     const st = loadWatchState();
     const cfg = getGoogleConfig();
-    const connected = !!(loadTokens?.() || null);
+    const connected = !!(await loadTokens?.())?.refresh_token;
     if (!connected) {
       return res.json({ ok: true, events: [] });
     }
@@ -932,11 +937,7 @@ app.patch("/api/google/events/:id", requireApiKey, async (req, res) => {
       return res.status(400).json({ ok: false, message: "title/start/end required" });
     }
 
-    const auth = buildAuthedOAuthClient();
-    const tokenResult = await auth.getAccessToken();
-    if (!tokenResult?.token) {
-      throw new Error("OAuth liefert keinen Access Token. Bitte neu verbinden.");
-    }
+    const auth = await buildAuthedOAuthClient();
 
     const calendar = google.calendar({ version: "v3", auth });
     const requestBody = {
@@ -1106,17 +1107,51 @@ app.listen(PORT, "0.0.0.0", () => {
 
 // -------------------- Google Helpers --------------------
 
-function buildAuthedOAuthClient() {
+function isRevokedError(err) {
+  const message = err?.message || "";
+  const code = err?.code;
+  return (
+    code === 400 ||
+    /invalid_grant/i.test(message) ||
+    /token has been expired or revoked/i.test(message)
+  );
+}
+
+async function buildAuthedOAuthClient() {
   const cfg = getGoogleConfig();
   if (!cfg.GOOGLE_CLIENT_ID || !cfg.GOOGLE_CLIENT_SECRET || !cfg.GOOGLE_REDIRECT_URI) {
     throw new Error("Google OAuth nicht konfiguriert (Env Vars fehlen)");
   }
 
-  const tokens = loadTokens?.() || null;
-  if (!tokens) throw new Error("Nicht verbunden (keine Tokens gespeichert)");
+  const tokens = (await loadTokens?.()) || null;
+  if (!tokens?.refresh_token) throw new Error("Nicht verbunden (kein Refresh Token gespeichert)");
 
   const oauth2 = new google.auth.OAuth2(cfg.GOOGLE_CLIENT_ID, cfg.GOOGLE_CLIENT_SECRET, cfg.GOOGLE_REDIRECT_URI);
   oauth2.setCredentials(tokens);
+
+  oauth2.on("tokens", (t) => {
+    void (async () => {
+      try {
+        const current = (await loadTokens?.()) || {};
+        await saveTokens({ ...current, ...t });
+      } catch {
+        // ignore
+      }
+    })();
+  });
+
+  try {
+    const tokenResult = await oauth2.getAccessToken();
+    if (!tokenResult?.token) {
+      throw new Error("OAuth liefert keinen Access Token. Bitte neu verbinden.");
+    }
+  } catch (err) {
+    if (isRevokedError(err)) {
+      await clearTokens();
+      throw new Error("Google OAuth Token widerrufen/ungueltig. Bitte neu verbinden.");
+    }
+    throw err;
+  }
 
   // ✅ Wichtig: global setzen, damit andere googleapis-Calls authen
   google.options({ auth: oauth2 });
@@ -1143,7 +1178,7 @@ async function getConnectedGoogleEmail() {
 async function assertCorrectGoogleAccount() {
   if (!GOOGLE_ALLOWED_EMAIL) return;
 
-  const status = getGoogleStatus();
+  const status = await getGoogleStatus();
   if (!status?.google?.connected) {
     throw new Error(`Google nicht verbunden. Bitte zuerst /api/google/auth-url öffnen und verbinden.`);
   }

@@ -1,28 +1,10 @@
 // server/google-calendar.js
 // Google Calendar OAuth + Create Event
-// Tokens werden lokal in server/google-tokens.json gespeichert.
-
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+// Tokens werden persistent gespeichert (DB oder Datei-Fallback).
 import { google } from "googleapis";
+import { clearTokens, loadTokens, saveTokens } from "./token-store.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const TOKENS_PATH = path.join(__dirname, "google-tokens.json");
-
-// --- Token Storage (Free Render Setup) ---
-// Render Persistent Disks are paid. For the MVP we support storing the full
-// token JSON in an ENV var: GOOGLE_TOKENS_JSON.
-//
-// Priority:
-// 1) process.env.GOOGLE_TOKENS_JSON (if set)
-// 2) server/google-tokens.json (local dev)
-//
-// Note: ENV vars cannot be modified at runtime, so when GOOGLE_TOKENS_JSON is
-// set we treat tokens as read-only (no save on refresh). This is OK because the
-// refresh_token stays stable and is enough to rehydrate auth after restarts.
+export { clearTokens, loadTokens, saveTokens };
 
 export function getGoogleConfig() {
   const {
@@ -64,56 +46,22 @@ function buildOAuthClient({ clientId, redirectUri } = {}) {
   );
 }
 
-export function loadTokens() {
-  // 1) ENV (Render free)
-  try {
-    const envJson = (process.env.GOOGLE_TOKENS_JSON || "").trim();
-    if (envJson) {
-      try {
-        const parsed = JSON.parse(envJson);
-        if (parsed && (parsed.access_token || parsed.refresh_token)) {
-          return parsed;
-        }
-        return null;
-      } catch {
-        return null;
-      }
-    }
-  } catch {
-    return null;
-  }
-
-  // 2) File (local dev)
-  try {
-    if (!fs.existsSync(TOKENS_PATH)) return null;
-    const raw = fs.readFileSync(TOKENS_PATH, "utf-8");
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+export async function isConnected() {
+  const t = await loadTokens();
+  return !!(t && t.refresh_token);
 }
 
-export function saveTokens(tokens) {
-  // If tokens are stored in ENV, we can't persist updates at runtime.
-  // (ENV is read-only.) Keep it as a no-op in that mode.
-  const envJson = (process.env.GOOGLE_TOKENS_JSON || "").trim();
-  if (envJson) return;
-
-  fs.writeFileSync(TOKENS_PATH, JSON.stringify(tokens, null, 2), "utf-8");
-}
-
-export function isConnected() {
-  const t = loadTokens();
-  return !!(t && (t.access_token || t.refresh_token));
-}
-
-export function getGoogleStatus() {
+export async function getGoogleStatus() {
   const cfg = getGoogleConfig();
+  const tokens = await loadTokens();
+  const authenticated = !!tokens?.refresh_token;
   return {
     ok: true,
     google: {
       configured: isGoogleConfigured(),
-      connected: isConnected(),
+      connected: authenticated,
+      authenticated,
+      expiry_date: tokens?.expiry_date || null,
       scopes: cfg.GOOGLE_SCOPES,
       calendarId: cfg.GOOGLE_CALENDAR_ID,
       timezone: cfg.GOOGLE_TIMEZONE,
@@ -121,17 +69,19 @@ export function getGoogleStatus() {
   };
 }
 
-export function getAuthUrl({ redirectUri, state, clientId } = {}) {
+export async function getAuthUrl({ redirectUri, state, clientId } = {}) {
   if (!hasGoogleConfig({ clientId, redirectUri })) {
     return { ok: false, message: "Google OAuth nicht konfiguriert" };
   }
 
   const cfg = getGoogleConfig();
   const oauth2 = buildOAuthClient({ clientId, redirectUri });
+  const tokens = await loadTokens();
+  const needsConsent = !tokens?.refresh_token;
 
   const url = oauth2.generateAuthUrl({
     access_type: "offline",
-    prompt: "consent",
+    ...(needsConsent ? { prompt: "consent" } : {}),
     scope: cfg.GOOGLE_SCOPES.split(" ").filter(Boolean),
     ...(redirectUri ? { redirect_uri: redirectUri } : {}),
     ...(state ? { state } : {}),
@@ -148,30 +98,57 @@ export async function exchangeCodeForTokens(code, redirectUri, clientId) {
 
   const oauth2 = buildOAuthClient({ clientId, redirectUri });
   const { tokens } = await oauth2.getToken(code);
-  saveTokens(tokens);
+  await saveTokens(tokens);
 
   return { ok: true };
 }
 
-function getAuthedClient() {
+function isRevokedError(err) {
+  const message = err?.message || "";
+  const code = err?.code;
+  return (
+    code === 400 ||
+    /invalid_grant/i.test(message) ||
+    /token has been expired or revoked/i.test(message)
+  );
+}
+
+async function getAuthedClient() {
   if (!isGoogleConfigured()) {
     throw new Error("Google OAuth nicht konfiguriert");
   }
 
-  const tokens = loadTokens();
-  if (!tokens) {
-    throw new Error("Nicht verbunden (keine Tokens)");
+  const tokens = await loadTokens();
+  if (!tokens?.refresh_token) {
+    throw new Error("Nicht verbunden (kein Refresh Token gespeichert)");
   }
 
   const oauth2 = buildOAuthClient();
   oauth2.setCredentials(tokens);
 
   oauth2.on("tokens", (t) => {
-    try {
-      const current = loadTokens() || {};
-      saveTokens({ ...current, ...t });
-    } catch {}
+    void (async () => {
+      try {
+        const current = (await loadTokens()) || {};
+        await saveTokens({ ...current, ...t });
+      } catch {
+        // ignore
+      }
+    })();
   });
+
+  try {
+    const tokenResult = await oauth2.getAccessToken();
+    if (!tokenResult?.token) {
+      throw new Error("OAuth liefert keinen Access Token. Bitte neu verbinden.");
+    }
+  } catch (err) {
+    if (isRevokedError(err)) {
+      await clearTokens();
+      throw new Error("Google OAuth Token widerrufen/ungueltig. Bitte neu verbinden.");
+    }
+    throw err;
+  }
 
   return oauth2;
 }
@@ -182,12 +159,7 @@ export async function createGoogleEvent({ title, start, end, location = "", note
   }
 
   const cfg = getGoogleConfig();
-  const auth = getAuthedClient();
-
-  const tokenResult = await auth.getAccessToken();
-  if (!tokenResult?.token) {
-    throw new Error("OAuth liefert keinen Access Token. Bitte neu verbinden.");
-  }
+  const auth = await getAuthedClient();
 
   const calendar = google.calendar({
     version: "v3",
@@ -218,12 +190,7 @@ export async function createGoogleEvent({ title, start, end, location = "", note
 
 export async function listGoogleEvents({ timeMin, timeMax, maxTotal = 2500 } = {}) {
   const cfg = getGoogleConfig();
-  const auth = getAuthedClient();
-
-  const tokenResult = await auth.getAccessToken();
-  if (!tokenResult?.token) {
-    throw new Error("OAuth liefert keinen Access Token. Bitte neu verbinden.");
-  }
+  const auth = await getAuthedClient();
 
   const calendar = google.calendar({ version: "v3", auth });
 
@@ -271,12 +238,7 @@ export async function deleteGoogleEvent({ eventId }) {
   }
 
   const cfg = getGoogleConfig();
-  const auth = getAuthedClient();
-
-  const tokenResult = await auth.getAccessToken();
-  if (!tokenResult?.token) {
-    throw new Error("OAuth liefert keinen Access Token. Bitte neu verbinden.");
-  }
+  const auth = await getAuthedClient();
 
   const calendar = google.calendar({ version: "v3", auth });
   await calendar.events.delete({
