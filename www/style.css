@@ -6,8 +6,8 @@
   --muted: #000000;
   --line: #e0e0e0;
   --grid-line: #e6e6e6;
-  --primary: #808080;
-  --danger: #000000;
+  --primary: #007bff;
+  --danger: #a7b9d6;
   --ok: #000000;
   --shadow: none;
   --r: 0px;
@@ -111,17 +111,17 @@ body {
 }
 
 .btn {
-  border: 1px solid #808080;
-  background: #808080;
-  color: #ffffff;
+  border: 1px solid #000000;
+  background: #ffffff;
+  color: #000000;
   padding: 8px 10px;
   border-radius: 0;
   cursor: pointer;
   font-weight: 650;
   touch-action: manipulation;
-  width: 150px;
-  height: 40px;
-  min-height: 40px;
+  width: 200px;
+  height: 50px;
+  min-height: 50px;
 }
 .btn:hover { filter: brightness(1.05); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
@@ -134,18 +134,25 @@ body {
   min-height: 0;
 }
 .btn.delete {
-  background: #808080;
-  color: #ffffff;
+  background: #ffffff;
+  color: #000000;
 }
 .btn.delete:hover { filter: brightness(1.05); }
 
 .btn.primary {
-  background: #808080;
-  border: 1px solid #808080;
+  background: var(--primary);
+  border: 1px solid var(--primary);
+  color: #ffffff;
 }
 .btn.primary:hover { filter: brightness(1.05); }
 
-.btn.ghost { background: #808080; }
+.btn.ghost { background: #ffffff; }
+
+#googleConnectBtn {
+  background: #007bff;
+  border-color: #007bff;
+  color: #ffffff;
+}
 
 .layout {
   display: grid;
@@ -246,7 +253,7 @@ body {
 }
 
 .timeLabel {
-  height: 50px;
+  height: 60px;
   padding: 2px 8px 0 0;
   font-size: 12px;
   font-weight: 600;
@@ -342,15 +349,15 @@ body {
   height: 50px;
   border-radius: 0;
   padding: 6px 8px;
-  background: #ffffff;
-  border: 1px solid #000000;
+  background: rgba(0, 180, 200, 0.25);
+  border: 1px solid rgba(0, 180, 200, 0.5);
   box-shadow: none;
   cursor: default;
   color: #000000;
   overflow: hidden;
 }
-.taskBlock .t { font-weight: 800; font-size: 16px; }
-.taskBlock .m { color: #000000; font-size: 16px; margin-top: 2px; }
+.taskBlock .t { font-weight: 700; font-size: 16px; }
+.taskBlock .m { color: #000000; font-size: 16px; font-weight: 700; margin-top: 2px; }
 
 .eventBlock {
   position: absolute;
@@ -359,8 +366,8 @@ body {
   height: 50px;
   border-radius: 0;
   padding: 6px 8px;
-  background: #ffffff;
-  border: 1px solid #000000;
+  background: rgba(0, 180, 200, 0.25);
+  border: 1px solid rgba(0, 180, 200, 0.5);
   box-shadow: none;
   cursor: pointer;
   user-select: none;
@@ -379,8 +386,8 @@ body {
   opacity: 0.4;
   cursor: grabbing;
 }
-.eventBlock .t { font-weight: 800; font-size: 16px; }
-.eventBlock .m { color: #000000; font-size: 16px; margin-top: 2px; }
+.eventBlock .t { font-weight: 700; font-size: 16px; }
+.eventBlock .m { color: #000000; font-size: 16px; font-weight: 700; margin-top: 2px; }
 
 .eventGhost {
   position: absolute;
