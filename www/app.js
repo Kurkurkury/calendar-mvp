@@ -1239,10 +1239,12 @@ function buildMonthDays(year, month) {
 function getDayScrollerWidths(scroller) {
   const prevStrip = scroller.querySelector('.month-strip[data-strip="prev"]');
   const curStrip = scroller.querySelector('.month-strip[data-strip="cur"]');
+  const dayChip = scroller.querySelector('.day-chip');
   const fallback = scroller.clientWidth || 0;
   return {
     prevWidth: prevStrip?.getBoundingClientRect().width || fallback,
     curWidth: curStrip?.getBoundingClientRect().width || fallback,
+    chipWidth: dayChip?.getBoundingClientRect().width || 0,
   };
 }
 
@@ -1280,11 +1282,13 @@ function handleDayScrollerScroll() {
       dayScrollerCurWidth = widths.curWidth;
     }
     if (!dayScrollerPrevWidth || !dayScrollerCurWidth) return;
+    const widths = getDayScrollerWidths(scroller);
+    const snapBuffer = widths.chipWidth ? widths.chipWidth * 0.5 : 0;
     const currentLeft = scroller.scrollLeft;
     lastDayScrollerScrollLeft = currentLeft;
-    if (currentLeft >= dayScrollerPrevWidth + dayScrollerCurWidth * 0.5) {
+    if (currentLeft >= dayScrollerPrevWidth + dayScrollerCurWidth - snapBuffer) {
       void commitDayScrollerMonth(1);
-    } else if (currentLeft <= dayScrollerPrevWidth * 0.5) {
+    } else if (currentLeft <= snapBuffer) {
       void commitDayScrollerMonth(-1);
     }
   });
