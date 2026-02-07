@@ -285,7 +285,6 @@ const els = {
   weekLabel: byId("weekLabel"),
   statusLine: byId("statusLine"),
   googleConnectionState: byId("googleConnectionState"),
-  liveSyncState: byId("liveSyncState"),
   reconnectHint: byId("reconnectHint"),
   googleStatusBadge: byId("googleStatusBadge"),
   syncStatusBadge: byId("syncStatusBadge"),
@@ -731,26 +730,10 @@ function updateConnectionStatus() {
     els.googleConnectionState.style.color = color;
   }
 
-  if (els.liveSyncState) {
-    if (typeof g.watchActive !== "boolean") {
-      els.liveSyncState.textContent = "Live-Sync: Status unbekannt";
-    } else if (g.watchActive) {
-      els.liveSyncState.textContent = "Live-Sync: aktiv";
-    } else {
-      const reason = g.reason ? ` – ${g.reason}` : "";
-      els.liveSyncState.textContent = `Live-Sync: inaktiv${reason}`;
-    }
-  }
-
   if (els.reconnectHint) {
     let hint = "";
     if (!connected) {
       hint = "Bitte Google verbinden, um Events zu erstellen und Live-Sync zu aktivieren.";
-    }
-    if (g.dbConfigured === false) {
-      const warning =
-        "⚠️ Tokens werden nur lokal gespeichert. Nach Deploy/Restart musst du dich erneut verbinden.";
-      hint = hint ? `${hint} ${warning}` : warning;
     }
     els.reconnectHint.textContent = hint;
   }
@@ -771,13 +754,13 @@ function updateConnectionStatus() {
   if (els.syncStatusBadge) {
     if (!configured || !connected) {
       els.syncStatusBadge.textContent = "Live-Sync: inaktiv";
-      els.syncStatusBadge.className = "statusBadge warn";
+      els.syncStatusBadge.className = "statusBadge live-sync-status inactive";
     } else if (g.watchActive) {
       els.syncStatusBadge.textContent = "Live-Sync: aktiv";
-      els.syncStatusBadge.className = "statusBadge ok";
+      els.syncStatusBadge.className = "statusBadge live-sync-status active";
     } else {
       els.syncStatusBadge.textContent = "Live-Sync: inaktiv";
-      els.syncStatusBadge.className = "statusBadge warn";
+      els.syncStatusBadge.className = "statusBadge live-sync-status inactive";
     }
   }
 }
