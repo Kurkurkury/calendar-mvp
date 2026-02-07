@@ -142,11 +142,13 @@ body.view-day .side {
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   padding: 10px;
+  width: 100%;
+  white-space: nowrap;
   height: 80px;
   margin-top: 10px;
   gap: 10px;
   background: linear-gradient(to right, #6a1b9a, #d81b60);
-  justify-content: center;
+  justify-content: flex-start;
   align-items: center;
 }
 
