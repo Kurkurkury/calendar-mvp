@@ -95,6 +95,8 @@ const DEFAULT_VIEW_END_HOUR = 20;
 const DEFAULT_STEP_MINUTES = 30;
 const HOUR_HEIGHT_PX = 48;
 const DEFAULT_SLOT_PX = Math.round(HOUR_HEIGHT_PX * (DEFAULT_STEP_MINUTES / 60));
+const WEEK_STEP_MINUTES = 60;
+const WEEK_SLOT_PX = 60;
 const DAY_MODE_STORAGE_KEY = "calendarDayModeV1";
 const SMART_PREFS_KEY = "smartPrefsV1";
 const DEFAULT_SMART_PREFS = {
@@ -1322,6 +1324,7 @@ function computeSlotPxToFitDay() {
 // -------------------- Day / Week / Month renderers --------------------
 function renderDayView() {
   const d = startOfDay(state.activeDate);
+  state.stepMinutes = DEFAULT_STEP_MINUTES;
   const isFit = state.dayMode === "fit";
   applyDayFitSettings(d, isFit);
   renderTimeCol();
@@ -1340,7 +1343,8 @@ function renderDayView() {
 function renderWeekView() {
   state.viewStartHour = 0;
   state.viewEndHour = 24;
-  state.slotPx = DEFAULT_SLOT_PX;
+  state.stepMinutes = WEEK_STEP_MINUTES;
+  state.slotPx = WEEK_SLOT_PX;
   if (els.calBody) els.calBody.style.overflowY = "auto";
   renderTimeCol();
 
@@ -1356,6 +1360,7 @@ function renderWeekView() {
 }
 
 function renderMonthView() {
+  state.stepMinutes = DEFAULT_STEP_MINUTES;
   state.viewStartHour = DEFAULT_VIEW_START_HOUR;
   state.viewEndHour = DEFAULT_VIEW_END_HOUR;
   state.slotPx = DEFAULT_SLOT_PX;
@@ -1502,6 +1507,7 @@ function renderTimeCol() {
   if (!els.timeCol) return;
   els.timeCol.innerHTML = "";
   const slots = timeSlots(state.viewStartHour, state.viewEndHour, state.stepMinutes);
+  const totalSlots = slots.length;
   slots.forEach((t) => {
     const div = document.createElement("div");
     div.className = "timeLabel";
@@ -1514,6 +1520,13 @@ function renderTimeCol() {
     }
     els.timeCol.appendChild(div);
   });
+  if (state.view === "week" && state.stepMinutes === 60 && state.viewEndHour === 24) {
+    const endLabel = document.createElement("div");
+    endLabel.className = "timeLabel end";
+    endLabel.textContent = "24:00";
+    endLabel.style.top = `${totalSlots * state.slotPx - 10}px`;
+    els.timeCol.appendChild(endLabel);
+  }
   const spacer = document.createElement("div");
   spacer.style.height = `${getScrollBufferPx()}px`;
   spacer.style.borderBottom = "0";
@@ -1671,6 +1684,7 @@ function drawEventBlock(ev, daysArray, rangeStart) {
 
   const div = document.createElement("div");
   div.className = "eventBlock";
+  div.draggable = false;
   div.style.top = `${top + 2}px`;
   div.style.height = `${height - 4}px`;
   const eventId = getGoogleEventId(ev) || ev.id;
