@@ -270,6 +270,9 @@ body.view-day .side {
   justify-content: center;
   background: linear-gradient(to right, #6a1b9a, #d81b60);
   -webkit-overflow-scrolling: touch;
+  position: relative;
+  box-shadow: inset 14px 0 14px -14px rgba(0, 0, 0, 0.35),
+    inset -14px 0 14px -14px rgba(0, 0, 0, 0.35);
 }
 
 .day-chip {

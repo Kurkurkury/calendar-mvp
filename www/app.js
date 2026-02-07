@@ -97,6 +97,7 @@ const HOUR_HEIGHT_PX = 60;
 const DEFAULT_SLOT_PX = Math.round(HOUR_HEIGHT_PX * (DEFAULT_STEP_MINUTES / 60));
 const WEEK_STEP_MINUTES = 60;
 const WEEK_SLOT_PX = 60;
+const DAY_SCROLLER_EDGE_THRESHOLD = 40;
 const DAY_MODE_STORAGE_KEY = "calendarDayModeV1";
 const SMART_PREFS_KEY = "smartPrefsV1";
 const DEFAULT_SMART_PREFS = {
@@ -226,6 +227,9 @@ function startGooglePollingOnce() {
 const state = {
   view: "day",
   activeDate: loadDateLocal("calendarActiveDateV1", new Date(2013, 7, 27)),
+  currentYear: null,
+  currentMonth: null,
+  selectedDay: null,
   weekStart: startOfWeek(new Date()),
   dayMode: loadLocal(DAY_MODE_STORAGE_KEY, isMobile() ? "fit" : "scroll"),
 
@@ -266,6 +270,7 @@ const state = {
   stepMinutes: DEFAULT_STEP_MINUTES,
   slotPx: DEFAULT_SLOT_PX,
   hasAutoScrolled: false,
+  dayScrollerEdgeLock: null,
   isSyncing: false,
   isConnecting: false,
 
@@ -280,6 +285,9 @@ const state = {
   monitoringLoading: false,
   monitoringFetchedAt: 0,
 };
+
+let pendingDayScrollerEdge = null;
+let lastDayScrollerScrollLeft = 0;
 
 const els = {
   weekLabel: byId("weekLabel"),
@@ -487,7 +495,7 @@ boot();
 
 // -------------------- Boot --------------------
 async function boot() {
-  state.weekStart = startOfWeek(state.activeDate);
+  setActiveDate(state.activeDate);
 
   warnDuplicateIds([
     "prevWeekBtn",
@@ -502,8 +510,7 @@ async function boot() {
   bindButtonsById("prevWeekBtn", async () => { shiftView(-1); await render(); });
   bindButtonsById("nextWeekBtn", async () => { shiftView(1); await render(); });
   bindButtonsById("todayBtn", async () => {
-    state.activeDate = new Date();
-    state.weekStart = startOfWeek(state.activeDate);
+    setActiveDate(new Date());
     saveDateLocal("calendarActiveDateV1", state.activeDate);
     await render();
   });
@@ -522,6 +529,8 @@ async function boot() {
       closeSuggestionModal();
     }
   });
+
+  els.dayScroller?.addEventListener("scroll", handleDayScrollerScroll, { passive: true });
 
   els.newMenu?.querySelectorAll(".menuItem").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -1151,6 +1160,9 @@ async function render() {
   saveLocal("calendarViewV1", state.view);
   saveDateLocal("calendarActiveDateV1", state.activeDate);
   setBodyViewClass(state.view);
+  if (state.currentYear === null || state.currentMonth === null || state.selectedDay === null) {
+    setActiveDate(state.activeDate);
+  }
 
   renderTopBar();
 
@@ -1187,6 +1199,71 @@ async function render() {
 }
 
 // -------------------- View handling --------------------
+function setActiveDate(date) {
+  const next = new Date(date);
+  state.activeDate = next;
+  state.currentYear = next.getFullYear();
+  state.currentMonth = next.getMonth();
+  state.selectedDay = next.getDate();
+  state.weekStart = startOfWeek(next);
+}
+
+function setDaySelection(year, month, day) {
+  const safeDay = Math.min(day, daysInMonth(year, month));
+  state.currentYear = year;
+  state.currentMonth = month;
+  state.selectedDay = safeDay;
+  state.activeDate = new Date(year, month, safeDay);
+  state.weekStart = startOfWeek(state.activeDate);
+}
+
+async function shiftDayScrollerMonth(direction) {
+  let nextYear = state.currentYear;
+  let nextMonth = state.currentMonth + direction;
+  if (nextMonth < 0) {
+    nextMonth = 11;
+    nextYear -= 1;
+  }
+  if (nextMonth > 11) {
+    nextMonth = 0;
+    nextYear += 1;
+  }
+  const nextSelectedDay = direction > 0 ? 1 : daysInMonth(nextYear, nextMonth);
+  setDaySelection(nextYear, nextMonth, nextSelectedDay);
+  pendingDayScrollerEdge = direction > 0 ? "start" : "end";
+  await render();
+}
+
+function handleDayScrollerScroll() {
+  const scroller = els.dayScroller;
+  if (!scroller) return;
+  const maxScrollLeft = scroller.scrollWidth - scroller.clientWidth;
+  if (maxScrollLeft <= 0) return;
+
+  const currentLeft = scroller.scrollLeft;
+  const direction =
+    currentLeft > lastDayScrollerScrollLeft ? "right" : currentLeft < lastDayScrollerScrollLeft ? "left" : "none";
+  lastDayScrollerScrollLeft = currentLeft;
+
+  const atStart = scroller.scrollLeft <= DAY_SCROLLER_EDGE_THRESHOLD;
+  const atEnd = scroller.scrollLeft >= maxScrollLeft - DAY_SCROLLER_EDGE_THRESHOLD;
+
+  if (state.dayScrollerEdgeLock) {
+    if (!atStart && !atEnd) {
+      state.dayScrollerEdgeLock = null;
+    }
+    return;
+  }
+
+  if (atEnd && direction === "right") {
+    state.dayScrollerEdgeLock = "next";
+    void shiftDayScrollerMonth(1);
+  } else if (atStart && direction === "left") {
+    state.dayScrollerEdgeLock = "prev";
+    void shiftDayScrollerMonth(-1);
+  }
+}
+
 function setView(nextView) {
   state.view = nextView;
   setBodyViewClass(state.view);
@@ -1198,14 +1275,12 @@ function setView(nextView) {
 
 function shiftView(dir) {
   if (state.view === "day") {
-    state.activeDate = addDays(state.activeDate, dir);
-    state.weekStart = startOfWeek(state.activeDate);
+    setActiveDate(addDays(state.activeDate, dir));
   } else if (state.view === "week") {
     state.weekStart = addDays(state.weekStart, dir * 7);
-    state.activeDate = new Date(state.weekStart);
+    setActiveDate(new Date(state.weekStart));
   } else {
-    state.activeDate = new Date(state.activeDate.getFullYear(), state.activeDate.getMonth() + dir, 1);
-    state.weekStart = startOfWeek(state.activeDate);
+    setActiveDate(new Date(state.activeDate.getFullYear(), state.activeDate.getMonth() + dir, 1));
   }
 }
 
@@ -1224,7 +1299,7 @@ function renderTopBar() {
   if (!els.weekLabel) return;
 
   const titleEl = document.querySelector(".title .h1");
-  const monthYear = `${monthName(state.activeDate).toUpperCase()} ${state.activeDate.getFullYear()}`;
+  const monthYear = monthTitle(state.currentYear, state.currentMonth);
   if (titleEl) {
     titleEl.textContent = monthYear;
   }
@@ -1427,8 +1502,7 @@ function renderMonthView() {
     cell.appendChild(meta);
 
     cell.addEventListener("click", async () => {
-      state.activeDate = day;
-      state.weekStart = startOfWeek(day);
+      setActiveDate(day);
       state.view = "day";
       await render();
     });
@@ -1441,35 +1515,42 @@ function renderMonthView() {
 
 function renderDayScroller() {
   if (!els.dayScroller) return;
-  const monthStart = new Date(state.activeDate.getFullYear(), state.activeDate.getMonth(), 1);
-  const monthEnd = new Date(state.activeDate.getFullYear(), state.activeDate.getMonth() + 1, 0);
-  const days = [];
-  for (let day = 1; day <= monthEnd.getDate(); day += 1) {
-    days.push(new Date(monthStart.getFullYear(), monthStart.getMonth(), day));
-  }
-  const activeKey = dateKey(state.activeDate);
+  const daysTotal = daysInMonth(state.currentYear, state.currentMonth);
   const dayNames = ["SO", "MO", "DI", "MI", "DO", "FR", "SA"];
 
   els.dayScroller.innerHTML = "";
-  days.forEach((day) => {
+  for (let day = 1; day <= daysTotal; day += 1) {
+    const dayDate = new Date(state.currentYear, state.currentMonth, day);
     const button = document.createElement("button");
     button.type = "button";
     button.className = "day-chip";
     button.innerHTML = `
-      <span class="day-number">${pad2(day.getDate())}</span>
-      <span class="day-label">${dayNames[day.getDay()]}</span>
+      <span class="day-number">${pad2(day)}</span>
+      <span class="day-label">${dayNames[dayDate.getDay()]}</span>
     `;
-    if (dateKey(day) === activeKey) button.classList.add("selected");
+    if (day === state.selectedDay) button.classList.add("selected");
     button.addEventListener("click", async () => {
-      state.activeDate = day;
-      state.weekStart = startOfWeek(day);
+      setDaySelection(state.currentYear, state.currentMonth, day);
       await render();
     });
     els.dayScroller.appendChild(button);
-  });
+  }
 
   const selected = els.dayScroller.querySelector(".day-chip.selected");
-  selected?.scrollIntoView({ inline: "center", block: "nearest" });
+  if (pendingDayScrollerEdge) {
+    const edge = pendingDayScrollerEdge;
+    pendingDayScrollerEdge = null;
+    requestAnimationFrame(() => {
+      const maxScrollLeft = els.dayScroller.scrollWidth - els.dayScroller.clientWidth;
+      els.dayScroller.scrollLeft = edge === "start" ? 0 : Math.max(0, maxScrollLeft);
+      lastDayScrollerScrollLeft = els.dayScroller.scrollLeft;
+    });
+  } else {
+    selected?.scrollIntoView({ inline: "center", block: "nearest" });
+    requestAnimationFrame(() => {
+      lastDayScrollerScrollLeft = els.dayScroller.scrollLeft;
+    });
+  }
 }
 
 function renderDayEventList() {
@@ -4222,6 +4303,19 @@ function dateKey(d) {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
   return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(x.getDate())}`;
+}
+function daysInMonth(year, month) {
+  return new Date(year, month + 1, 0).getDate();
+}
+function monthTitle(year, month) {
+  const date = new Date(year, month, 1);
+  try {
+    return new Intl.DateTimeFormat(["de-CH", "de-DE"], { month: "long", year: "numeric" })
+      .format(date)
+      .toUpperCase();
+  } catch {
+    return `${monthName(date).toUpperCase()} ${year}`;
+  }
 }
 function monthName(d) {
   const m = d.getMonth();
