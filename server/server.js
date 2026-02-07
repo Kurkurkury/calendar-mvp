@@ -572,6 +572,10 @@ function parseTimeInput(timeStr) {
   return { h, m };
 }
 
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
+
 function getDateISOInTimeZone(timeZone, date = new Date()) {
   try {
     const formatter = new Intl.DateTimeFormat("en-CA", {
@@ -2895,10 +2899,6 @@ function removeTokenCaseInsensitive(haystack, token) {
 function clampInt(n, min, max) {
   if (!Number.isFinite(n)) return min;
   return Math.max(min, Math.min(max, n));
-}
-
-function pad2(value) {
-  return String(value).padStart(2, "0");
 }
 
 function pad4(n) {
