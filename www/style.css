@@ -304,11 +304,13 @@ body.view-day .side {
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   padding: 10px;
+  width: 100%;
+  white-space: nowrap;
   gap: 0;
   height: 80px;
   margin-top: 10px;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   background: linear-gradient(to right, #6a1b9a, #d81b60);
   -webkit-overflow-scrolling: touch;
   position: relative;
