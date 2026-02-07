@@ -97,7 +97,6 @@ const HOUR_HEIGHT_PX = 60;
 const DEFAULT_SLOT_PX = Math.round(HOUR_HEIGHT_PX * (DEFAULT_STEP_MINUTES / 60));
 const WEEK_STEP_MINUTES = 60;
 const WEEK_SLOT_PX = 60;
-const DAY_SCROLLER_EDGE_THRESHOLD = 40;
 const DAY_MODE_STORAGE_KEY = "calendarDayModeV1";
 const SMART_PREFS_KEY = "smartPrefsV1";
 const DEFAULT_SMART_PREFS = {
@@ -270,7 +269,6 @@ const state = {
   stepMinutes: DEFAULT_STEP_MINUTES,
   slotPx: DEFAULT_SLOT_PX,
   hasAutoScrolled: false,
-  dayScrollerEdgeLock: null,
   isSyncing: false,
   isConnecting: false,
 
@@ -286,8 +284,10 @@ const state = {
   monitoringFetchedAt: 0,
 };
 
-let pendingDayScrollerEdge = null;
 let lastDayScrollerScrollLeft = 0;
+let dayScrollerStripWidth = 0;
+let dayScrollerIsSwapping = false;
+let dayScrollerScrollRaf = null;
 
 const els = {
   weekLabel: byId("weekLabel"),
@@ -1217,51 +1217,60 @@ function setDaySelection(year, month, day) {
   state.weekStart = startOfWeek(state.activeDate);
 }
 
-async function shiftDayScrollerMonth(direction) {
-  let nextYear = state.currentYear;
-  let nextMonth = state.currentMonth + direction;
-  if (nextMonth < 0) {
-    nextMonth = 11;
-    nextYear -= 1;
+function resolveMonthShift(year, month, delta) {
+  const date = new Date(year, month + delta, 1);
+  return { year: date.getFullYear(), month: date.getMonth() };
+}
+
+function buildMonthDays(year, month) {
+  const total = daysInMonth(year, month);
+  const days = [];
+  for (let day = 1; day <= total; day += 1) {
+    days.push({ dayNumber: day, date: new Date(year, month, day) });
   }
-  if (nextMonth > 11) {
-    nextMonth = 0;
-    nextYear += 1;
-  }
-  const nextSelectedDay = direction > 0 ? 1 : daysInMonth(nextYear, nextMonth);
-  setDaySelection(nextYear, nextMonth, nextSelectedDay);
-  pendingDayScrollerEdge = direction > 0 ? "start" : "end";
+  return days;
+}
+
+async function commitDayScrollerMonth(direction) {
+  if (dayScrollerIsSwapping) return;
+  dayScrollerIsSwapping = true;
+  const next = resolveMonthShift(state.currentYear, state.currentMonth, direction);
+  const nextSelectedDay = direction > 0 ? 1 : daysInMonth(next.year, next.month);
+  setDaySelection(next.year, next.month, nextSelectedDay);
   await render();
+  requestAnimationFrame(() => {
+    const scroller = els.dayScroller;
+    if (!scroller) {
+      dayScrollerIsSwapping = false;
+      return;
+    }
+    const curStrip = scroller.querySelector('.month-strip[data-strip="cur"]');
+    dayScrollerStripWidth = curStrip?.getBoundingClientRect().width || scroller.clientWidth;
+    scroller.scrollLeft = dayScrollerStripWidth;
+    lastDayScrollerScrollLeft = scroller.scrollLeft;
+    dayScrollerIsSwapping = false;
+  });
 }
 
 function handleDayScrollerScroll() {
   const scroller = els.dayScroller;
-  if (!scroller) return;
-  const maxScrollLeft = scroller.scrollWidth - scroller.clientWidth;
-  if (maxScrollLeft <= 0) return;
-
-  const currentLeft = scroller.scrollLeft;
-  const direction =
-    currentLeft > lastDayScrollerScrollLeft ? "right" : currentLeft < lastDayScrollerScrollLeft ? "left" : "none";
-  lastDayScrollerScrollLeft = currentLeft;
-
-  const atStart = scroller.scrollLeft <= DAY_SCROLLER_EDGE_THRESHOLD;
-  const atEnd = scroller.scrollLeft >= maxScrollLeft - DAY_SCROLLER_EDGE_THRESHOLD;
-
-  if (state.dayScrollerEdgeLock) {
-    if (!atStart && !atEnd) {
-      state.dayScrollerEdgeLock = null;
+  if (!scroller || dayScrollerIsSwapping) return;
+  if (dayScrollerScrollRaf) return;
+  dayScrollerScrollRaf = requestAnimationFrame(() => {
+    dayScrollerScrollRaf = null;
+    if (!dayScrollerStripWidth) {
+      const curStrip = scroller.querySelector('.month-strip[data-strip="cur"]');
+      dayScrollerStripWidth = curStrip?.getBoundingClientRect().width || scroller.clientWidth;
     }
-    return;
-  }
-
-  if (atEnd && direction === "right") {
-    state.dayScrollerEdgeLock = "next";
-    void shiftDayScrollerMonth(1);
-  } else if (atStart && direction === "left") {
-    state.dayScrollerEdgeLock = "prev";
-    void shiftDayScrollerMonth(-1);
-  }
+    if (!dayScrollerStripWidth) return;
+    const currentLeft = scroller.scrollLeft;
+    lastDayScrollerScrollLeft = currentLeft;
+    if (currentLeft >= dayScrollerStripWidth * 1.5) {
+      void commitDayScrollerMonth(1);
+    } else if (currentLeft <= dayScrollerStripWidth * 0.5) {
+      void commitDayScrollerMonth(-1);
+    }
+  });
 }
 
 function setView(nextView) {
@@ -1515,42 +1524,57 @@ function renderMonthView() {
 
 function renderDayScroller() {
   if (!els.dayScroller) return;
-  const daysTotal = daysInMonth(state.currentYear, state.currentMonth);
   const dayNames = ["SO", "MO", "DI", "MI", "DO", "FR", "SA"];
+  const prev = resolveMonthShift(state.currentYear, state.currentMonth, -1);
+  const next = resolveMonthShift(state.currentYear, state.currentMonth, 1);
+  const strips = [
+    { key: "prev", year: prev.year, month: prev.month, days: buildMonthDays(prev.year, prev.month) },
+    { key: "cur", year: state.currentYear, month: state.currentMonth, days: buildMonthDays(state.currentYear, state.currentMonth) },
+    { key: "next", year: next.year, month: next.month, days: buildMonthDays(next.year, next.month) },
+  ];
 
   els.dayScroller.innerHTML = "";
-  for (let day = 1; day <= daysTotal; day += 1) {
-    const dayDate = new Date(state.currentYear, state.currentMonth, day);
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "day-chip";
-    button.innerHTML = `
-      <span class="day-number">${pad2(day)}</span>
-      <span class="day-label">${dayNames[dayDate.getDay()]}</span>
-    `;
-    if (day === state.selectedDay) button.classList.add("selected");
-    button.addEventListener("click", async () => {
-      setDaySelection(state.currentYear, state.currentMonth, day);
-      await render();
+  strips.forEach((strip) => {
+    const stripEl = document.createElement("div");
+    stripEl.className = "month-strip";
+    stripEl.dataset.strip = strip.key;
+    strip.days.forEach((dayObj) => {
+      const dayDate = dayObj.date;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "day-chip";
+      button.innerHTML = `
+        <span class="day-number">${pad2(dayObj.dayNumber)}</span>
+        <span class="day-label">${dayNames[dayDate.getDay()]}</span>
+      `;
+      if (
+        dayObj.dayNumber === state.selectedDay
+        && strip.year === state.currentYear
+        && strip.month === state.currentMonth
+      ) {
+        button.classList.add("selected");
+      }
+      button.addEventListener("click", async () => {
+        setDaySelection(strip.year, strip.month, dayObj.dayNumber);
+        await render();
+      });
+      stripEl.appendChild(button);
     });
-    els.dayScroller.appendChild(button);
-  }
+    els.dayScroller.appendChild(stripEl);
+  });
 
-  const selected = els.dayScroller.querySelector(".day-chip.selected");
-  if (pendingDayScrollerEdge) {
-    const edge = pendingDayScrollerEdge;
-    pendingDayScrollerEdge = null;
-    requestAnimationFrame(() => {
-      const maxScrollLeft = els.dayScroller.scrollWidth - els.dayScroller.clientWidth;
-      els.dayScroller.scrollLeft = edge === "start" ? 0 : Math.max(0, maxScrollLeft);
-      lastDayScrollerScrollLeft = els.dayScroller.scrollLeft;
-    });
-  } else {
-    selected?.scrollIntoView({ inline: "center", block: "nearest" });
-    requestAnimationFrame(() => {
-      lastDayScrollerScrollLeft = els.dayScroller.scrollLeft;
-    });
-  }
+  const selected = els.dayScroller.querySelector('.month-strip[data-strip="cur"] .day-chip.selected');
+  selected?.scrollIntoView({ inline: "center", block: "nearest" });
+  requestAnimationFrame(() => {
+    const scroller = els.dayScroller;
+    const curStrip = scroller.querySelector('.month-strip[data-strip="cur"]');
+    dayScrollerStripWidth = curStrip?.getBoundingClientRect().width || scroller.clientWidth;
+    scroller.scrollLeft = dayScrollerStripWidth;
+    lastDayScrollerScrollLeft = scroller.scrollLeft;
+    if (dayScrollerIsSwapping) {
+      dayScrollerIsSwapping = false;
+    }
+  });
 }
 
 function renderDayEventList() {
