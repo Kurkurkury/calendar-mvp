@@ -4558,7 +4558,12 @@ function makeApiError({ method, url, status, statusText, body }) {
     ? (body.json?.message || body.json?.error || '')
     : (body?.text || '');
 
-  const clean = msg ? `${base} • ${msg}` : base;
+  const details = body?.kind === 'json' ? body.json?.details : null;
+  const detailsText = details
+    ? (typeof details === 'string' ? details : JSON.stringify(details))
+    : '';
+  const extra = [msg, detailsText].filter(Boolean).join(' • ');
+  const clean = extra ? `${base} • ${extra}` : base;
 
   // Attach a minimal hint (no huge multi-line dumps in UI)
   const err = new Error(clean);
