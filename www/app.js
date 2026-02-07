@@ -1538,24 +1538,52 @@ function renderDayEventList() {
     title.className = "event-title";
     title.textContent = item.title;
 
-    const details = document.createElement("div");
-    details.className = "event-details";
-    details.textContent = item.type === "task" ? item.description : `Ort: ${item.location}`;
-
     const icon = document.createElement("button");
     icon.className = "expand-icon";
     icon.type = "button";
     icon.setAttribute("aria-label", "Event-Details anzeigen");
+    icon.setAttribute("aria-expanded", "false");
     icon.textContent = "›";
     icon.addEventListener("click", (event) => {
       event.stopPropagation();
-      openDayEventDetailModal(item);
+      const isExpanded = card.classList.toggle("expanded");
+      icon.setAttribute("aria-expanded", String(isExpanded));
+      icon.setAttribute(
+        "aria-label",
+        isExpanded ? "Event-Details verbergen" : "Event-Details anzeigen",
+      );
     });
+
+    const detailPanel = document.createElement("div");
+    detailPanel.className = "event-detail-panel";
+
+    const locationRow = document.createElement("div");
+    locationRow.className = "event-detail-row";
+    const locationLabel = document.createElement("span");
+    locationLabel.className = "event-detail-label";
+    locationLabel.textContent = item.type === "task" ? "Info:" : "Ort:";
+    const locationValue = document.createElement("span");
+    locationValue.textContent = item.type === "task" ? item.description : item.location;
+    locationRow.appendChild(locationLabel);
+    locationRow.appendChild(locationValue);
+
+    const descriptionRow = document.createElement("div");
+    descriptionRow.className = "event-detail-row";
+    const descriptionLabel = document.createElement("span");
+    descriptionLabel.className = "event-detail-label";
+    descriptionLabel.textContent = "Notiz:";
+    const descriptionValue = document.createElement("span");
+    descriptionValue.textContent = item.type === "task" ? "—" : item.description;
+    descriptionRow.appendChild(descriptionLabel);
+    descriptionRow.appendChild(descriptionValue);
+
+    detailPanel.appendChild(locationRow);
+    detailPanel.appendChild(descriptionRow);
 
     card.appendChild(time);
     card.appendChild(title);
-    card.appendChild(details);
     card.appendChild(icon);
+    card.appendChild(detailPanel);
 
     els.dayEventList.appendChild(card);
   });
