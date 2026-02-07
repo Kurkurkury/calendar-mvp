@@ -410,6 +410,36 @@ function buildOccupiedIntervals(events, rangeStart, rangeEnd) {
   return intervals;
 }
 
+function filterEventsByRange(events, rangeStart, rangeEnd) {
+  return (events || []).filter((ev) => {
+    const start = ev?.start ? new Date(ev.start) : null;
+    const end = ev?.end ? new Date(ev.end) : null;
+    if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return false;
+    return start < rangeEnd && end > rangeStart;
+  });
+}
+
+async function loadEventsForRange(rangeStart, rangeEnd) {
+  const tokens = (await loadTokens?.()) || null;
+  if (tokens?.refresh_token) {
+    try {
+      await assertCorrectGoogleAccount();
+      const out = await listGoogleEvents({
+        timeMin: rangeStart.toISOString(),
+        timeMax: rangeEnd.toISOString(),
+      });
+      if (out?.ok && Array.isArray(out.events)) {
+        return { source: "google", events: out.events };
+      }
+    } catch (e) {
+      console.error("[loadEventsForRange] google load failed:", e?.message || e);
+    }
+  }
+
+  const db = readDb();
+  return { source: "local", events: filterEventsByRange(db.events, rangeStart, rangeEnd) };
+}
+
 // ---- Auth (API Key) ----
 function requireApiKey(req, res, next) {
   if (!API_KEY) return next();
@@ -940,6 +970,225 @@ async function handleEventSuggestionConfirm(req, res) {
   }
 }
 
+function addEventToHourlyUsage(hourlyUsage, start, end) {
+  let cursor = new Date(start);
+  while (cursor < end) {
+    const next = new Date(cursor);
+    next.setMinutes(0, 0, 0);
+    next.setHours(cursor.getHours() + 1);
+    const overlapEnd = end < next ? end : next;
+    const minutes = Math.max(0, (overlapEnd - cursor) / 60000);
+    hourlyUsage[cursor.getHours()] += minutes;
+    cursor = next;
+  }
+}
+
+function buildHourlyHabits(events, rangeStart, rangeEnd) {
+  const hourlyUsage = Array.from({ length: 24 }, () => 0);
+  for (const ev of events || []) {
+    const start = ev?.start ? new Date(ev.start) : null;
+    const end = ev?.end ? new Date(ev.end) : null;
+    if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
+    if (start >= rangeEnd || end <= rangeStart) continue;
+    addEventToHourlyUsage(hourlyUsage, start, end);
+  }
+  return hourlyUsage;
+}
+
+function normalizeHourlyUsage(hourlyUsage, rangeStart, rangeEnd) {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const dayCount = Math.max(1, Math.round((rangeEnd - rangeStart) / dayMs));
+  return hourlyUsage.map((minutes) => clamp(minutes / (dayCount * 60), 0, 1));
+}
+
+function buildDayLoads(events, rangeStart, days) {
+  const loads = new Map();
+  for (let i = 0; i < days; i += 1) {
+    const dayStart = addDays(rangeStart, i);
+    const dayEnd = addDays(dayStart, 1);
+    let minutes = 0;
+    for (const ev of events || []) {
+      const start = ev?.start ? new Date(ev.start) : null;
+      const end = ev?.end ? new Date(ev.end) : null;
+      if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
+      const overlap = overlapMinutes(start, end, dayStart, dayEnd);
+      if (overlap > 0) minutes += overlap;
+    }
+    loads.set(dateKeyLocal(dayStart), Math.round(minutes));
+  }
+  return loads;
+}
+
+function getCandidateReason({ preferenceLabel, habitScore, dayLoadMinutes, bufferOk }) {
+  const reasons = [];
+  if (preferenceLabel) reasons.push(`passt zu deiner Präferenz (${preferenceLabel})`);
+  if (habitScore <= 0.25) reasons.push("ruhige Gewohnheitszeit");
+  if (dayLoadMinutes <= 240) reasons.push("Tag mit Luft für Fokus");
+  if (bufferOk) reasons.push("Puffer zu anderen Terminen");
+  return reasons.join(" • ");
+}
+
+async function handleSmartSuggestions(req, res) {
+  try {
+    pruneSuggestions();
+
+    const {
+      title,
+      date,
+      durationMinutes,
+      daysForward = 7,
+      windowStart = "08:00",
+      windowEnd = "18:00",
+      stepMinutes = 30,
+      maxSuggestions = 5,
+      preference = "none",
+      bufferMinutes = 15,
+      lookbackDays = 21,
+    } = req.body || {};
+
+    const baseDate = parseDateInput(date) || new Date();
+    const duration = Math.max(5, Math.min(int(durationMinutes) || 60, 24 * 60));
+    const days = Math.max(1, Math.min(int(daysForward) || 7, 14));
+    const step = Math.max(5, Math.min(int(stepMinutes) || 30, 120));
+    const limit = Math.max(1, Math.min(int(maxSuggestions) || 5, 10));
+    const buffer = Math.max(0, Math.min(int(bufferMinutes) || 0, 120));
+
+    if (!title || !duration) {
+      return res.status(400).json({ ok: false, message: "title/durationMinutes required" });
+    }
+
+    const rangeStart = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), 0, 0, 0, 0);
+    const rangeEnd = addDays(rangeStart, days);
+
+    const { events: upcomingEvents } = await loadEventsForRange(rangeStart, rangeEnd);
+    const occupied = buildOccupiedIntervals(upcomingEvents || [], rangeStart, rangeEnd);
+    const dayLoads = buildDayLoads(upcomingEvents || [], rangeStart, days);
+
+    const habitRangeStart = addDays(rangeStart, -Math.max(7, Math.min(int(lookbackDays) || 21, 60)));
+    const habitRangeEnd = rangeStart;
+    const { events: pastEvents } = await loadEventsForRange(habitRangeStart, habitRangeEnd);
+    const habitUsage = buildHourlyHabits(pastEvents || [], habitRangeStart, habitRangeEnd);
+    const habitScores = normalizeHourlyUsage(habitUsage, habitRangeStart, habitRangeEnd);
+
+    const suggestions = [];
+    const preferenceMap = {
+      morning: { start: 6, end: 12, label: "Vormittag" },
+      afternoon: { start: 12, end: 17, label: "Nachmittag" },
+      evening: { start: 17, end: 21, label: "Abend" },
+    };
+    const pref = preferenceMap[preference] || null;
+
+    for (let dayOffset = 0; dayOffset < days; dayOffset += 1) {
+      const dayDate = addDays(rangeStart, dayOffset);
+      const windowStartDate = atTime(dayDate, windowStart);
+      const windowEndDate = atTime(dayDate, windowEnd);
+      if (!windowStartDate || !windowEndDate || windowEndDate <= windowStartDate) continue;
+
+      let cursor = windowStartDate;
+      while (addMinutes(cursor, duration) <= windowEndDate) {
+        const candidateEnd = addMinutes(cursor, duration);
+        if (!isConflict(occupied, cursor, candidateEnd)) {
+          const candidateHours = [];
+          let score = 50;
+          let bufferOk = true;
+          let minGap = Infinity;
+
+          for (let h = cursor.getHours(); h <= candidateEnd.getHours(); h += 1) {
+            candidateHours.push(h % 24);
+          }
+
+          const avgHabit = candidateHours.length
+            ? candidateHours.reduce((acc, h) => acc + (habitScores[h] || 0), 0) / candidateHours.length
+            : 0;
+          score += (1 - avgHabit) * 20;
+
+          const dayKey = dateKeyLocal(dayDate);
+          const dayLoad = dayLoads.get(dayKey) || 0;
+          score += (1 - clamp(dayLoad / 480, 0, 1)) * 15;
+
+          let inPref = false;
+          if (pref) {
+            inPref = cursor.getHours() >= pref.start && cursor.getHours() < pref.end;
+            if (inPref) score += 15;
+          }
+
+          for (const block of occupied) {
+            if (block.end <= cursor) {
+              minGap = Math.min(minGap, (cursor - block.end) / 60000);
+            } else if (block.start >= candidateEnd) {
+              minGap = Math.min(minGap, (block.start - candidateEnd) / 60000);
+            }
+          }
+
+          if (Number.isFinite(minGap)) {
+            bufferOk = minGap >= buffer;
+            if (bufferOk) score += 10;
+          }
+
+          const id = crypto.randomUUID ? crypto.randomUUID() : uid("smart");
+          const startIso = toLocalIsoWithOffset(cursor);
+          const endIso = toLocalIsoWithOffset(candidateEnd);
+          const reason = getCandidateReason({
+            preferenceLabel: inPref ? pref?.label || "" : "",
+            habitScore: avgHabit,
+            dayLoadMinutes: dayLoad,
+            bufferOk,
+          });
+
+          suggestionStore.set(id, {
+            id,
+            title,
+            start: startIso,
+            end: endIso,
+            location: "",
+            notes: "",
+            createdAt: Date.now(),
+          });
+
+          suggestions.push({ id, start: startIso, end: endIso, score, reason });
+        }
+        cursor = addMinutes(cursor, step);
+      }
+    }
+
+    suggestions.sort((a, b) => b.score - a.score);
+    const topSuggestions = suggestions.slice(0, limit);
+
+    const dayLoadEntries = Array.from(dayLoads.entries()).sort((a, b) => b[1] - a[1]);
+    const busiestDay = dayLoadEntries[0]?.[0] || null;
+    const quietestDay = dayLoadEntries[dayLoadEntries.length - 1]?.[0] || null;
+    const leastBusyHour = habitScores
+      .map((value, hour) => ({ hour, value }))
+      .sort((a, b) => a.value - b.value)[0];
+
+    const optimizations = [];
+    if (busiestDay && quietestDay && busiestDay !== quietestDay) {
+      optimizations.push({
+        title: "Auslastung ausgleichen",
+        message: `Der ${busiestDay} ist besonders dicht. Der ${quietestDay} bietet mehr Luft für Fokusblöcke.`,
+      });
+    }
+    if (leastBusyHour) {
+      optimizations.push({
+        title: "Gewohnheitsbasierter Fokus-Slot",
+        message: `Historisch ist es um ${pad2(leastBusyHour.hour)}:00 am ruhigsten. Ideal für konzentrierte Arbeit.`,
+      });
+    }
+
+    res.json({
+      ok: true,
+      suggestions: topSuggestions,
+      optimizations,
+      habits: {
+        leastBusyHour: leastBusyHour?.hour ?? null,
+      },
+      timezone: getGoogleConfig().GOOGLE_TIMEZONE || "Europe/Zurich",
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e?.message || "smart suggestions failed" });
+  }
+}
+
 async function handleFreeSlots(req, res) {
   try {
     await assertCorrectGoogleAccount();
@@ -1164,6 +1413,7 @@ app.post("/api/google/events", requireApiKey, handleGoogleEventCreate);
 app.post("/api/create-event", requireApiKey, handleGoogleEventCreate);
 app.post("/api/event-suggestions", requireApiKey, handleEventSuggestions);
 app.post("/api/event-suggestions/confirm", requireApiKey, handleEventSuggestionConfirm);
+app.post("/api/smart-suggestions", requireApiKey, handleSmartSuggestions);
 app.post("/api/free-slots", requireApiKey, handleFreeSlots);
 app.post("/api/free-slots/approve", requireApiKey, handleFreeSlotApprove);
 app.post("/api/free-slots/confirm", requireApiKey, handleFreeSlotConfirm);
