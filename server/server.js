@@ -294,6 +294,74 @@ function uid(prefix) {
   return `${prefix}_${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`;
 }
 
+// ---- Event suggestions (Phase 2) ----
+const SUGGESTION_TTL_MS = 30 * 60 * 1000;
+const suggestionStore = new Map();
+
+function pruneSuggestions() {
+  const now = Date.now();
+  for (const [id, entry] of suggestionStore.entries()) {
+    if (!entry?.createdAt || now - entry.createdAt > SUGGESTION_TTL_MS) {
+      suggestionStore.delete(id);
+    }
+  }
+}
+
+function toLocalIsoWithOffset(date) {
+  const d = new Date(date);
+  const offset = -d.getTimezoneOffset();
+  const sign = offset >= 0 ? "+" : "-";
+  const abs = Math.abs(offset);
+  const offH = String(Math.floor(abs / 60)).padStart(2, "0");
+  const offM = String(abs % 60).padStart(2, "0");
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${sign}${offH}:${offM}`;
+}
+
+function parseDateInput(dateStr) {
+  if (!dateStr) return null;
+  const [y, m, d] = String(dateStr).split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d, 0, 0, 0, 0);
+}
+
+function parseTimeInput(timeStr) {
+  if (!timeStr) return null;
+  const [h, m] = String(timeStr).split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return { h, m };
+}
+
+function atTime(date, timeStr) {
+  const t = parseTimeInput(timeStr);
+  if (!t) return null;
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), t.h, t.m, 0, 0);
+}
+
+function addMinutes(date, minutes) {
+  return new Date(date.getTime() + minutes * 60 * 1000);
+}
+
+function addDays(date, days) {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function isConflict(occupied, start, end) {
+  return occupied.some((o) => start < o.end && end > o.start);
+}
+
+function buildOccupiedIntervals(events, rangeStart, rangeEnd) {
+  const intervals = [];
+  for (const ev of events) {
+    const start = ev?.start ? new Date(ev.start) : null;
+    const end = ev?.end ? new Date(ev.end) : null;
+    if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
+    if (start >= rangeEnd || end <= rangeStart) continue;
+    intervals.push({ start, end });
+  }
+  return intervals;
+}
+
 // ---- Auth (API Key) ----
 function requireApiKey(req, res, next) {
   if (!API_KEY) return next();
@@ -601,40 +669,208 @@ app.get("/api/google/callback", handleGoogleCallback);
 // Alias for legacy redirect URIs like /auth/google/callback
 app.get("/auth/google/callback", handleGoogleCallback);
 
+async function createAndMirrorEvent({ title, start, end, location = "", notes = "" }) {
+  const out = await createGoogleEvent({ title, start, end, location, notes });
+  if (!out.ok) return { ok: false, status: 400, payload: out };
+
+  const googleId = out.googleEvent?.id ? String(out.googleEvent.id) : uid("gcal");
+  const db = readDb();
+  const ev = {
+    id: `gcal_${googleId}`,
+    title: String(title),
+    start: String(start),
+    end: String(end),
+    location: String(location || ""),
+    notes: String(notes || ""),
+    color: "",
+    googleEventId: googleId,
+  };
+  db.events.push(ev);
+  writeDb(db);
+
+  const normalizedEvent = {
+    id: `gcal_${googleId}`,
+    title: String(out.googleEvent?.summary || title || "Termin"),
+    start: String(out.googleEvent?.start?.dateTime || start || ""),
+    end: String(out.googleEvent?.end?.dateTime || end || ""),
+    location: String(out.googleEvent?.location || location || ""),
+    notes: String(out.googleEvent?.description || notes || ""),
+    googleEventId: googleId,
+  };
+
+  return { ok: true, normalizedEvent, googleEvent: out.googleEvent, mirroredEvent: ev };
+}
+
 async function handleGoogleEventCreate(req, res) {
   try {
     await assertCorrectGoogleAccount();
 
     const { title, start, end, location = "", notes = "" } = req.body || {};
-    const out = await createGoogleEvent({ title, start, end, location, notes });
-    if (!out.ok) return res.status(400).json(out);
+    const created = await createAndMirrorEvent({ title, start, end, location, notes });
+    if (!created.ok) return res.status(created.status || 400).json(created.payload || { ok: false });
 
-    const googleId = out.googleEvent?.id ? String(out.googleEvent.id) : uid("gcal");
-    const db = readDb();
-    const ev = {
-      id: `gcal_${googleId}`,
-      title: String(title),
-      start: String(start),
-      end: String(end),
-      location: String(location || ""),
-      notes: String(notes || ""),
-      color: "",
-      googleEventId: googleId,
-    };
-    db.events.push(ev);
-    writeDb(db);
+    res.json({
+      ok: true,
+      event: created.normalizedEvent,
+      googleEvent: created.googleEvent,
+      mirroredEvent: created.mirroredEvent,
+    });
+  } catch (e) {
+    const msg = String(e?.message || "");
+    const isNotConnected =
+      msg.includes("Nicht verbunden") ||
+      msg.includes("keine Tokens") ||
+      msg.includes("Google nicht verbunden") ||
+      msg.includes("Access Token") ||
+      msg.includes("Tokens");
 
-    const normalizedEvent = {
-      id: `gcal_${googleId}`,
-      title: String(out.googleEvent?.summary || title || "Termin"),
-      start: String(out.googleEvent?.start?.dateTime || start || ""),
-      end: String(out.googleEvent?.end?.dateTime || end || ""),
-      location: String(out.googleEvent?.location || location || ""),
-      notes: String(out.googleEvent?.description || notes || ""),
-      googleEventId: googleId,
-    };
+    if (isNotConnected) {
+      return res.status(401).json({
+        ok: false,
+        error: "GOOGLE_NOT_CONNECTED",
+        message: "Google nicht verbunden",
+      });
+    }
 
-    res.json({ ok: true, event: normalizedEvent, googleEvent: out.googleEvent, mirroredEvent: ev });
+    res.status(500).json({ ok: false, message: e?.message || "unknown" });
+  }
+}
+
+async function handleEventSuggestions(req, res) {
+  try {
+    await assertCorrectGoogleAccount();
+    pruneSuggestions();
+
+    const {
+      title,
+      date,
+      preferredTime,
+      durationMinutes,
+      location = "",
+      notes = "",
+      daysForward = 5,
+      windowStart = "08:00",
+      windowEnd = "18:00",
+      stepMinutes = 30,
+      maxSuggestions = 5,
+    } = req.body || {};
+
+    const baseDate = parseDateInput(date);
+    const duration = Math.max(5, Math.min(int(durationMinutes), 24 * 60));
+    const days = Math.max(1, Math.min(int(daysForward) || 5, 14));
+    const step = Math.max(5, Math.min(int(stepMinutes) || 30, 120));
+    const limit = Math.max(1, Math.min(int(maxSuggestions) || 5, 10));
+
+    if (!title || !baseDate || !duration) {
+      return res.status(400).json({ ok: false, message: "title/date/durationMinutes required" });
+    }
+
+    const rangeStart = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), 0, 0, 0, 0);
+    const rangeEnd = addDays(rangeStart, days);
+
+    const eventsRes = await listGoogleEvents({
+      timeMin: rangeStart.toISOString(),
+      timeMax: rangeEnd.toISOString(),
+    });
+    if (!eventsRes?.ok) {
+      return res.status(500).json({ ok: false, message: "events fetch failed" });
+    }
+
+    const occupied = buildOccupiedIntervals(eventsRes.events || [], rangeStart, rangeEnd);
+    const suggestions = [];
+
+    for (let dayOffset = 0; dayOffset < days; dayOffset += 1) {
+      const dayDate = addDays(rangeStart, dayOffset);
+      const windowStartDate = atTime(dayDate, windowStart);
+      const windowEndDate = atTime(dayDate, windowEnd);
+      if (!windowStartDate || !windowEndDate || windowEndDate <= windowStartDate) continue;
+
+      let cursor = windowStartDate;
+      if (dayOffset === 0 && preferredTime) {
+        const preferred = atTime(dayDate, preferredTime);
+        if (preferred && preferred > cursor) cursor = preferred;
+      }
+
+      while (addMinutes(cursor, duration) <= windowEndDate) {
+        const candidateEnd = addMinutes(cursor, duration);
+        if (!isConflict(occupied, cursor, candidateEnd)) {
+          const id = crypto.randomUUID ? crypto.randomUUID() : uid("sugg");
+          const startIso = toLocalIsoWithOffset(cursor);
+          const endIso = toLocalIsoWithOffset(candidateEnd);
+          suggestionStore.set(id, {
+            id,
+            title,
+            start: startIso,
+            end: endIso,
+            location,
+            notes,
+            createdAt: Date.now(),
+          });
+          suggestions.push({ id, start: startIso, end: endIso });
+          if (suggestions.length >= limit) break;
+        }
+        cursor = addMinutes(cursor, step);
+      }
+      if (suggestions.length >= limit) break;
+    }
+
+    return res.json({
+      ok: true,
+      suggestions,
+      timezone: getGoogleConfig().GOOGLE_TIMEZONE || "Europe/Zurich",
+    });
+  } catch (e) {
+    const msg = String(e?.message || "");
+    const isNotConnected =
+      msg.includes("Nicht verbunden") ||
+      msg.includes("keine Tokens") ||
+      msg.includes("Google nicht verbunden") ||
+      msg.includes("Access Token") ||
+      msg.includes("Tokens");
+
+    if (isNotConnected) {
+      return res.status(401).json({
+        ok: false,
+        error: "GOOGLE_NOT_CONNECTED",
+        message: "Google nicht verbunden",
+      });
+    }
+
+    res.status(500).json({ ok: false, message: e?.message || "unknown" });
+  }
+}
+
+async function handleEventSuggestionConfirm(req, res) {
+  try {
+    await assertCorrectGoogleAccount();
+    pruneSuggestions();
+
+    const { suggestionId } = req.body || {};
+    if (!suggestionId) {
+      return res.status(400).json({ ok: false, message: "suggestionId required" });
+    }
+
+    const entry = suggestionStore.get(String(suggestionId));
+    if (!entry) {
+      return res.status(404).json({ ok: false, message: "suggestion not found or expired" });
+    }
+
+    const created = await createAndMirrorEvent({
+      title: entry.title,
+      start: entry.start,
+      end: entry.end,
+      location: entry.location || "",
+      notes: entry.notes || "",
+    });
+    if (!created.ok) return res.status(created.status || 400).json(created.payload || { ok: false });
+
+    suggestionStore.delete(String(suggestionId));
+    return res.json({
+      ok: true,
+      event: created.normalizedEvent,
+      googleEvent: created.googleEvent,
+      mirroredEvent: created.mirroredEvent,
+    });
   } catch (e) {
     const msg = String(e?.message || "");
     const isNotConnected =
@@ -659,6 +895,8 @@ async function handleGoogleEventCreate(req, res) {
 // ---- Create event in Google Calendar (insert) + Spiegelung in db.json ----
 app.post("/api/google/events", requireApiKey, handleGoogleEventCreate);
 app.post("/api/create-event", requireApiKey, handleGoogleEventCreate);
+app.post("/api/event-suggestions", requireApiKey, handleEventSuggestions);
+app.post("/api/event-suggestions/confirm", requireApiKey, handleEventSuggestionConfirm);
 
 async function handleGoogleEventsList(req, res) {
   const tokens = (await loadTokens?.()) || null;

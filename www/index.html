@@ -258,6 +258,31 @@
     </div>
   </div>
 
+  <!-- Suggestion modal -->
+  <div id="suggestionBackdrop" class="backdrop hidden"></div>
+  <div id="suggestionModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modalHead">
+      <div class="modalTitle">Terminvorschläge</div>
+      <button id="closeSuggestionBtn" class="btn ghost" aria-label="Vorschläge schließen">✕</button>
+    </div>
+
+    <div class="modalBody">
+      <div class="cardMini">
+        <div class="cardMiniTitle">Freie Slots</div>
+        <div class="cardMiniSub">
+          Wähle einen passenden Vorschlag aus. Der Termin wird erst nach deiner Bestätigung erstellt.
+        </div>
+      </div>
+
+      <div id="suggestionList" class="list suggestionList"></div>
+    </div>
+
+    <div class="modalFoot">
+      <button id="suggestionCancelBtn" class="btn ghost" type="button">Abbrechen</button>
+      <button id="suggestionConfirmBtn" class="btn primary" type="button" disabled>Termin erstellen</button>
+    </div>
+  </div>
+
   <!-- Edit event modal -->
   <div id="editEventBackdrop" class="backdrop hidden"></div>
   <div id="editEventModal" class="modal hidden" role="dialog" aria-modal="true">
