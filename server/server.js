@@ -601,8 +601,7 @@ app.get("/api/google/callback", handleGoogleCallback);
 // Alias for legacy redirect URIs like /auth/google/callback
 app.get("/auth/google/callback", handleGoogleCallback);
 
-// ---- Create event in Google Calendar (insert) + Spiegelung in db.json ----
-app.post("/api/google/events", requireApiKey, async (req, res) => {
+async function handleGoogleEventCreate(req, res) {
   try {
     await assertCorrectGoogleAccount();
 
@@ -655,12 +654,13 @@ app.post("/api/google/events", requireApiKey, async (req, res) => {
 
     res.status(500).json({ ok: false, message: e?.message || "unknown" });
   }
-});
+}
 
-// ---- Phase 2 Sync (READ): Google Events list ----
-// ❗ bewusst ohne requireApiKey, damit die App im LAN/Emulator ohne Key lesen kann
-// Query: ?daysPast=365&daysFuture=365
-app.get("/api/google/events", async (req, res) => {
+// ---- Create event in Google Calendar (insert) + Spiegelung in db.json ----
+app.post("/api/google/events", requireApiKey, handleGoogleEventCreate);
+app.post("/api/create-event", requireApiKey, handleGoogleEventCreate);
+
+async function handleGoogleEventsList(req, res) {
   const tokens = (await loadTokens?.()) || null;
   if (!tokens?.refresh_token) {
     return res.status(200).json({ ok: true, events: [] });
@@ -686,7 +686,13 @@ app.get("/api/google/events", async (req, res) => {
     console.error("[/api/google/events] error:", err);
     return res.status(200).json({ ok: false, error: "google_events_failed", events: [] });
   }
-});
+}
+
+// ---- Phase 2 Sync (READ): Google Events list ----
+// ❗ bewusst ohne requireApiKey, damit die App im LAN/Emulator ohne Key lesen kann
+// Query: ?daysPast=365&daysFuture=365
+app.get("/api/google/events", handleGoogleEventsList);
+app.get("/api/get-events", handleGoogleEventsList);
 
 
 

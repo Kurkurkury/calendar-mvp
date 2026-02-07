@@ -129,7 +129,7 @@ function loadLastKnownGoogleEvents() {
 }
 
 async function apiGetGoogleEvents(daysPast = GCAL_DAYS_PAST, daysFuture = GCAL_DAYS_FUTURE) {
-  return apiGet(`/api/google/events?daysPast=${daysPast}&daysFuture=${daysFuture}`);
+  return apiGet(`/api/get-events?daysPast=${daysPast}&daysFuture=${daysFuture}`);
 }
 
 function startGooglePollingOnce() {
@@ -1032,7 +1032,7 @@ function renderTopBar() {
         ${showDayModeToggle ? `
           <div style="display:flex; gap:6px; background:rgba(255,255,255,.06); padding:6px; border-radius:12px;">
             <button data-day-mode="fit" style="${viewBtnStyle(dayMode === "fit")}">Fit (0–24)</button>
-            <button data-day-mode="scroll" style="${viewBtnStyle(dayMode === "scroll")}">Scroll (08–20)</button>
+            <button data-day-mode="scroll" style="${viewBtnStyle(dayMode === "scroll")}">Scroll (0–24)</button>
           </div>
         ` : ""}
       </div>
@@ -1089,8 +1089,8 @@ function getCalendarAvailableHeight() {
 
 function applyDayFitSettings(day, isFit) {
   if (!isFit) {
-    state.viewStartHour = DEFAULT_VIEW_START_HOUR;
-    state.viewEndHour = DEFAULT_VIEW_END_HOUR;
+    state.viewStartHour = 0;
+    state.viewEndHour = 24;
     state.slotPx = DEFAULT_SLOT_PX;
     if (els.calBody) els.calBody.style.overflowY = "auto";
     return;
@@ -1495,10 +1495,6 @@ function attachEventBlockHandlers(div, ev, dayIdx) {
     openEventDetailModal(ev);
   });
 
-  div.addEventListener("pointerdown", (event) => {
-    startEventDrag(event, ev, dayIdx, div);
-  });
-
   div.addEventListener("contextmenu", (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -1852,12 +1848,7 @@ function renderSideLists() {
         top.appendChild(title);
         top.appendChild(actions);
 
-        const meta = document.createElement("div");
-        meta.className = "itemMeta";
-        meta.textContent = formatEventMeta(ev);
-
         item.appendChild(top);
-        item.appendChild(meta);
         item.addEventListener("click", () => selectEvent(ev));
         item.addEventListener("dblclick", (event) => {
           event.stopPropagation();
@@ -2257,7 +2248,7 @@ async function createEventFromForm() {
   setSyncLoading(true, "Lädt… Termin wird synchronisiert");
 
   try {
-    const createdRes = await apiPost('/api/google/events', { title, start, end, location, notes });
+    const createdRes = await apiPost('/api/create-event', { title, start, end, location, notes });
     const createdEvent = extractEventFromQuickAddResponse(createdRes, title);
 
     if (createdEvent) {
@@ -2520,7 +2511,7 @@ async function undoDeleteEvent(ev) {
 
   uiNotify("info", "Stelle Termin wieder her…");
   try {
-    await apiPost("/api/google/events", {
+    await apiPost("/api/create-event", {
       title,
       start: toLocalIsoWithOffset(startDate),
       end: toLocalIsoWithOffset(endDate),
