@@ -217,6 +217,9 @@ const state = {
   selectedEventId: null,
   selectedEventData: null,
   detailEvent: null,
+  eventSuggestions: [],
+  selectedSuggestionId: null,
+  eventSuggestionRequest: null,
 
   windows: loadLocal("windowsV1", [
     { id: "w1", name: "Fokus", days: [1, 2, 3, 4, 5], start: "09:00", end: "12:00", weight: 3 },
@@ -297,6 +300,14 @@ const els = {
   closeEventBtn: byId("closeEventBtn"),
   eventText: byId("eventText"),
   createEventBtn: byId("createEventBtn"),
+
+  // Suggestion modal
+  suggestionBackdrop: byId("suggestionBackdrop"),
+  suggestionModal: byId("suggestionModal"),
+  closeSuggestionBtn: byId("closeSuggestionBtn"),
+  suggestionList: byId("suggestionList"),
+  suggestionCancelBtn: byId("suggestionCancelBtn"),
+  suggestionConfirmBtn: byId("suggestionConfirmBtn"),
 
   // Edit event modal
   editEventBackdrop: byId("editEventBackdrop"),
@@ -413,6 +424,7 @@ async function boot() {
     if (event.key === "Escape") {
       closeSidebarDrawer();
       closeEventDetailModal();
+      closeSuggestionModal();
     }
   });
 
@@ -445,6 +457,12 @@ async function boot() {
       els.createEventBtn?.click();
     }
   });
+
+  // Suggestion modal
+  els.closeSuggestionBtn?.addEventListener("click", closeSuggestionModal);
+  els.suggestionBackdrop?.addEventListener("click", closeSuggestionModal);
+  els.suggestionCancelBtn?.addEventListener("click", closeSuggestionModal);
+  els.suggestionConfirmBtn?.addEventListener("click", confirmSuggestedEvent);
 
   // Edit event modal
   els.closeEditEventBtn?.addEventListener("click", closeEditEventModal);
@@ -1967,6 +1985,74 @@ function closeEventModal() {
   els.eventModal?.classList.add("hidden");
 }
 
+function openSuggestionModal(suggestions, requestPayload) {
+  state.eventSuggestions = Array.isArray(suggestions) ? suggestions : [];
+  state.selectedSuggestionId = null;
+  state.eventSuggestionRequest = requestPayload || null;
+  renderSuggestionList();
+  els.suggestionBackdrop?.classList.remove("hidden");
+  els.suggestionModal?.classList.remove("hidden");
+}
+
+function closeSuggestionModal() {
+  state.eventSuggestions = [];
+  state.selectedSuggestionId = null;
+  state.eventSuggestionRequest = null;
+  els.suggestionBackdrop?.classList.add("hidden");
+  els.suggestionModal?.classList.add("hidden");
+}
+
+function renderSuggestionList() {
+  if (!els.suggestionList) return;
+  els.suggestionList.innerHTML = "";
+
+  const suggestions = state.eventSuggestions || [];
+  if (suggestions.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "cardMini";
+    empty.textContent = "Keine freien Slots gefunden. Passe Datum oder Dauer an.";
+    els.suggestionList.appendChild(empty);
+    if (els.suggestionConfirmBtn) {
+      els.suggestionConfirmBtn.disabled = true;
+    }
+    return;
+  }
+
+  suggestions.forEach((suggestion) => {
+    const start = suggestion?.start ? new Date(suggestion.start) : null;
+    const end = suggestion?.end ? new Date(suggestion.end) : null;
+    const hasStart = start && !Number.isNaN(start.getTime());
+    const hasEnd = end && !Number.isNaN(end.getTime());
+    const duration = hasStart && hasEnd ? Math.round((end - start) / 60000) : null;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "suggestionItem";
+    if (state.selectedSuggestionId === suggestion.id) button.classList.add("active");
+
+    const title = document.createElement("div");
+    title.className = "suggestionTitle";
+    title.textContent = hasStart ? `${fmtDate(start)} • ${fmtTime(start)}–${fmtTime(end)}` : "Unbekannter Slot";
+
+    const meta = document.createElement("div");
+    meta.className = "suggestionMeta";
+    meta.textContent = duration ? `${duration} min` : "Dauer unbekannt";
+
+    button.appendChild(title);
+    button.appendChild(meta);
+    button.addEventListener("click", () => {
+      state.selectedSuggestionId = suggestion.id;
+      renderSuggestionList();
+    });
+
+    els.suggestionList.appendChild(button);
+  });
+
+  if (els.suggestionConfirmBtn) {
+    els.suggestionConfirmBtn.disabled = !state.selectedSuggestionId;
+  }
+}
+
 function openEditEventModal(event) {
   if (!event) return;
   closeSidebarDrawer();
@@ -2141,6 +2227,34 @@ function resetCreateEventForm() {
   if (els.eventNotes) els.eventNotes.value = "";
 }
 
+async function applyCreatedEvent(createdRes, fallbackTitle) {
+  const createdEvent = extractEventFromQuickAddResponse(createdRes, fallbackTitle);
+
+  if (createdEvent) {
+    state.events = Array.isArray(state.events) ? state.events : [];
+    const createdKey = getGoogleEventId(createdEvent) || createdEvent.id;
+    const existingIdx = createdKey
+      ? state.events.findIndex((ev) => (getGoogleEventId(ev) || ev.id) === createdKey)
+      : -1;
+    if (existingIdx >= 0) {
+      state.events[existingIdx] = { ...state.events[existingIdx], ...createdEvent };
+    } else {
+      state.events.unshift(createdEvent);
+    }
+  }
+
+  const eventsRes = await apiGetGoogleEvents(GCAL_DAYS_PAST, GCAL_DAYS_FUTURE);
+  if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
+    state.events = eventsRes.events;
+    saveLastKnownGoogleEvents(state.events);
+  } else if (createdEvent) {
+    saveLastKnownGoogleEvents(state.events);
+  }
+
+  await render();
+  return createdEvent;
+}
+
 // -------------------- Create task + scheduling --------------------
 async function createTask() {
   const title = (els.taskTitle.value || "").trim();
@@ -2229,52 +2343,94 @@ async function createEventFromForm() {
     return;
   }
 
-  const [year, month, day] = dateStr.split("-").map(Number);
-  const [hour, minute] = timeStr.split(":").map(Number);
-  const startLocal = new Date(year, (month || 1) - 1, day || 1, hour || 0, minute || 0, 0, 0);
-  const endLocal = addMinutes(new Date(startLocal), durationMin);
-
-  const start = toLocalIsoWithOffset(startLocal);
-  const end = toLocalIsoWithOffset(endLocal);
-
   const btn = els.createEventFormBtn;
+  const oldText = btn?.textContent || "Termin erstellen";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Suche Vorschläge…";
+    btn.setAttribute('aria-busy', 'true');
+  }
+  uiNotify('info', 'Lädt… suche freie Slots.');
+  setSyncLoading(true, "Lädt… suche freie Slots");
+
+  try {
+    const suggestionsRes = await apiPost('/api/event-suggestions', {
+      title,
+      date: dateStr,
+      preferredTime: timeStr,
+      durationMinutes: durationMin,
+      location,
+      notes,
+    });
+
+    if (suggestionsRes?.ok && Array.isArray(suggestionsRes.suggestions)) {
+      if (suggestionsRes.suggestions.length === 0) {
+        uiNotify('error', 'Keine freien Slots gefunden. Bitte Datum oder Dauer anpassen.');
+        setStatus('Keine freien Slots gefunden.', false);
+      } else {
+        openSuggestionModal(suggestionsRes.suggestions, {
+          title,
+          date: dateStr,
+          preferredTime: timeStr,
+          durationMinutes: durationMin,
+          location,
+          notes,
+        });
+      }
+    } else {
+      throw new Error('Keine Vorschläge erhalten');
+    }
+  } catch (e) {
+    const status = e?._meta?.status;
+    const msg = String(e?.message || "");
+    const lower = msg.toLowerCase();
+
+    if (status === 401 || msg.includes("GOOGLE_NOT_CONNECTED") || lower.includes("nicht verbunden")) {
+      await refreshFromApi();
+      updateGoogleButtons();
+      setStatus('Google nicht verbunden – bitte verbinden.', false);
+      uiNotify('error', 'Google nicht verbunden – bitte verbinden');
+      try { els.googleConnectBtn?.focus?.(); } catch {}
+    } else {
+      const short = msg.split("\n")[0].slice(0, 160);
+      setStatus(`Fehler beim Erstellen: ${short}`, false);
+      uiNotify('error', `Fehler beim Erstellen: ${short}`);
+    }
+  } finally {
+    setSyncLoading(false);
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText;
+      btn.removeAttribute('aria-busy');
+    }
+  }
+}
+
+async function confirmSuggestedEvent() {
+  if (!state.selectedSuggestionId) {
+    uiNotify('error', 'Bitte einen Vorschlag auswählen.');
+    return;
+  }
+
+  const btn = els.suggestionConfirmBtn;
   const oldText = btn?.textContent || "Termin erstellen";
   if (btn) {
     btn.disabled = true;
     btn.textContent = "Erstelle…";
     btn.setAttribute('aria-busy', 'true');
   }
-  uiNotify('info', 'Lädt… Termin wird synchronisiert.');
-  setSyncLoading(true, "Lädt… Termin wird synchronisiert");
+  uiNotify('info', 'Lädt… Termin wird erstellt.');
+  setSyncLoading(true, "Lädt… Termin wird erstellt");
 
   try {
-    const createdRes = await apiPost('/api/create-event', { title, start, end, location, notes });
-    const createdEvent = extractEventFromQuickAddResponse(createdRes, title);
+    const createdRes = await apiPost('/api/event-suggestions/confirm', {
+      suggestionId: state.selectedSuggestionId,
+    });
 
-    if (createdEvent) {
-      state.events = Array.isArray(state.events) ? state.events : [];
-      const createdKey = getGoogleEventId(createdEvent) || createdEvent.id;
-      const existingIdx = createdKey
-        ? state.events.findIndex((ev) => (getGoogleEventId(ev) || ev.id) === createdKey)
-        : -1;
-      if (existingIdx >= 0) {
-        state.events[existingIdx] = { ...state.events[existingIdx], ...createdEvent };
-      } else {
-        state.events.unshift(createdEvent);
-      }
-    }
-
-    const eventsRes = await apiGetGoogleEvents(GCAL_DAYS_PAST, GCAL_DAYS_FUTURE);
-    if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
-      state.events = eventsRes.events;
-      saveLastKnownGoogleEvents(state.events);
-    } else if (createdEvent) {
-      saveLastKnownGoogleEvents(state.events);
-    }
-
-    await render();
+    await applyCreatedEvent(createdRes, state.eventSuggestionRequest?.title || "Termin");
     uiNotify('success', 'Termin erstellt');
     resetCreateEventForm();
+    closeSuggestionModal();
     if (isMobile()) {
       closeSidebarDrawer();
     }
