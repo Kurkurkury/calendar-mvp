@@ -277,7 +277,7 @@ body.view-day .side {
   width: 70px;
   height: 70px;
   background-color: #ffffff;
-  border-radius: 999px;
+  border-radius: 50%;
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -288,10 +288,9 @@ body.view-day .side {
   color: #6a1b9a;
   cursor: pointer;
   scroll-snap-align: center;
-  border: 2px solid transparent;
+  border: 1px solid #e0e0e0;
   padding: 6px;
   line-height: 1.1;
-  box-shadow: 0 8px 18px rgba(27, 8, 45, 0.18);
 }
 
 .day-chip span {
@@ -310,7 +309,7 @@ body.view-day .side {
 .day-chip.selected {
   border: 2px solid #d81b60;
   color: #ffffff;
-  background-color: #d81b60;
+  background-color: #ff4d4f;
 }
 
 .event-list {
