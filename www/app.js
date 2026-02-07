@@ -2638,13 +2638,15 @@ function closeDayEventDetailModal() {
   els.dayEventDetailPopup?.classList.add("hidden");
 }
 
-function handleNewButtonClick() {
-  if (isMobile()) {
-    toggleSidebarDrawer();
-    return;
-  }
+function openNewEventForm() {
   openMenu();
 }
+
+function handleNewButtonClick() {
+  openNewEventForm();
+}
+
+window.openNewEventForm = openNewEventForm;
 
 function openSidebarDrawer() {
   if (!isMobile()) return;
