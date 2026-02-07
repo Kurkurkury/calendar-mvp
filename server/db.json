@@ -141,5 +141,26 @@
       "googleEventId": "51higv13du4o6s7td7v4091iso"
     }
   ],
-  "tasks": []
+  "tasks": [],
+  "preferences": {
+    "timeOfDayWeights": {
+      "morning": 0,
+      "afternoon": 0,
+      "evening": 0
+    },
+    "bufferMinutes": 15,
+    "windowStart": "08:00",
+    "windowEnd": "18:00",
+    "lastUpdated": null
+  },
+  "learning": {
+    "acceptedSuggestions": 0,
+    "timeOfDayCounts": {
+      "morning": 0,
+      "afternoon": 0,
+      "evening": 0
+    },
+    "lastInteractionAt": null,
+    "recentInteractions": []
+  }
 }
