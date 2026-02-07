@@ -36,6 +36,13 @@ body {
   overflow: hidden;
 }
 
+.calendar-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-height: 0;
+}
+
 .topbar {
   position: sticky;
   top: 0;
@@ -136,8 +143,11 @@ body.view-day .side {
   scroll-snap-type: x mandatory;
   padding: 10px;
   height: 80px;
-  margin-top: 20px;
+  margin-top: 10px;
   gap: 10px;
+  background: linear-gradient(to right, #6a1b9a, #d81b60);
+  justify-content: center;
+  align-items: center;
 }
 
 .day-chip {

@@ -7,57 +7,59 @@
   <link rel="stylesheet" href="/www/style.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div class="title">
-      <div class="h1">AUGUST 2013</div>
-      <div id="weekLabel" class="sub"></div>
-      <div id="statusLine" class="sub"></div>
-    </div>
-  </header>
-
-  <section class="agendaView">
-    <div id="dayScroller" class="day-scroller" aria-label="Tagesauswahl"></div>
-    <div class="event-list">
-      <div class="event-list-title">Events &amp; Tasks</div>
-      <div id="dayEventList" class="event-list-items"></div>
-    </div>
-  </section>
-
-  <button id="btnNew" class="btn primary fab" aria-label="Neu erstellen">+ Neu</button>
-
-  <main class="layout">
-    <section class="calendar">
-      <div class="calHead">
-        <div class="timeColHead"></div>
-        <div id="dayHeaders" class="dayHeaders"></div>
+  <div class="calendar-container">
+    <header class="topbar">
+      <div class="title">
+        <div class="h1">AUGUST 2013</div>
+        <div id="weekLabel" class="sub"></div>
+        <div id="statusLine" class="sub"></div>
       </div>
+    </header>
 
-      <div class="calBody">
-        <div id="timeCol" class="timeCol"></div>
-        <div id="grid" class="grid"></div>
+    <section class="agendaView">
+      <div id="dayScroller" class="day-scroller" aria-label="Tagesauswahl"></div>
+      <div class="event-list">
+        <div class="event-list-title">Events &amp; Tasks</div>
+        <div id="dayEventList" class="event-list-items"></div>
       </div>
     </section>
 
-    <aside class="side">
-      <div class="card">
-        <div class="cardTitle">Inbox</div>
-        <div class="cardSub">Tasks ohne Planung</div>
-        <div id="inboxList" class="list"></div>
-      </div>
+    <button id="btnNew" class="btn primary fab" aria-label="Neu erstellen">+ Neu</button>
 
-      <div class="card">
-        <div class="cardTitle">Geplant</div>
-        <div class="cardSub">Tasks mit Slot</div>
-        <div id="plannedList" class="list"></div>
-      </div>
+    <main class="layout">
+      <section class="calendar">
+        <div class="calHead">
+          <div class="timeColHead"></div>
+          <div id="dayHeaders" class="dayHeaders"></div>
+        </div>
 
-      <div class="card">
-        <div class="cardTitle">Time Windows</div>
-        <div class="cardSub">vordefinierte Arbeitszeiten (editierbar in www/app.js)</div>
-        <div id="windowsList" class="list small"></div>
-      </div>
-    </aside>
-  </main>
+        <div class="calBody">
+          <div id="timeCol" class="timeCol"></div>
+          <div id="grid" class="grid"></div>
+        </div>
+      </section>
+
+      <aside class="side">
+        <div class="card">
+          <div class="cardTitle">Inbox</div>
+          <div class="cardSub">Tasks ohne Planung</div>
+          <div id="inboxList" class="list"></div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Geplant</div>
+          <div class="cardSub">Tasks mit Slot</div>
+          <div id="plannedList" class="list"></div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Time Windows</div>
+          <div class="cardSub">vordefinierte Arbeitszeiten (editierbar in www/app.js)</div>
+          <div id="windowsList" class="list small"></div>
+        </div>
+      </aside>
+    </main>
+  </div>
 
   <!-- New menu -->
   <div id="menuBackdrop" class="backdrop hidden"></div>
