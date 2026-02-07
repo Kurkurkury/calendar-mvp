@@ -281,6 +281,12 @@ body.view-day .side {
   align-items: center;
 }
 
+.month-strip[data-month="current"] {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+
 .day-chip {
   flex-shrink: 0;
   width: 70px;
