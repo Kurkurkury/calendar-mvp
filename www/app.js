@@ -328,6 +328,17 @@ const els = {
   monitoringList: byId("monitoringList"),
   monitoringIssues: byId("monitoringIssues"),
 
+  dayScroller: byId("dayScroller"),
+  dayEventList: byId("dayEventList"),
+  dayEventDetailBackdrop: byId("dayEventDetailBackdrop"),
+  dayEventDetailPopup: byId("dayEventDetailPopup"),
+  dayEventDetailTitle: byId("dayEventDetailTitle"),
+  dayEventDetailDate: byId("dayEventDetailDate"),
+  dayEventDetailTime: byId("dayEventDetailTime"),
+  dayEventDetailLocation: byId("dayEventDetailLocation"),
+  dayEventDetailDescription: byId("dayEventDetailDescription"),
+  closeDayEventDetailBtn: byId("closeDayEventDetailBtn"),
+
   prevWeekBtn: byId("prevWeekBtn"),
   todayBtn: byId("todayBtn"),
   nextWeekBtn: byId("nextWeekBtn"),
@@ -508,6 +519,7 @@ async function boot() {
     if (event.key === "Escape") {
       closeSidebarDrawer();
       closeEventDetailModal();
+      closeDayEventDetailModal();
       closeSuggestionModal();
     }
   });
@@ -527,6 +539,9 @@ async function boot() {
   els.imp?.addEventListener("change", updateQuadrantUI);
   els.urg?.addEventListener("change", updateQuadrantUI);
   els.createTaskBtn?.addEventListener("click", createTask);
+
+  els.closeDayEventDetailBtn?.addEventListener("click", closeDayEventDetailModal);
+  els.dayEventDetailBackdrop?.addEventListener("click", closeDayEventDetailModal);
 
   // Create event form
   els.createEventFormBtn?.addEventListener("click", createEventFromForm);
@@ -1158,6 +1173,7 @@ async function render() {
 
   if (state.view === "day") {
     renderDayView();
+    renderDayAgenda();
   } else if (state.view === "week") {
     renderWeekView();
   } else {
@@ -1305,6 +1321,11 @@ function renderDayView() {
   drawBlocksForRange(d, addDays(d, 1), [d]);
 }
 
+function renderDayAgenda() {
+  renderDayScroller();
+  renderDayEventList();
+}
+
 function renderWeekView() {
   state.viewStartHour = 0;
   state.viewEndHour = 24;
@@ -1428,6 +1449,116 @@ function renderMonthView() {
   }
 
   els.grid.appendChild(wrapper);
+}
+
+function renderDayScroller() {
+  if (!els.dayScroller) return;
+  const days = getWeekDays(state.weekStart);
+  const activeKey = dateKey(state.activeDate);
+  const dayNames = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+
+  els.dayScroller.innerHTML = "";
+  days.forEach((day) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "day-chip";
+    const label = `${dayNames[day.getDay()]} • ${pad2(day.getDate())}.${pad2(day.getMonth() + 1)}.${day.getFullYear()}`;
+    button.innerHTML = `<span>${label}</span>`;
+    if (dateKey(day) === activeKey) button.classList.add("selected");
+    button.addEventListener("click", async () => {
+      state.activeDate = day;
+      state.weekStart = startOfWeek(day);
+      await render();
+    });
+    els.dayScroller.appendChild(button);
+  });
+
+  const selected = els.dayScroller.querySelector(".day-chip.selected");
+  selected?.scrollIntoView({ inline: "center", block: "nearest" });
+}
+
+function renderDayEventList() {
+  if (!els.dayEventList) return;
+  const dayKey = dateKey(state.activeDate);
+  const items = [];
+
+  (state.tasks || [])
+    .filter(task => task.scheduledStart && task.status !== "done")
+    .forEach((task) => {
+      const start = new Date(task.scheduledStart);
+      if (Number.isNaN(start.getTime())) return;
+      if (dateKey(start) !== dayKey) return;
+      const duration = Number(task.durationMinutes || 0);
+      const end = duration ? addMinutes(start, duration) : null;
+      const timeLabel = end ? `${fmtTime(start)}–${fmtTime(end)}` : fmtTime(start);
+      items.push({
+        type: "task",
+        title: task.title || "Task",
+        timeLabel,
+        date: start,
+        location: "Task",
+        description: duration ? `Dauer: ${duration} Min` : "Task ohne Dauer",
+      });
+    });
+
+  (state.events || []).forEach((ev) => {
+    const start = ev?.start ? new Date(ev.start) : null;
+    if (!start || Number.isNaN(start.getTime())) return;
+    if (dateKey(start) !== dayKey) return;
+    const end = ev?.end ? new Date(ev.end) : null;
+    const hasEnd = end && !Number.isNaN(end.getTime());
+    const timeLabel = hasEnd ? `${fmtTime(start)}–${fmtTime(end)}` : fmtTime(start);
+    const location = (ev?.location || ev?.place || ev?.locationName || "").trim() || "—";
+    const description = (ev?.notes || ev?.description || "").trim() || "—";
+    items.push({
+      type: "event",
+      title: ev?.title || ev?.summary || "Event",
+      timeLabel,
+      date: start,
+      location,
+      description,
+    });
+  });
+
+  items.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  els.dayEventList.innerHTML = "";
+  if (items.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "event-empty";
+    empty.textContent = "Keine Events oder Tasks für diesen Tag.";
+    els.dayEventList.appendChild(empty);
+    return;
+  }
+
+  items.forEach((item) => {
+    const card = document.createElement("div");
+    card.className = "event-card";
+
+    const time = document.createElement("div");
+    time.className = "event-time";
+    time.textContent = item.timeLabel;
+
+    const title = document.createElement("div");
+    title.className = "event-title";
+    title.textContent = item.title;
+
+    const details = document.createElement("div");
+    details.className = "event-details";
+    details.textContent = item.type === "task" ? item.description : `Ort: ${item.location}`;
+
+    const icon = document.createElement("div");
+    icon.className = "expand-icon";
+    icon.textContent = "▼";
+
+    card.appendChild(time);
+    card.appendChild(title);
+    card.appendChild(details);
+    card.appendChild(icon);
+    card.addEventListener("dblclick", () => openDayEventDetailModal(item));
+
+    els.dayEventList.appendChild(card);
+  });
 }
 
 // ---- the rest of your file is unchanged below ----
@@ -2306,6 +2437,23 @@ function openMenu() {
 function closeMenu() {
   els.menuBackdrop?.classList.add("hidden");
   els.newMenu?.classList.add("hidden");
+}
+
+function openDayEventDetailModal(item) {
+  if (!els.dayEventDetailPopup || !els.dayEventDetailBackdrop) return;
+  const dateLabel = item?.date ? formatDayHeader(item.date) : formatDayHeader(state.activeDate);
+  els.dayEventDetailTitle.textContent = item?.title || "Event";
+  els.dayEventDetailDate.textContent = `Datum: ${dateLabel}`;
+  els.dayEventDetailTime.textContent = `Startzeit: ${item?.timeLabel || "—"}`;
+  els.dayEventDetailLocation.textContent = `Ort: ${item?.location || "—"}`;
+  els.dayEventDetailDescription.textContent = `Beschreibung: ${item?.description || "—"}`;
+  els.dayEventDetailBackdrop.classList.remove("hidden");
+  els.dayEventDetailPopup.classList.remove("hidden");
+}
+
+function closeDayEventDetailModal() {
+  els.dayEventDetailBackdrop?.classList.add("hidden");
+  els.dayEventDetailPopup?.classList.add("hidden");
 }
 
 function handleNewButtonClick() {

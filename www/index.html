@@ -44,11 +44,19 @@
         <span id="googleStatusBadge" class="statusBadge"></span>
         <span id="syncStatusBadge" class="statusBadge"></span>
       </div>
-      <button id="btnNew" class="btn primary" aria-label="Neuen Eintrag erstellen">+ Neu</button>
+      <button id="btnNew" class="btn primary fab" aria-label="Neuen Eintrag erstellen">+ Neu</button>
     </div>
   </header>
 
   <main class="layout">
+    <section class="agendaView">
+      <div id="dayScroller" class="day-scroller" aria-label="Tagesauswahl"></div>
+      <div class="event-list">
+        <div class="event-list-title">Events &amp; Tasks</div>
+        <div id="dayEventList" class="event-list-items"></div>
+      </div>
+    </section>
+
     <section class="calendar">
       <div class="calHead">
         <div class="timeColHead"></div>
@@ -549,6 +557,17 @@
         <button id="eventDetailDeleteBtn" class="btn delete" type="button">Löschen</button>
       </div>
     </div>
+  </div>
+
+  <!-- Event detail popup -->
+  <div id="dayEventDetailBackdrop" class="backdrop hidden"></div>
+  <div id="dayEventDetailPopup" class="event-popup hidden" role="dialog" aria-modal="true">
+    <h2 id="dayEventDetailTitle">Event</h2>
+    <p id="dayEventDetailDate"></p>
+    <p id="dayEventDetailTime"></p>
+    <p id="dayEventDetailLocation"></p>
+    <p id="dayEventDetailDescription"></p>
+    <button id="closeDayEventDetailBtn" class="btn close-popup">Schließen</button>
   </div>
 
   <script type="module" src="/app.js"></script>
