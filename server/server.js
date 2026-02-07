@@ -263,10 +263,6 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-function pad2(value) {
-  return String(value).padStart(2, "0");
-}
-
 function dateKeyLocal(date) {
   const d = new Date(date);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
@@ -2899,6 +2895,10 @@ function removeTokenCaseInsensitive(haystack, token) {
 function clampInt(n, min, max) {
   if (!Number.isFinite(n)) return min;
   return Math.max(min, Math.min(max, n));
+}
+
+function pad2(value) {
+  return String(value).padStart(2, "0");
 }
 
 function pad4(n) {
