@@ -40,6 +40,8 @@ const logDebug = (...args) => {
     console.log(...args);
   }
 };
+const ASSISTANT_MODEL = process.env.ASSISTANT_MODEL || "gpt-4.1";
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 
 // ---- Paths ----
 const DB_PATH = path.join(__dirname, "db.json");
@@ -572,6 +574,64 @@ function parseTimeInput(timeStr) {
   const [h, m] = String(timeStr).split(":").map(Number);
   if (Number.isNaN(h) || Number.isNaN(m)) return null;
   return { h, m };
+}
+
+function getDateISOInTimeZone(timeZone, date = new Date()) {
+  try {
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const parts = formatter.formatToParts(date);
+    const year = parts.find((p) => p.type === "year")?.value;
+    const month = parts.find((p) => p.type === "month")?.value;
+    const day = parts.find((p) => p.type === "day")?.value;
+    if (year && month && day) return `${year}-${month}-${day}`;
+  } catch {
+    // fall through
+  }
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizeAssistantProposal(raw) {
+  const safe = raw && typeof raw === "object" ? raw : {};
+  const event = safe.event && typeof safe.event === "object" ? safe.event : {};
+  return {
+    intent: typeof safe.intent === "string" ? safe.intent : "none",
+    confidence: Number.isFinite(safe.confidence) ? Number(safe.confidence) : 0,
+    event: {
+      title: event.title ?? null,
+      dateISO: event.dateISO ?? null,
+      startTime: event.startTime ?? null,
+      endTime: event.endTime ?? null,
+      durationMin: Number.isFinite(event.durationMin) ? Number(event.durationMin) : null,
+      allDay: !!event.allDay,
+      location: event.location ?? null,
+      description: event.description ?? null,
+    },
+    questions: Array.isArray(safe.questions) ? safe.questions.filter(Boolean).map(String) : [],
+  };
+}
+
+function hasRequiredAssistantFields(proposal) {
+  const event = proposal?.event || {};
+  const hasTitle = !!event.title;
+  const hasDate = !!event.dateISO;
+  const hasStart = !!event.startTime;
+  const hasAllDay = !!event.allDay;
+  const hasEndOrDuration = !!event.endTime || Number.isFinite(event.durationMin);
+  return hasTitle && hasDate && (hasStart || hasAllDay) && (hasEndOrDuration || hasAllDay);
+}
+
+function buildLocalDateTime(dateISO, timeStr) {
+  const baseDate = parseDateInput(dateISO);
+  const time = parseTimeInput(timeStr);
+  if (!baseDate || !time) return null;
+  const dt = new Date(baseDate);
+  dt.setHours(time.h, time.m, 0, 0);
+  return dt;
 }
 
 function atTime(date, timeStr) {
@@ -2049,6 +2109,216 @@ app.get("/api/google/watch/status", async (req, res) => {
     res.json({ ok: true, ...st, webhookUrl });
   } catch (e) {
     res.status(500).json({ ok: false, message: e?.message || "unknown" });
+  }
+});
+
+// ---- Assistant Parse + Commit (AI Quick-Add Preview) ----
+app.post("/api/assistant/parse", async (req, res) => {
+  try {
+    const { text = "", timezone, locale, referenceDateISO } = req.body || {};
+    const rawText = String(text || "").trim();
+    if (!rawText) {
+      return res.status(400).json({ ok: false, message: "text fehlt" });
+    }
+
+    if (!OPENAI_API_KEY) {
+      return res.status(500).json({ ok: false, message: "OPENAI_API_KEY fehlt" });
+    }
+
+    const tz = String(timezone || "Europe/Zurich");
+    const loc = String(locale || "de-CH");
+    const refDate = referenceDateISO || getDateISOInTimeZone(tz);
+
+    const systemPrompt = [
+      "You are a calendar parsing engine. Convert user text into a calendar action proposal in strict JSON only.",
+      "Do not invent missing fields. If any required field is missing or ambiguous, set intent='clarify' and ask short questions.",
+      "Never create random events.",
+      "Required for create_event: title, dateISO, startTime OR allDay=true, endTime OR durationMin.",
+    ].join(" ");
+
+    const userPrompt = [
+      `Text: ${rawText}`,
+      `Timezone: ${tz}`,
+      `Locale: ${loc}`,
+      `ReferenceDateISO: ${refDate}`,
+    ].join("\n");
+
+    const schema = {
+      type: "object",
+      additionalProperties: false,
+      required: ["intent", "confidence", "event", "questions"],
+      properties: {
+        intent: {
+          type: "string",
+          enum: ["create_event", "update_event", "delete_event", "clarify", "none"],
+        },
+        confidence: { type: "number" },
+        event: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "title",
+            "dateISO",
+            "startTime",
+            "endTime",
+            "durationMin",
+            "allDay",
+            "location",
+            "description",
+          ],
+          properties: {
+            title: { type: ["string", "null"] },
+            dateISO: { type: ["string", "null"] },
+            startTime: { type: ["string", "null"] },
+            endTime: { type: ["string", "null"] },
+            durationMin: { type: ["number", "null"] },
+            allDay: { type: "boolean" },
+            location: { type: ["string", "null"] },
+            description: { type: ["string", "null"] },
+          },
+        },
+        questions: { type: "array", items: { type: "string" } },
+      },
+    };
+
+    const payload = {
+      model: ASSISTANT_MODEL,
+      input: [
+        { role: "system", content: [{ type: "input_text", text: systemPrompt }] },
+        { role: "user", content: [{ type: "input_text", text: userPrompt }] },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: { name: "calendar_proposal", schema, strict: true },
+      },
+    };
+
+    const resp = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const body = await resp.json();
+    if (!resp.ok) {
+      return res.status(500).json({ ok: false, message: "OpenAI error", details: body });
+    }
+
+    const outputText =
+      body?.output_text ||
+      body?.output?.[0]?.content?.find((c) => c.type === "output_text")?.text ||
+      body?.output?.[0]?.content?.[0]?.text ||
+      "";
+
+    const parsed = JSON.parse(outputText || "{}");
+    let proposal = normalizeAssistantProposal(parsed);
+
+    if (proposal.intent === "create_event" && !hasRequiredAssistantFields(proposal)) {
+      proposal = {
+        ...proposal,
+        intent: "clarify",
+        confidence: Math.min(proposal.confidence || 0, 0.5),
+        questions: proposal.questions?.length
+          ? proposal.questions
+          : ["Was ist der Titel?", "Wann genau soll der Termin stattfinden?"],
+      };
+    }
+
+    res.json(proposal);
+  } catch (e) {
+    res.status(500).json({ ok: false, message: "assistant parse failed", details: e?.message || "unknown" });
+  }
+});
+
+app.post("/api/assistant/commit", requireApiKey, async (req, res) => {
+  try {
+    const { proposal, provider = "local" } = req.body || {};
+    const normalized = normalizeAssistantProposal(proposal);
+
+    if (normalized.intent !== "create_event") {
+      return res.status(400).json({ ok: false, message: "proposal intent must be create_event" });
+    }
+    if (!hasRequiredAssistantFields(normalized)) {
+      return res.status(400).json({ ok: false, message: "proposal missing required fields" });
+    }
+
+    const event = normalized.event;
+    const dateISO = event.dateISO;
+    const startTime = event.startTime || "00:00";
+    const durationMin = Number.isFinite(event.durationMin) ? Number(event.durationMin) : null;
+    const endTime = event.endTime || null;
+
+    const startDate = buildLocalDateTime(dateISO, startTime);
+    if (!startDate) {
+      return res.status(400).json({ ok: false, message: "invalid dateISO/startTime" });
+    }
+
+    let endDate = null;
+    if (event.allDay) {
+      endDate = addDays(new Date(startDate), 1);
+    } else if (endTime) {
+      endDate = buildLocalDateTime(dateISO, endTime);
+      if (!endDate) {
+        return res.status(400).json({ ok: false, message: "invalid endTime" });
+      }
+      if (endDate <= startDate) {
+        endDate = addDays(endDate, 1);
+      }
+    } else if (durationMin) {
+      endDate = addMinutes(new Date(startDate), durationMin);
+    }
+
+    if (!endDate) {
+      return res.status(400).json({ ok: false, message: "missing endTime or durationMin" });
+    }
+
+    const start = toLocalIsoWithOffset(startDate);
+    const end = toLocalIsoWithOffset(endDate);
+    const title = String(event.title || "Termin");
+    const location = String(event.location || "");
+    const notes = String(event.description || "");
+
+    if (provider === "google") {
+      await assertCorrectGoogleAccount();
+      const created = await createAndMirrorEvent({ title, start, end, location, notes });
+      if (!created.ok) return res.status(created.status || 400).json(created.payload || { ok: false });
+      return res.json({ ok: true, createdEvent: created.normalizedEvent, source: "google" });
+    }
+
+    const db = readDb();
+    const localEvent = {
+      id: uid("evt"),
+      title,
+      start,
+      end,
+      location,
+      notes,
+      color: "",
+    };
+    db.events.push(localEvent);
+    writeDb(db);
+    return res.json({ ok: true, createdEvent: localEvent, source: "local" });
+  } catch (e) {
+    const msg = String(e?.message || "");
+    const isNotConnected =
+      msg.includes("Nicht verbunden") ||
+      msg.includes("keine Tokens") ||
+      msg.includes("Google nicht verbunden") ||
+      msg.includes("Access Token") ||
+      msg.includes("Tokens");
+
+    if (isNotConnected) {
+      return res.status(401).json({
+        ok: false,
+        error: "GOOGLE_NOT_CONNECTED",
+        message: "Google nicht verbunden",
+      });
+    }
+
+    res.status(500).json({ ok: false, message: "assistant commit failed", details: msg || "unknown" });
   }
 });
 // ---- Quick Add (ROBUST): Text parsen -> events.insert (createGoogleEvent) ----

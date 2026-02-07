@@ -237,6 +237,13 @@ const state = {
   events: [],
   google: { configured: false, connected: false, hasTokens: false, watchActive: false, reason: "", scopes: "" },
   editingEvent: null,
+  assistant: {
+    originalText: "",
+    proposal: null,
+    intent: "none",
+    questions: [],
+    provider: "local",
+  },
   selectedEventId: null,
   selectedEventData: null,
   detailEvent: null,
@@ -407,6 +414,20 @@ const els = {
   closeEventBtn: byId("closeEventBtn"),
   eventText: byId("eventText"),
   createEventBtn: byId("createEventBtn"),
+  assistantClarify: byId("assistantClarify"),
+  assistantQuestionList: byId("assistantQuestionList"),
+  assistantAnswer: byId("assistantAnswer"),
+  assistantAnswerBtn: byId("assistantAnswerBtn"),
+  assistantPreview: byId("assistantPreview"),
+  assistantPreviewTitle: byId("assistantPreviewTitle"),
+  assistantPreviewTime: byId("assistantPreviewTime"),
+  assistantPreviewLocationRow: byId("assistantPreviewLocationRow"),
+  assistantPreviewLocation: byId("assistantPreviewLocation"),
+  assistantPreviewDescriptionRow: byId("assistantPreviewDescriptionRow"),
+  assistantPreviewDescription: byId("assistantPreviewDescription"),
+  assistantCreateBtn: byId("assistantCreateBtn"),
+  assistantEditBtn: byId("assistantEditBtn"),
+  assistantNone: byId("assistantNone"),
 
   // Suggestion modal
   suggestionBackdrop: byId("suggestionBackdrop"),
@@ -614,10 +635,19 @@ async function boot() {
   els.closeEventBtn?.addEventListener("click", closeEventModal);
   els.eventBackdrop?.addEventListener("click", closeEventModal);
   els.createEventBtn?.addEventListener("click", createEventFromText);
+  els.assistantAnswerBtn?.addEventListener("click", submitAssistantAnswer);
+  els.assistantCreateBtn?.addEventListener("click", commitAssistantProposal);
+  els.assistantEditBtn?.addEventListener("click", openAssistantEditModal);
   els.eventText?.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       els.createEventBtn?.click();
+    }
+  });
+  els.assistantAnswer?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      els.assistantAnswerBtn?.click();
     }
   });
 
@@ -2691,11 +2721,20 @@ function openEventModal() {
   els.eventBackdrop?.classList.remove("hidden");
   els.eventModal?.classList.remove("hidden");
   els.eventText.value = "";
+  state.assistant = {
+    originalText: "",
+    proposal: null,
+    intent: "none",
+    questions: [],
+    provider: determineAssistantProvider(),
+  };
+  resetAssistantUi();
   setTimeout(() => els.eventText.focus(), 0);
 }
 function closeEventModal() {
   els.eventBackdrop?.classList.add("hidden");
   els.eventModal?.classList.add("hidden");
+  resetAssistantUi();
 }
 
 function openSuggestionModal(suggestions, requestPayload) {
@@ -3327,6 +3366,78 @@ function renderEventDetailModal(event) {
 
 async function saveEditEvent() {
   const editing = state.editingEvent;
+  if (editing?._assistantDraft) {
+    const title = (els.editEventTitle?.value || "").trim();
+    const dateStr = els.editEventDate?.value || "";
+    const timeStr = els.editEventStartTime?.value || "";
+    const durationMin = clamp(parseInt(els.editEventDuration?.value || "60", 10), 5, 24 * 60);
+    const location = (els.editEventLocation?.value || "").trim();
+    const notes = (els.editEventNotes?.value || "").trim();
+
+    if (!title || !dateStr || !timeStr || !durationMin) {
+      uiNotify("error", "Bitte Titel, Datum, Startzeit und Dauer ausfüllen.");
+      return;
+    }
+
+    const proposal = {
+      intent: "create_event",
+      confidence: 1,
+      event: {
+        title,
+        dateISO: dateStr,
+        startTime: timeStr,
+        endTime: null,
+        durationMin,
+        allDay: false,
+        location,
+        description: notes,
+      },
+      questions: [],
+    };
+
+    const btn = els.saveEditEventBtn;
+    const oldText = btn?.textContent || "Speichern";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Erstelle…";
+      btn.setAttribute("aria-busy", "true");
+    }
+    uiNotify("info", "Erstelle Termin…");
+
+    try {
+      const createdRes = await apiPost("/api/assistant/commit", {
+        proposal,
+        provider: editing._assistantProvider || determineAssistantProvider(),
+      });
+      const createdEvent = createdRes?.createdEvent || null;
+      if (createdEvent) {
+        state.events = Array.isArray(state.events) ? state.events : [];
+        state.events.unshift(createdEvent);
+      }
+      await refreshFromApi();
+      await render();
+      closeEditEventModal();
+      resetAssistantUi();
+      uiNotify("success", "Termin erstellt");
+    } catch (e) {
+      const status = e?._meta?.status;
+      if (status === 401) {
+        await refreshFromApi();
+        updateGoogleButtons();
+        uiNotify("error", "Google nicht verbunden – bitte verbinden");
+        return;
+      }
+      uiNotify("error", `Fehler beim Erstellen: ${e?.message || "unbekannt"}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = oldText;
+        btn.removeAttribute("aria-busy");
+      }
+    }
+    return;
+  }
+
   const eventId = editing?._eventId || getGoogleEventId(editing);
 
   if (!eventId) {
@@ -3795,30 +3906,304 @@ async function confirmFreeSlot(slot) {
 }
 
 // -------------------- Event Quick-Add --------------------
-async function createEventFromText() {
-  // Quick-Add funktioniert nur, wenn Google im Backend wirklich verbunden ist.
-  if (!state.google?.configured) {
-    setStatus('Google OAuth ist im Backend nicht konfiguriert. (Render ENV prüfen)', false);
-    uiNotify('error', 'Google OAuth ist im Backend nicht konfiguriert.');
+function getUserTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Zurich";
+  } catch {
+    return "Europe/Zurich";
+  }
+}
+
+function getTodayISOInTimeZone(timeZone) {
+  try {
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const parts = formatter.formatToParts(new Date());
+    const year = parts.find((p) => p.type === "year")?.value;
+    const month = parts.find((p) => p.type === "month")?.value;
+    const day = parts.find((p) => p.type === "day")?.value;
+    if (year && month && day) return `${year}-${month}-${day}`;
+  } catch {
+    // ignore
+  }
+  return new Date().toISOString().slice(0, 10);
+}
+
+function determineAssistantProvider() {
+  if (state.google?.connected && !state.google?.wrongAccount) {
+    return "google";
+  }
+  return "local";
+}
+
+function normalizeAssistantProposal(proposal) {
+  const safe = proposal && typeof proposal === "object" ? proposal : {};
+  const event = safe.event && typeof safe.event === "object" ? safe.event : {};
+  return {
+    intent: typeof safe.intent === "string" ? safe.intent : "none",
+    confidence: Number.isFinite(safe.confidence) ? Number(safe.confidence) : 0,
+    event: {
+      title: event.title ?? null,
+      dateISO: event.dateISO ?? null,
+      startTime: event.startTime ?? null,
+      endTime: event.endTime ?? null,
+      durationMin: Number.isFinite(event.durationMin) ? Number(event.durationMin) : null,
+      allDay: !!event.allDay,
+      location: event.location ?? null,
+      description: event.description ?? null,
+    },
+    questions: Array.isArray(safe.questions) ? safe.questions.filter(Boolean).map(String) : [],
+  };
+}
+
+function assistantHasRequiredFields(proposal) {
+  const event = proposal?.event || {};
+  const hasTitle = !!event.title;
+  const hasDate = !!event.dateISO;
+  const hasStart = !!event.startTime;
+  const hasAllDay = !!event.allDay;
+  const hasEndOrDuration = !!event.endTime || Number.isFinite(event.durationMin);
+  return hasTitle && hasDate && (hasStart || hasAllDay) && (hasEndOrDuration || hasAllDay);
+}
+
+function buildLocalDateTimeFromIso(dateISO, timeStr) {
+  if (!dateISO || !timeStr) return null;
+  const [year, month, day] = String(dateISO).split("-").map(Number);
+  const [hour, minute] = String(timeStr).split(":").map(Number);
+  if (!year || !month || !day || Number.isNaN(hour) || Number.isNaN(minute)) return null;
+  return new Date(year, (month || 1) - 1, day || 1, hour || 0, minute || 0, 0, 0);
+}
+
+function formatAssistantTimeRange(event) {
+  if (!event?.dateISO) return "-";
+  const locale = navigator.language || "de-CH";
+  if (event.allDay) {
+    const date = buildLocalDateTimeFromIso(event.dateISO, "00:00");
+    const dayLabel = date ? date.toLocaleDateString(locale) : event.dateISO;
+    return `${dayLabel} • Ganztägig`;
+  }
+  const start = event.startTime ? buildLocalDateTimeFromIso(event.dateISO, event.startTime) : null;
+  const end = event.endTime
+    ? buildLocalDateTimeFromIso(event.dateISO, event.endTime)
+    : event.durationMin && start
+    ? addMinutes(new Date(start), event.durationMin)
+    : null;
+  const dateLabel = start ? start.toLocaleDateString(locale) : event.dateISO;
+  const startLabel = start ? fmtTime(start) : "-";
+  const endLabel = end ? fmtTime(end) : "-";
+  return `${dateLabel} • ${startLabel} – ${endLabel}`;
+}
+
+function resetAssistantUi() {
+  if (els.assistantClarify) els.assistantClarify.classList.add("hidden");
+  if (els.assistantPreview) els.assistantPreview.classList.add("hidden");
+  if (els.assistantNone) els.assistantNone.classList.add("hidden");
+  if (els.assistantQuestionList) els.assistantQuestionList.textContent = "";
+  if (els.assistantAnswer) els.assistantAnswer.value = "";
+  if (els.assistantPreviewTitle) els.assistantPreviewTitle.textContent = "";
+  if (els.assistantPreviewTime) els.assistantPreviewTime.textContent = "";
+  if (els.assistantPreviewLocation) els.assistantPreviewLocation.textContent = "";
+  if (els.assistantPreviewDescription) els.assistantPreviewDescription.textContent = "";
+  els.assistantPreviewLocationRow?.classList.add("hidden");
+  els.assistantPreviewDescriptionRow?.classList.add("hidden");
+  if (els.assistantCreateBtn) els.assistantCreateBtn.disabled = true;
+}
+
+function renderAssistantClarify(questions) {
+  resetAssistantUi();
+  const list = els.assistantQuestionList;
+  if (list) {
+    list.innerHTML = "";
+    (questions || []).forEach((q) => {
+      const div = document.createElement("div");
+      div.textContent = `• ${q}`;
+      list.appendChild(div);
+    });
+  }
+  els.assistantClarify?.classList.remove("hidden");
+  setTimeout(() => els.assistantAnswer?.focus(), 0);
+}
+
+function renderAssistantPreview(proposal) {
+  resetAssistantUi();
+  const event = proposal?.event || {};
+  if (els.assistantPreviewTitle) els.assistantPreviewTitle.textContent = event.title || "-";
+  if (els.assistantPreviewTime) els.assistantPreviewTime.textContent = formatAssistantTimeRange(event);
+  if (event.location) {
+    if (els.assistantPreviewLocation) els.assistantPreviewLocation.textContent = event.location;
+    els.assistantPreviewLocationRow?.classList.remove("hidden");
+  }
+  if (event.description) {
+    if (els.assistantPreviewDescription) els.assistantPreviewDescription.textContent = event.description;
+    els.assistantPreviewDescriptionRow?.classList.remove("hidden");
+  }
+  if (els.assistantCreateBtn) {
+    els.assistantCreateBtn.disabled = !assistantHasRequiredFields(proposal);
+  }
+  els.assistantPreview?.classList.remove("hidden");
+}
+
+function renderAssistantNone() {
+  resetAssistantUi();
+  els.assistantNone?.classList.remove("hidden");
+}
+
+async function requestAssistantParse(text) {
+  const timeZone = getUserTimeZone();
+  const locale = navigator.language || "de-CH";
+  const referenceDateISO = getTodayISOInTimeZone(timeZone);
+  return apiPost("/api/assistant/parse", {
+    text,
+    timezone: timeZone,
+    locale,
+    referenceDateISO,
+  });
+}
+
+function handleAssistantResponse(raw, { originalText } = {}) {
+  const proposal = normalizeAssistantProposal(raw);
+  const provider = determineAssistantProvider();
+  state.assistant = {
+    originalText: originalText || state.assistant.originalText || "",
+    proposal,
+    intent: proposal.intent,
+    questions: proposal.questions || [],
+    provider,
+  };
+
+  if (proposal.intent === "clarify") {
+    renderAssistantClarify(proposal.questions);
     return;
   }
+  if (proposal.intent === "create_event") {
+    renderAssistantPreview(proposal);
+    return;
+  }
+  renderAssistantNone();
+}
 
-  if (!state.google?.connected || state.google?.wrongAccount) {
-    if (state.google?.wrongAccount) {
-      setStatus('Falscher Google-Account – bitte mit dem erlaubten Konto verbinden.', false);
-      uiNotify('error', 'Falscher Google-Account');
-    } else {
-      setStatus('Google ist nicht (korrekt) verbunden. Bitte oben auf "Mit Google verbinden" klicken.', false);
-      uiNotify('error', '❌ Google nicht verbunden – zuerst "Mit Google verbinden"');
+async function submitAssistantAnswer() {
+  const answer = (els.assistantAnswer?.value || "").trim();
+  if (!answer) {
+    uiNotify("error", "Bitte Antwort eingeben.");
+    els.assistantAnswer?.focus?.();
+    return;
+  }
+  const original = state.assistant.originalText || (els.eventText?.value || "").trim();
+  const followUpText = `${original}\nAntwort: ${answer}`;
+  const btn = els.assistantAnswerBtn;
+  const oldText = btn?.textContent || "Antwort senden";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Sende…";
+  }
+  try {
+    const parsed = await requestAssistantParse(followUpText);
+    handleAssistantResponse(parsed, { originalText: original });
+  } catch (e) {
+    uiNotify("error", `Rückfrage fehlgeschlagen: ${e?.message || "unbekannt"}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText;
     }
-    try { els.googleConnectBtn?.focus?.(); } catch {}
+  }
+}
+
+async function commitAssistantProposal() {
+  const proposal = state.assistant.proposal;
+  if (!proposal || !assistantHasRequiredFields(proposal)) {
+    uiNotify("error", "Bitte erst einen vollständigen Vorschlag auswählen.");
     return;
   }
+  const provider = state.assistant.provider || "local";
+  const btn = els.assistantCreateBtn;
+  const oldText = btn?.textContent || "Erstellen";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Erstelle…";
+  }
+  uiNotify("info", "Lädt… Termin wird erstellt.");
+  setSyncLoading(true, "Lädt… Termin wird erstellt");
+  try {
+    const createdRes = await apiPost("/api/assistant/commit", {
+      proposal,
+      provider,
+    });
+    const createdEvent = createdRes?.createdEvent || null;
+    if (createdEvent) {
+      state.events = Array.isArray(state.events) ? state.events : [];
+      state.events.unshift(createdEvent);
+    }
+    await refreshFromApi();
+    await render();
+    uiNotify("success", "Termin erstellt");
+    closeEventModal();
+  } catch (e) {
+    const status = e?._meta?.status;
+    if (status === 401) {
+      await refreshFromApi();
+      updateGoogleButtons();
+      uiNotify("error", "Google ist nicht (korrekt) verbunden – bitte erneut verbinden.");
+      return;
+    }
+    uiNotify("error", `Erstellen fehlgeschlagen: ${e?.message || "unbekannt"}`);
+  } finally {
+    setSyncLoading(false);
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText;
+    }
+  }
+}
 
-  const text = (els.eventText.value || '').trim();
+function openAssistantEditModal() {
+  const proposal = state.assistant.proposal;
+  const event = proposal?.event || {};
+  if (!proposal) return;
+
+  state.editingEvent = {
+    _assistantDraft: true,
+    _assistantProvider: state.assistant.provider || "local",
+  };
+
+  const dateISO = event.dateISO || "";
+  const startTime = event.startTime || (event.allDay ? "00:00" : "");
+  let durationMin = Number.isFinite(event.durationMin) ? event.durationMin : null;
+  if (!durationMin && event.startTime && event.endTime) {
+    const start = buildLocalDateTimeFromIso(event.dateISO, event.startTime);
+    const end = buildLocalDateTimeFromIso(event.dateISO, event.endTime);
+    if (start && end) {
+      const raw = Math.round((end - start) / 60000);
+      durationMin = raw > 0 ? raw : 60;
+    }
+  }
+  if (event.allDay) {
+    durationMin = 24 * 60;
+  }
+
+  if (els.editEventTitle) els.editEventTitle.value = event.title || "";
+  if (els.editEventDate) els.editEventDate.value = dateISO;
+  if (els.editEventStartTime) els.editEventStartTime.value = startTime;
+  if (els.editEventDuration) els.editEventDuration.value = String(durationMin || 60);
+  if (els.editEventLocation) els.editEventLocation.value = event.location || "";
+  if (els.editEventNotes) els.editEventNotes.value = event.description || "";
+
+  closeEventModal();
+  els.editEventBackdrop?.classList.remove("hidden");
+  els.editEventModal?.classList.remove("hidden");
+  setTimeout(() => els.editEventTitle?.focus(), 0);
+}
+
+async function createEventFromText() {
+  const text = (els.eventText.value || "").trim();
   if (!text) {
     setStatus('Bitte Event-Text eingeben (z.B. „Coiffeur morgen 13:00 60min“).', false);
-    uiNotify('error', '❌ Bitte Event-Text eingeben');
+    uiNotify("error", "❌ Bitte Event-Text eingeben");
     els.eventText.focus();
     return;
   }
@@ -3826,45 +4211,22 @@ async function createEventFromText() {
   const btn = els.createEventBtn;
   const oldText = btn.textContent;
   btn.disabled = true;
-  btn.textContent = 'Erstelle…';
-  btn.setAttribute('aria-busy', 'true');
-  uiNotify('info', 'Lädt… Event wird synchronisiert.');
-  setSyncLoading(true, "Lädt… Event wird synchronisiert");
+  btn.textContent = "Analysiere…";
+  btn.setAttribute("aria-busy", "true");
+  uiNotify("info", "Lädt… Vorschlag wird erstellt.");
+  setSyncLoading(true, "Lädt… Vorschlag wird erstellt");
 
   try {
-    const data = await apiPost('/api/google/quick-add', { text });
-
-    const maybe = extractEventFromQuickAddResponse(data, text);
-    if (maybe) {
-      state.events = Array.isArray(state.events) ? state.events : [];
-      state.events.unshift(maybe);
-    }
-
-    await refreshFromApi();
-    await render();
-
-    setStatus(`Event erstellt ✅ • ${googleUiStatusLine()}`, true);
-    uiNotify('success', '✅ Event erstellt');
-    closeEventModal();
+    const parsed = await requestAssistantParse(text);
+    handleAssistantResponse(parsed, { originalText: text });
   } catch (e) {
-    const status = e?._meta?.status;
-
-    if (status == 401) {
-      // Backend now returns 401 for "not connected" / "wrong account" situations
-      await refreshFromApi();
-      updateGoogleButtons();
-      setStatus(`❌ ${googleUiStatusLine()}`, false);
-      uiNotify('error', 'Google ist nicht (korrekt) verbunden – bitte erneut verbinden.');
-      try { els.googleConnectBtn?.focus?.(); } catch {}
-    } else {
-      setStatus(`Event fehlgeschlagen ❌: ${e?.message || 'unbekannt'} • ${googleUiStatusLine()}`, false);
-      uiNotify('error', `❌ Event fehlgeschlagen: ${e?.message || 'unbekannt'}`);
-    }
+    setStatus(`Vorschlag fehlgeschlagen ❌: ${e?.message || "unbekannt"}`, false);
+    uiNotify("error", `❌ Vorschlag fehlgeschlagen: ${e?.message || "unbekannt"}`);
   } finally {
     setSyncLoading(false);
     btn.disabled = false;
     btn.textContent = oldText;
-    btn.removeAttribute('aria-busy');
+    btn.removeAttribute("aria-busy");
   }
 }
 
