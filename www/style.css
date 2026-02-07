@@ -275,6 +275,12 @@ body.view-day .side {
     inset -14px 0 14px -14px rgba(0, 0, 0, 0.35);
 }
 
+.month-strip {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
 .day-chip {
   flex-shrink: 0;
   width: 70px;
