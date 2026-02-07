@@ -1166,6 +1166,52 @@ code{
   color: var(--text);
 }
 
+.assistantQuestionList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  margin: 8px 0;
+  color: var(--text);
+}
+
+.assistantPreviewBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.assistantLabel {
+  display: inline-block;
+  min-width: 70px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.assistantValue {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.assistantPreviewActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.assistantPreviewNote {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+}
+
+.field.small input {
+  padding: 8px 10px;
+}
+
 .suggestionList { display:flex; flex-direction: column; gap: 10px; }
 .suggestionItem {
   display:flex;
