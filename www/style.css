@@ -213,15 +213,17 @@ body.view-day .side {
   display: flex;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
-  padding: 8px 2px 6px;
-  gap: 12px;
+  padding: 20px 10px;
+  gap: 15px;
+  height: 80px;
+  align-items: center;
   -webkit-overflow-scrolling: touch;
 }
 
 .day-chip {
   flex-shrink: 0;
-  width: 62px;
-  height: 62px;
+  width: 70px;
+  height: 70px;
   background-color: #ffffff;
   border-radius: 999px;
   text-align: center;
@@ -229,14 +231,14 @@ body.view-day .side {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 700;
   color: #6a1b9a;
   cursor: pointer;
   scroll-snap-align: center;
   border: 2px solid transparent;
   padding: 6px;
-  line-height: 1.2;
+  line-height: 1.1;
   box-shadow: 0 8px 18px rgba(27, 8, 45, 0.18);
 }
 
@@ -249,14 +251,14 @@ body.view-day .side {
   font-weight: 800;
 }
 .day-chip .day-label {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .day-chip.selected {
-  border: 2px solid rgba(255, 255, 255, 0.9);
-  color: white;
-  background: linear-gradient(135deg, #4caf50 0%, #d81b60 100%);
+  border: 2px solid #d81b60;
+  color: #ffffff;
+  background-color: #d81b60;
 }
 
 .event-list {
@@ -264,6 +266,7 @@ body.view-day .side {
   border-radius: 20px;
   padding: 12px;
   box-shadow: 0 14px 30px rgba(26, 6, 46, 0.18);
+  margin-top: 12px;
 }
 
 .event-list-title {
@@ -275,7 +278,7 @@ body.view-day .side {
 .event-list-items {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
   align-items: center;
 }
 
@@ -285,13 +288,17 @@ body.view-day .side {
   grid-template-rows: auto auto;
   align-items: center;
   gap: 4px 10px;
-  height: 60px;
+  height: 70px;
   width: min(100%, 320px);
   background: rgba(255, 255, 255, 0.9);
   color: #3a2350;
   border-radius: 16px;
   padding: 8px 12px;
   box-shadow: 0 10px 18px rgba(24, 5, 44, 0.15);
+  margin-bottom: 15px;
+}
+.event-card:last-child {
+  margin-bottom: 0;
 }
 
 .event-time {
@@ -308,7 +315,7 @@ body.view-day .side {
 
 .event-details {
   font-size: 12px;
-  color: rgba(58, 35, 80, 0.7);
+  color: rgba(58, 35, 80, 0.55);
 }
 
 .expand-icon {
@@ -347,11 +354,14 @@ body.view-day .side {
 
 .event-popup h2 {
   margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 700;
 }
 
 .event-popup p {
   margin: 0;
-  font-size: 14px;
+  font-size: 12px;
+  color: rgba(58, 35, 80, 0.7);
 }
 
 .close-popup {
