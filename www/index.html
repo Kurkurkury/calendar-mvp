@@ -136,6 +136,44 @@
       </div>
 
       <div class="card">
+        <div class="cardTitle">Freie Zeiten</div>
+        <div class="cardSub">Der Assistent erkennt freie Slots. Erst freigeben, dann Termin erstellen.</div>
+
+        <div class="list">
+          <label class="field">
+            <span>Titel (für späteren Termin)</span>
+            <input id="freeSlotTitle" type="text" placeholder="z.B. Fokuszeit" />
+          </label>
+
+          <div class="row">
+            <label class="field">
+              <span>Startdatum</span>
+              <input id="freeSlotDate" type="date" />
+            </label>
+            <label class="field">
+              <span>Dauer (Min)</span>
+              <input id="freeSlotDuration" type="number" min="5" step="5" value="60" />
+            </label>
+          </div>
+
+          <label class="field">
+            <span>Zeitraum (Tage)</span>
+            <input id="freeSlotDaysForward" type="number" min="1" max="14" step="1" value="5" />
+          </label>
+
+          <div class="modalFoot">
+            <button id="freeSlotFindBtn" class="btn ghost" type="button">Freie Zeiten finden</button>
+          </div>
+        </div>
+
+        <div class="cardSub" style="margin-top:12px;">Vorschläge (frei)</div>
+        <div id="freeSlotList" class="list"></div>
+
+        <div class="cardSub" style="margin-top:12px;">Freigegebene Slots</div>
+        <div id="approvedSlotList" class="list"></div>
+      </div>
+
+      <div class="card">
         <div class="cardTitle">Google Events</div>
         <div class="cardSub">Termine aus deinem Kalender (löschen synchronisiert zu Google).</div>
         <div id="eventsList" class="list"></div>
