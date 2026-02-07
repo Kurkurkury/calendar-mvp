@@ -96,6 +96,18 @@ const DEFAULT_STEP_MINUTES = 30;
 const HOUR_HEIGHT_PX = 48;
 const DEFAULT_SLOT_PX = Math.round(HOUR_HEIGHT_PX * (DEFAULT_STEP_MINUTES / 60));
 const DAY_MODE_STORAGE_KEY = "calendarDayModeV1";
+const SMART_PREFS_KEY = "smartPrefsV1";
+const DEFAULT_SMART_PREFS = {
+  title: "Fokuszeit",
+  date: "",
+  durationMinutes: 60,
+  daysForward: 7,
+  windowStart: "08:00",
+  windowEnd: "18:00",
+  preference: "none",
+  bufferMinutes: 15,
+  maxSuggestions: 5,
+};
 
 async function openExternal(url) {
   if (window.Capacitor?.Plugins?.Browser?.open) {
@@ -229,6 +241,12 @@ const state = {
   weekLoadLoading: false,
   weekLoadError: null,
 
+  smartPrefs: loadLocal(SMART_PREFS_KEY, DEFAULT_SMART_PREFS),
+  smartSuggestions: [],
+  smartOptimizations: [],
+  smartSuggestionsLoading: false,
+  smartSuggestionsError: null,
+
   windows: loadLocal("windowsV1", [
     { id: "w1", name: "Fokus", days: [1, 2, 3, 4, 5], start: "09:00", end: "12:00", weight: 3 },
     { id: "w2", name: "Uni", days: [1, 2, 3, 4, 5], start: "14:00", end: "16:00", weight: 2 },
@@ -263,6 +281,18 @@ const els = {
   weekLoadSummary: byId("weekLoadSummary"),
   weekLoadChart: byId("weekLoadChart"),
   weekLoadSuggestions: byId("weekLoadSuggestions"),
+  smartTitle: byId("smartTitle"),
+  smartDate: byId("smartDate"),
+  smartDuration: byId("smartDuration"),
+  smartDaysForward: byId("smartDaysForward"),
+  smartWindowStart: byId("smartWindowStart"),
+  smartWindowEnd: byId("smartWindowEnd"),
+  smartPreference: byId("smartPreference"),
+  smartBuffer: byId("smartBuffer"),
+  smartMaxSuggestions: byId("smartMaxSuggestions"),
+  smartSuggestBtn: byId("smartSuggestBtn"),
+  smartSuggestionList: byId("smartSuggestionList"),
+  smartOptimizationList: byId("smartOptimizationList"),
 
   prevWeekBtn: byId("prevWeekBtn"),
   todayBtn: byId("todayBtn"),
@@ -470,6 +500,25 @@ async function boot() {
   // Free slots (Phase 3)
   ensureFreeSlotDefaults();
   els.freeSlotFindBtn?.addEventListener("click", loadFreeSlots);
+
+  // Smart suggestions (Phase 5)
+  applySmartPrefsToInputs();
+  const smartInputs = [
+    els.smartTitle,
+    els.smartDate,
+    els.smartDuration,
+    els.smartDaysForward,
+    els.smartWindowStart,
+    els.smartWindowEnd,
+    els.smartPreference,
+    els.smartBuffer,
+    els.smartMaxSuggestions,
+  ].filter(Boolean);
+  smartInputs.forEach((input) => {
+    input.addEventListener("change", saveSmartPrefsFromInputs);
+    input.addEventListener("input", saveSmartPrefsFromInputs);
+  });
+  els.smartSuggestBtn?.addEventListener("click", loadSmartSuggestions);
 
   // Event modal
   els.closeEventBtn?.addEventListener("click", closeEventModal);
@@ -1022,6 +1071,8 @@ async function render() {
   renderSideLists();
   renderWindows();
   refreshWeeklyLoad();
+  renderSmartSuggestions();
+  renderSmartOptimizations();
   saveLocal("windowsV1", state.windows);
 
   syncSelectedEvent();
@@ -2161,6 +2212,15 @@ function openSuggestionModal(suggestions, requestPayload) {
   els.suggestionModal?.classList.remove("hidden");
 }
 
+function openSuggestionModalWithPreselect(suggestions, requestPayload, preselectedId) {
+  state.eventSuggestions = Array.isArray(suggestions) ? suggestions : [];
+  state.selectedSuggestionId = preselectedId || null;
+  state.eventSuggestionRequest = requestPayload || null;
+  renderSuggestionList();
+  els.suggestionBackdrop?.classList.remove("hidden");
+  els.suggestionModal?.classList.remove("hidden");
+}
+
 function closeSuggestionModal() {
   state.eventSuggestions = [];
   state.selectedSuggestionId = null;
@@ -2203,7 +2263,14 @@ function renderSuggestionList() {
 
     const meta = document.createElement("div");
     meta.className = "suggestionMeta";
+    const reason = suggestion?.reason ? String(suggestion.reason) : "";
     meta.textContent = duration ? `${duration} min` : "Dauer unbekannt";
+    if (reason) {
+      const reasonLine = document.createElement("div");
+      reasonLine.className = "suggestionReason";
+      reasonLine.textContent = reason;
+      meta.appendChild(reasonLine);
+    }
 
     button.appendChild(title);
     button.appendChild(meta);
@@ -2339,6 +2406,144 @@ function renderApprovedSlotList() {
     item.appendChild(top);
     item.appendChild(meta);
     els.approvedSlotList.appendChild(item);
+  });
+}
+
+function applySmartPrefsToInputs() {
+  if (!els.smartTitle) return;
+  const prefs = state.smartPrefs || DEFAULT_SMART_PREFS;
+  if (els.smartTitle) els.smartTitle.value = prefs.title || "";
+  if (els.smartDate) els.smartDate.value = prefs.date || toInputDate(new Date());
+  if (els.smartDuration) els.smartDuration.value = String(prefs.durationMinutes || 60);
+  if (els.smartDaysForward) els.smartDaysForward.value = String(prefs.daysForward || 7);
+  if (els.smartWindowStart) els.smartWindowStart.value = prefs.windowStart || "08:00";
+  if (els.smartWindowEnd) els.smartWindowEnd.value = prefs.windowEnd || "18:00";
+  if (els.smartPreference) els.smartPreference.value = prefs.preference || "none";
+  if (els.smartBuffer) els.smartBuffer.value = String(prefs.bufferMinutes ?? 15);
+  if (els.smartMaxSuggestions) els.smartMaxSuggestions.value = String(prefs.maxSuggestions || 5);
+}
+
+function readSmartPrefsFromInputs() {
+  return {
+    title: (els.smartTitle?.value || "").trim() || DEFAULT_SMART_PREFS.title,
+    date: els.smartDate?.value || toInputDate(new Date()),
+    durationMinutes: clamp(parseInt(els.smartDuration?.value || "60", 10), 5, 24 * 60),
+    daysForward: clamp(parseInt(els.smartDaysForward?.value || "7", 10), 1, 14),
+    windowStart: els.smartWindowStart?.value || "08:00",
+    windowEnd: els.smartWindowEnd?.value || "18:00",
+    preference: els.smartPreference?.value || "none",
+    bufferMinutes: clamp(parseInt(els.smartBuffer?.value || "15", 10), 0, 120),
+    maxSuggestions: clamp(parseInt(els.smartMaxSuggestions?.value || "5", 10), 1, 10),
+  };
+}
+
+function saveSmartPrefsFromInputs() {
+  const prefs = readSmartPrefsFromInputs();
+  state.smartPrefs = prefs;
+  saveLocal(SMART_PREFS_KEY, prefs);
+  return prefs;
+}
+
+function renderSmartSuggestions() {
+  if (!els.smartSuggestionList) return;
+  els.smartSuggestionList.innerHTML = "";
+
+  if (state.smartSuggestionsLoading) {
+    const item = document.createElement("div");
+    item.className = "item";
+    item.innerHTML = `<div class="itemTitle">Lade smarte Vorschläge…</div><div class="itemMeta">Bitte kurz warten.</div>`;
+    els.smartSuggestionList.appendChild(item);
+    return;
+  }
+
+  if (state.smartSuggestionsError) {
+    const item = document.createElement("div");
+    item.className = "item";
+    item.innerHTML = `<div class="itemTitle">Keine Vorschläge verfügbar</div><div class="itemMeta">${state.smartSuggestionsError}</div>`;
+    els.smartSuggestionList.appendChild(item);
+    return;
+  }
+
+  const suggestions = Array.isArray(state.smartSuggestions) ? state.smartSuggestions : [];
+  if (suggestions.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "item";
+    empty.innerHTML = `<div class="itemTitle">Noch keine Vorschläge</div><div class="itemMeta">Passe Präferenzen an und lade Vorschläge.</div>`;
+    els.smartSuggestionList.appendChild(empty);
+    return;
+  }
+
+  suggestions.forEach((suggestion) => {
+    const start = suggestion?.start ? new Date(suggestion.start) : null;
+    const end = suggestion?.end ? new Date(suggestion.end) : null;
+    const hasStart = start && !Number.isNaN(start.getTime());
+    const hasEnd = end && !Number.isNaN(end.getTime());
+    const duration = hasStart && hasEnd ? Math.round((end - start) / 60000) : null;
+
+    const item = document.createElement("div");
+    item.className = "item";
+
+    const top = document.createElement("div");
+    top.className = "itemTop";
+
+    const title = document.createElement("div");
+    title.className = "itemTitle";
+    title.textContent = hasStart ? `${fmtDate(start)} • ${fmtTime(start)}–${fmtTime(end)}` : "Vorschlag";
+
+    const actions = document.createElement("div");
+    actions.className = "itemActions";
+
+    const selectBtn = document.createElement("button");
+    selectBtn.className = "btn small primary";
+    selectBtn.type = "button";
+    selectBtn.textContent = "Auswählen";
+    selectBtn.addEventListener("click", () => {
+      const request = { title: state.smartPrefs?.title || DEFAULT_SMART_PREFS.title };
+      openSuggestionModalWithPreselect([suggestion], request, suggestion.id);
+    });
+    actions.appendChild(selectBtn);
+
+    top.appendChild(title);
+    top.appendChild(actions);
+
+    const meta = document.createElement("div");
+    meta.className = "itemMeta";
+    const parts = [];
+    if (duration) parts.push(`${duration} min`);
+    if (suggestion?.reason) parts.push(String(suggestion.reason));
+    meta.textContent = parts.join(" • ");
+
+    item.appendChild(top);
+    item.appendChild(meta);
+    els.smartSuggestionList.appendChild(item);
+  });
+}
+
+function renderSmartOptimizations() {
+  if (!els.smartOptimizationList) return;
+  els.smartOptimizationList.innerHTML = "";
+
+  const tips = Array.isArray(state.smartOptimizations) ? state.smartOptimizations : [];
+  if (tips.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "item";
+    empty.innerHTML = `<div class="itemTitle">Noch keine Optimierungen</div><div class="itemMeta">Lade smarte Vorschläge, um Hinweise zu erhalten.</div>`;
+    els.smartOptimizationList.appendChild(empty);
+    return;
+  }
+
+  tips.forEach((tip) => {
+    const item = document.createElement("div");
+    item.className = "item";
+    const title = document.createElement("div");
+    title.className = "itemTitle";
+    title.textContent = tip?.title || "Tipp";
+    const meta = document.createElement("div");
+    meta.className = "itemMeta";
+    meta.textContent = tip?.message || "";
+    item.appendChild(title);
+    item.appendChild(meta);
+    els.smartOptimizationList.appendChild(item);
   });
 }
 
@@ -2798,6 +3003,38 @@ async function loadFreeSlots() {
       btn.disabled = false;
       btn.textContent = oldText;
     }
+  }
+}
+
+async function loadSmartSuggestions() {
+  const prefs = saveSmartPrefsFromInputs();
+  if (!prefs.title) {
+    uiNotify("error", "Bitte einen Titel für die Vorschläge eingeben.");
+    return;
+  }
+
+  state.smartSuggestionsLoading = true;
+  state.smartSuggestionsError = null;
+  renderSmartSuggestions();
+  renderSmartOptimizations();
+
+  try {
+    const res = await apiPost("/api/smart-suggestions", prefs);
+    if (res?.ok) {
+      state.smartSuggestions = Array.isArray(res.suggestions) ? res.suggestions : [];
+      state.smartOptimizations = Array.isArray(res.optimizations) ? res.optimizations : [];
+    } else {
+      throw new Error(res?.message || "Keine Vorschläge erhalten");
+    }
+  } catch (e) {
+    const msg = String(e?.message || "Fehler beim Laden");
+    state.smartSuggestionsError = msg;
+    state.smartSuggestions = [];
+    state.smartOptimizations = [];
+  } finally {
+    state.smartSuggestionsLoading = false;
+    renderSmartSuggestions();
+    renderSmartOptimizations();
   }
 }
 
