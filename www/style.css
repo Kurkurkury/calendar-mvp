@@ -263,7 +263,7 @@ body.view-day .side {
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   padding: 10px;
-  gap: 10px;
+  gap: 0;
   height: 80px;
   margin-top: 10px;
   align-items: center;
@@ -278,6 +278,7 @@ body.view-day .side {
   height: 70px;
   background-color: #ffffff;
   border-radius: 50%;
+  margin-right: 10px;
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -329,8 +330,8 @@ body.view-day .side {
 .event-list-items {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  align-items: center;
+  gap: 10px;
+  align-items: stretch;
 }
 
 .event-card {
@@ -340,16 +341,12 @@ body.view-day .side {
   align-items: center;
   gap: 4px 10px;
   height: 70px;
-  width: min(100%, 320px);
-  background: rgba(255, 255, 255, 0.9);
+  width: 100%;
+  background-color: #ffffff;
   color: #3a2350;
-  border-radius: 16px;
-  padding: 8px 12px;
-  box-shadow: 0 10px 18px rgba(24, 5, 44, 0.15);
-  margin-bottom: 15px;
-}
-.event-card:last-child {
-  margin-bottom: 0;
+  border-radius: 8px;
+  padding: 10px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 .event-time {
@@ -364,6 +361,34 @@ body.view-day .side {
   font-weight: 700;
 }
 
+.event-detail-panel {
+  grid-column: 1 / -1;
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(58, 35, 80, 0.7);
+  padding-top: 6px;
+}
+
+.event-detail-row {
+  display: flex;
+  gap: 6px;
+}
+
+.event-detail-label {
+  font-weight: 700;
+  color: rgba(58, 35, 80, 0.85);
+}
+
+.event-card.expanded {
+  height: auto;
+}
+
+.event-card.expanded .event-detail-panel {
+  display: flex;
+}
+
 .event-details {
   font-size: 12px;
   color: rgba(58, 35, 80, 0.55);
@@ -373,9 +398,20 @@ body.view-day .side {
   font-size: 18px;
   color: #d81b60;
   grid-row: 1 / span 2;
+  transform: rotate(0deg);
   background: transparent;
   border: 0;
   cursor: pointer;
+}
+
+.event-card.expanded .expand-icon {
+  transform: rotate(90deg);
+}
+
+@media (min-width: 720px) {
+  .event-list-items {
+    max-width: 520px;
+  }
 }
 
 .event-empty {
