@@ -285,7 +285,8 @@ const state = {
 };
 
 let lastDayScrollerScrollLeft = 0;
-let dayScrollerStripWidth = 0;
+let dayScrollerPrevWidth = 0;
+let dayScrollerCurWidth = 0;
 let dayScrollerIsSwapping = false;
 let dayScrollerScrollRaf = null;
 
@@ -1163,6 +1164,10 @@ async function render() {
   if (state.currentYear === null || state.currentMonth === null || state.selectedDay === null) {
     setActiveDate(state.activeDate);
   }
+  if (state.selectedDay > daysInMonth(state.currentYear, state.currentMonth)) {
+    const shifted = resolveMonthShift(state.currentYear, state.currentMonth, 1);
+    setDaySelection(shifted.year, shifted.month, state.selectedDay);
+  }
 
   renderTopBar();
 
@@ -1231,6 +1236,16 @@ function buildMonthDays(year, month) {
   return days;
 }
 
+function getDayScrollerWidths(scroller) {
+  const prevStrip = scroller.querySelector('.month-strip[data-strip="prev"]');
+  const curStrip = scroller.querySelector('.month-strip[data-strip="cur"]');
+  const fallback = scroller.clientWidth || 0;
+  return {
+    prevWidth: prevStrip?.getBoundingClientRect().width || fallback,
+    curWidth: curStrip?.getBoundingClientRect().width || fallback,
+  };
+}
+
 async function commitDayScrollerMonth(direction) {
   if (dayScrollerIsSwapping) return;
   dayScrollerIsSwapping = true;
@@ -1244,9 +1259,10 @@ async function commitDayScrollerMonth(direction) {
       dayScrollerIsSwapping = false;
       return;
     }
-    const curStrip = scroller.querySelector('.month-strip[data-strip="cur"]');
-    dayScrollerStripWidth = curStrip?.getBoundingClientRect().width || scroller.clientWidth;
-    scroller.scrollLeft = dayScrollerStripWidth;
+    const widths = getDayScrollerWidths(scroller);
+    dayScrollerPrevWidth = widths.prevWidth;
+    dayScrollerCurWidth = widths.curWidth;
+    scroller.scrollLeft = dayScrollerPrevWidth;
     lastDayScrollerScrollLeft = scroller.scrollLeft;
     dayScrollerIsSwapping = false;
   });
@@ -1258,16 +1274,17 @@ function handleDayScrollerScroll() {
   if (dayScrollerScrollRaf) return;
   dayScrollerScrollRaf = requestAnimationFrame(() => {
     dayScrollerScrollRaf = null;
-    if (!dayScrollerStripWidth) {
-      const curStrip = scroller.querySelector('.month-strip[data-strip="cur"]');
-      dayScrollerStripWidth = curStrip?.getBoundingClientRect().width || scroller.clientWidth;
+    if (!dayScrollerPrevWidth || !dayScrollerCurWidth) {
+      const widths = getDayScrollerWidths(scroller);
+      dayScrollerPrevWidth = widths.prevWidth;
+      dayScrollerCurWidth = widths.curWidth;
     }
-    if (!dayScrollerStripWidth) return;
+    if (!dayScrollerPrevWidth || !dayScrollerCurWidth) return;
     const currentLeft = scroller.scrollLeft;
     lastDayScrollerScrollLeft = currentLeft;
-    if (currentLeft >= dayScrollerStripWidth * 1.5) {
+    if (currentLeft >= dayScrollerPrevWidth + dayScrollerCurWidth * 0.5) {
       void commitDayScrollerMonth(1);
-    } else if (currentLeft <= dayScrollerStripWidth * 0.5) {
+    } else if (currentLeft <= dayScrollerPrevWidth * 0.5) {
       void commitDayScrollerMonth(-1);
     }
   });
@@ -1527,10 +1544,18 @@ function renderDayScroller() {
   const dayNames = ["SO", "MO", "DI", "MI", "DO", "FR", "SA"];
   const prev = resolveMonthShift(state.currentYear, state.currentMonth, -1);
   const next = resolveMonthShift(state.currentYear, state.currentMonth, 1);
+  const prevDays = buildMonthDays(prev.year, prev.month);
+  const curDays = buildMonthDays(state.currentYear, state.currentMonth);
+  const nextDays = buildMonthDays(next.year, next.month);
+  const days = [
+    ...prevDays.map(day => ({ ...day, year: prev.year, month: prev.month })),
+    ...curDays.map(day => ({ ...day, year: state.currentYear, month: state.currentMonth })),
+    ...nextDays.map(day => ({ ...day, year: next.year, month: next.month })),
+  ];
   const strips = [
-    { key: "prev", year: prev.year, month: prev.month, days: buildMonthDays(prev.year, prev.month) },
-    { key: "cur", year: state.currentYear, month: state.currentMonth, days: buildMonthDays(state.currentYear, state.currentMonth) },
-    { key: "next", year: next.year, month: next.month, days: buildMonthDays(next.year, next.month) },
+    { key: "prev", year: prev.year, month: prev.month, days: prevDays },
+    { key: "cur", year: state.currentYear, month: state.currentMonth, days: curDays },
+    { key: "next", year: next.year, month: next.month, days: nextDays },
   ];
 
   els.dayScroller.innerHTML = "";
@@ -1538,6 +1563,7 @@ function renderDayScroller() {
     const stripEl = document.createElement("div");
     stripEl.className = "month-strip";
     stripEl.dataset.strip = strip.key;
+    stripEl.dataset.month = strip.key === "cur" ? "current" : strip.key;
     strip.days.forEach((dayObj) => {
       const dayDate = dayObj.date;
       const button = document.createElement("button");
@@ -1563,13 +1589,15 @@ function renderDayScroller() {
     els.dayScroller.appendChild(stripEl);
   });
 
+  if (!days.length) return;
   const selected = els.dayScroller.querySelector('.month-strip[data-strip="cur"] .day-chip.selected');
   selected?.scrollIntoView({ inline: "center", block: "nearest" });
   requestAnimationFrame(() => {
     const scroller = els.dayScroller;
-    const curStrip = scroller.querySelector('.month-strip[data-strip="cur"]');
-    dayScrollerStripWidth = curStrip?.getBoundingClientRect().width || scroller.clientWidth;
-    scroller.scrollLeft = dayScrollerStripWidth;
+    const widths = getDayScrollerWidths(scroller);
+    dayScrollerPrevWidth = widths.prevWidth;
+    dayScrollerCurWidth = widths.curWidth;
+    scroller.scrollLeft = dayScrollerPrevWidth;
     lastDayScrollerScrollLeft = scroller.scrollLeft;
     if (dayScrollerIsSwapping) {
       dayScrollerIsSwapping = false;
