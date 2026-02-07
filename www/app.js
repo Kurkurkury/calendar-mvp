@@ -93,10 +93,10 @@ const SCROLL_BUFFER_PX = isMobile() ? 220 : 120;
 const DEFAULT_VIEW_START_HOUR = 8;
 const DEFAULT_VIEW_END_HOUR = 20;
 const DEFAULT_STEP_MINUTES = 30;
-const HOUR_HEIGHT_PX = 60;
+const HOUR_HEIGHT_PX = 50;
 const DEFAULT_SLOT_PX = Math.round(HOUR_HEIGHT_PX * (DEFAULT_STEP_MINUTES / 60));
 const WEEK_STEP_MINUTES = 60;
-const WEEK_SLOT_PX = 60;
+const WEEK_SLOT_PX = 50;
 const DAY_MODE_STORAGE_KEY = "calendarDayModeV1";
 const SMART_PREFS_KEY = "smartPrefsV1";
 const DEFAULT_SMART_PREFS = {
@@ -1652,7 +1652,7 @@ function drawTaskBlock(task, daysArray, rangeStart) {
 
   const pxPerMin = state.slotPx / state.stepMinutes;
   const top = yStartMin * pxPerMin;
-  const height = Math.max(28, (yEndMin - yStartMin) * pxPerMin);
+  const height = Math.max(50, (yEndMin - yStartMin) * pxPerMin);
 
   const div = document.createElement("div");
   div.className = "taskBlock";
@@ -1680,7 +1680,7 @@ function drawEventBlock(ev, daysArray, rangeStart) {
 
   const pxPerMin = state.slotPx / state.stepMinutes;
   const top = yStartMin * pxPerMin;
-  const height = Math.max(28, (yEndMin - yStartMin) * pxPerMin);
+  const height = Math.max(50, (yEndMin - yStartMin) * pxPerMin);
 
   const div = document.createElement("div");
   div.className = "eventBlock";
