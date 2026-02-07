@@ -281,6 +281,7 @@ const els = {
   weekLoadSummary: byId("weekLoadSummary"),
   weekLoadChart: byId("weekLoadChart"),
   weekLoadSuggestions: byId("weekLoadSuggestions"),
+  weekLoadBreaks: byId("weekLoadBreaks"),
   smartTitle: byId("smartTitle"),
   smartDate: byId("smartDate"),
   smartDuration: byId("smartDuration"),
@@ -1882,7 +1883,7 @@ function renderSelectedEventDetails() {
 
 // -------------------- Weekly load --------------------
 function refreshWeeklyLoad() {
-  if (!els.weekLoadChart || !els.weekLoadSummary || !els.weekLoadSuggestions) return;
+  if (!els.weekLoadChart || !els.weekLoadSummary || !els.weekLoadSuggestions || !els.weekLoadBreaks) return;
 
   const key = dateKey(state.weekStart);
   const now = Date.now();
@@ -1917,11 +1918,13 @@ function refreshWeeklyLoad() {
 }
 
 function renderWeeklyLoad() {
-  if (!els.weekLoadChart || !els.weekLoadSummary || !els.weekLoadSuggestions) return;
+  if (!els.weekLoadChart || !els.weekLoadSummary || !els.weekLoadSuggestions || !els.weekLoadBreaks) return;
 
   const names = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+  const dayNames = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
   els.weekLoadChart.innerHTML = "";
   els.weekLoadSuggestions.innerHTML = "";
+  els.weekLoadBreaks.innerHTML = "";
 
   if (state.weekLoadLoading) {
     els.weekLoadSummary.innerHTML = `<div class="weekLoadMeta">Lade Wochenbelastung...</div>`;
@@ -1988,21 +1991,51 @@ function renderWeeklyLoad() {
 
   if (!data.suggestions?.length) {
     els.weekLoadSuggestions.innerHTML = `<div class="item"><div class="itemTitle">Alles im grünen Bereich</div><div class="itemMeta">Aktuell sind ausreichend Pausen vorhanden.</div></div>`;
+  } else {
+    data.suggestions.forEach((tip) => {
+      const item = document.createElement("div");
+      item.className = "item";
+      const title = document.createElement("div");
+      title.className = "itemTitle";
+      title.textContent = tip.date || "Tipp";
+      const meta = document.createElement("div");
+      meta.className = "itemMeta";
+      meta.textContent = tip.message || "";
+      item.appendChild(title);
+      item.appendChild(meta);
+      els.weekLoadSuggestions.appendChild(item);
+    });
+  }
+
+  const breaks = Array.isArray(data.breakRecommendations) ? data.breakRecommendations : [];
+  if (!breaks.length) {
+    els.weekLoadBreaks.innerHTML = `<div class="item"><div class="itemTitle">Keine Empfehlung</div><div class="itemMeta">Für diese Woche wurden keine idealen Pausenfenster erkannt.</div></div>`;
     return;
   }
 
-  data.suggestions.forEach((tip) => {
+  breaks.forEach((pause) => {
     const item = document.createElement("div");
     item.className = "item";
     const title = document.createElement("div");
     title.className = "itemTitle";
-    title.textContent = tip.date || "Tipp";
+    const start = pause.start ? new Date(pause.start) : null;
+    const end = pause.end ? new Date(pause.end) : null;
+    const date = pause.date ? new Date(`${pause.date}T00:00:00`) : null;
+    const hasDate = date && !Number.isNaN(date.getTime());
+    const hasTimes = start && end && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime());
+    const dateLabel = hasDate
+      ? `${dayNames[date.getDay()]} ${pad2(date.getDate())}.${pad2(date.getMonth() + 1)}`
+      : pause.date || "Tag";
+    title.textContent = dateLabel;
     const meta = document.createElement("div");
     meta.className = "itemMeta";
-    meta.textContent = tip.message || "";
+    const minutes = Number(pause.minutes || 0);
+    meta.textContent = hasTimes
+      ? `${fmtTime(start)}–${fmtTime(end)} • ${minutes || Math.round((end - start) / 60000)} Min`
+      : pause.message || "";
     item.appendChild(title);
     item.appendChild(meta);
-    els.weekLoadSuggestions.appendChild(item);
+    els.weekLoadBreaks.appendChild(item);
   });
 }
 

@@ -286,6 +286,62 @@ function overlapMinutes(start, end, rangeStart, rangeEnd) {
   return diff > 0 ? diff / 60000 : 0;
 }
 
+function findBestBreakSlot(events, dayStart, windowStart = "08:00", windowEnd = "18:00") {
+  const workStart = atTime(dayStart, windowStart);
+  const workEnd = atTime(dayStart, windowEnd);
+  if (!workStart || !workEnd || workEnd <= workStart) return null;
+
+  const occupied = buildOccupiedIntervals(events, workStart, workEnd).sort(
+    (a, b) => a.start - b.start
+  );
+  const merged = [];
+  for (const interval of occupied) {
+    const last = merged[merged.length - 1];
+    if (last && interval.start <= last.end) {
+      if (interval.end > last.end) last.end = interval.end;
+    } else {
+      merged.push({ start: interval.start, end: interval.end });
+    }
+  }
+
+  const MIN_BREAK_MINUTES = 15;
+  const DEFAULT_BREAK_MINUTES = 30;
+  let best = null;
+
+  const considerGap = (gapStart, gapEnd) => {
+    const gapMinutes = (gapEnd.getTime() - gapStart.getTime()) / 60000;
+    if (gapMinutes < MIN_BREAK_MINUTES) return;
+    const duration = Math.min(DEFAULT_BREAK_MINUTES, gapMinutes);
+    const offset = Math.max(0, Math.round((gapMinutes - duration) / 2));
+    const start = addMinutes(gapStart, offset);
+    const end = addMinutes(start, duration);
+    if (!best || gapMinutes > best.gapMinutes) {
+      best = { start, end, minutes: duration, gapMinutes };
+    }
+  };
+
+  let cursor = workStart;
+  for (const interval of merged) {
+    if (interval.start > cursor) {
+      considerGap(cursor, interval.start);
+    }
+    if (interval.end > cursor) cursor = interval.end;
+  }
+  if (workEnd > cursor) {
+    considerGap(cursor, workEnd);
+  }
+
+  if (!best && merged.length === 0) {
+    const mid = atTime(dayStart, "12:00");
+    if (mid && addMinutes(mid, DEFAULT_BREAK_MINUTES) <= workEnd) {
+      return { start: mid, end: addMinutes(mid, DEFAULT_BREAK_MINUTES), minutes: DEFAULT_BREAK_MINUTES };
+    }
+  }
+
+  if (!best) return null;
+  return { start: best.start, end: best.end, minutes: best.minutes };
+}
+
 // ---- Config ----
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.API_KEY || "";
@@ -1483,6 +1539,7 @@ app.get("/api/weekly-load", async (req, res) => {
     const { events, source } = await loadWeekEvents(weekStart, weekEnd);
     const days = [];
     const suggestions = [];
+    const breakRecommendations = [];
     let totalMinutes = 0;
     let totalStress = 0;
     let busiest = null;
@@ -1534,9 +1591,29 @@ app.get("/api/weekly-load", async (req, res) => {
           message: "Hohe Dichte – plane mindestens zwei kurze Pausen (15–30 Min).",
         });
       }
+
+      const needsBreak = minutes >= 240 || count >= 4 || stressScore >= 60;
+      if (needsBreak) {
+        const breakSlot = findBestBreakSlot(events || [], dayStart);
+        if (breakSlot) {
+          breakRecommendations.push({
+            date: dayKey,
+            start: toLocalIsoWithOffset(breakSlot.start),
+            end: toLocalIsoWithOffset(breakSlot.end),
+            minutes: breakSlot.minutes,
+          });
+        }
+      }
     }
 
     const averageStress = Math.round(totalStress / 7);
+    const weekOverloaded = averageStress >= 65 || totalMinutes >= 2400;
+    if (weekOverloaded) {
+      suggestions.unshift({
+        date: "Woche",
+        message: "Woche stark ausgelastet – plane zusätzliche Pausen (mind. 2×15–30 Min pro Tag).",
+      });
+    }
     res.json({
       ok: true,
       source,
@@ -1550,6 +1627,7 @@ app.get("/api/weekly-load", async (req, res) => {
         busiestCount: busiest?.count || 0,
       },
       suggestions,
+      breakRecommendations,
     });
   } catch (e) {
     res.status(500).json({ ok: false, message: e?.message || "weekly load failed" });
