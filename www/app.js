@@ -108,6 +108,12 @@ const DEFAULT_SMART_PREFS = {
   bufferMinutes: 15,
   maxSuggestions: 5,
 };
+const DEFAULT_PREFS_UI = {
+  windowStart: "08:00",
+  windowEnd: "18:00",
+  bufferMinutes: 15,
+  timeOfDay: "auto",
+};
 
 async function openExternal(url) {
   if (window.Capacitor?.Plugins?.Browser?.open) {
@@ -244,6 +250,8 @@ const state = {
   smartPrefs: loadLocal(SMART_PREFS_KEY, DEFAULT_SMART_PREFS),
   smartSuggestions: [],
   smartOptimizations: [],
+  smartAppliedPreferences: null,
+  smartHabits: null,
   smartSuggestionsLoading: false,
   smartSuggestionsError: null,
 
@@ -260,6 +268,17 @@ const state = {
   hasAutoScrolled: false,
   isSyncing: false,
   isConnecting: false,
+
+  preferences: null,
+  learning: null,
+  preferencesError: null,
+  preferencesSaving: false,
+  preferencesLoadedAt: 0,
+
+  monitoring: null,
+  monitoringError: null,
+  monitoringLoading: false,
+  monitoringFetchedAt: 0,
 };
 
 const els = {
@@ -292,8 +311,22 @@ const els = {
   smartBuffer: byId("smartBuffer"),
   smartMaxSuggestions: byId("smartMaxSuggestions"),
   smartSuggestBtn: byId("smartSuggestBtn"),
+  smartPreferenceSummary: byId("smartPreferenceSummary"),
   smartSuggestionList: byId("smartSuggestionList"),
   smartOptimizationList: byId("smartOptimizationList"),
+
+  prefWindowStart: byId("prefWindowStart"),
+  prefWindowEnd: byId("prefWindowEnd"),
+  prefBufferMinutes: byId("prefBufferMinutes"),
+  prefTimeOfDay: byId("prefTimeOfDay"),
+  prefSaveBtn: byId("prefSaveBtn"),
+  prefStatus: byId("prefStatus"),
+  prefLearningSummary: byId("prefLearningSummary"),
+  prefLearningDetails: byId("prefLearningDetails"),
+
+  monitoringStatus: byId("monitoringStatus"),
+  monitoringList: byId("monitoringList"),
+  monitoringIssues: byId("monitoringIssues"),
 
   prevWeekBtn: byId("prevWeekBtn"),
   todayBtn: byId("todayBtn"),
@@ -520,6 +553,20 @@ async function boot() {
     input.addEventListener("input", saveSmartPrefsFromInputs);
   });
   els.smartSuggestBtn?.addEventListener("click", loadSmartSuggestions);
+
+  // Preferences (Phase 8)
+  const prefInputs = [
+    els.prefWindowStart,
+    els.prefWindowEnd,
+    els.prefBufferMinutes,
+    els.prefTimeOfDay,
+  ].filter(Boolean);
+  prefInputs.forEach((input) => {
+    input.addEventListener("change", () => {
+      if (!state.preferencesSaving) renderPreferences();
+    });
+  });
+  els.prefSaveBtn?.addEventListener("click", savePreferencesFromInputs);
 
   // Event modal
   els.closeEventBtn?.addEventListener("click", closeEventModal);
@@ -931,6 +978,49 @@ function isNetworkFetchFail(err) {
   );
 }
 
+async function loadPreferences({ force = false } = {}) {
+  const now = Date.now();
+  if (!force && state.preferencesLoadedAt && now - state.preferencesLoadedAt < 60 * 1000) return;
+  try {
+    const res = await apiGet("/api/preferences");
+    if (res?.ok) {
+      state.preferences = res.preferences || state.preferences;
+      state.learning = res.learning || state.learning;
+      state.preferencesError = null;
+      state.preferencesLoadedAt = Date.now();
+      applyPreferencesToInputs();
+      renderPreferences();
+    } else {
+      throw new Error(res?.message || "Präferenzen konnten nicht geladen werden");
+    }
+  } catch (e) {
+    state.preferencesError = String(e?.message || "Präferenzen konnten nicht geladen werden");
+    renderPreferences();
+  }
+}
+
+async function refreshMonitoring({ force = false } = {}) {
+  const now = Date.now();
+  if (!force && state.monitoringFetchedAt && now - state.monitoringFetchedAt < 60 * 1000) return;
+  state.monitoringLoading = true;
+  renderMonitoring();
+  try {
+    const res = await apiGet("/api/monitoring");
+    if (res?.ok) {
+      state.monitoring = res.monitoring || null;
+      state.monitoringError = null;
+      state.monitoringFetchedAt = Date.now();
+    } else {
+      throw new Error(res?.message || "Monitoring nicht verfügbar");
+    }
+  } catch (e) {
+    state.monitoringError = String(e?.message || "Monitoring nicht verfügbar");
+  } finally {
+    state.monitoringLoading = false;
+    renderMonitoring();
+  }
+}
+
 // -------------------- API refresh --------------------
 async function refreshFromApi() {
   let hadNetworkFailure = false;
@@ -1031,6 +1121,11 @@ async function refreshFromApi() {
     googleEventsNotice = "Nicht verbunden – zeige letzte Daten (Cache).";
   }
 
+  await Promise.allSettled([
+    loadPreferences(),
+    refreshMonitoring(),
+  ]);
+
   updateGoogleButtons();
   updateConnectionStatus();
 
@@ -1074,6 +1169,8 @@ async function render() {
   refreshWeeklyLoad();
   renderSmartSuggestions();
   renderSmartOptimizations();
+  renderPreferences();
+  renderMonitoring();
   saveLocal("windowsV1", state.windows);
 
   syncSelectedEvent();
@@ -2477,9 +2574,125 @@ function saveSmartPrefsFromInputs() {
   return prefs;
 }
 
+function applyPreferencesToInputs() {
+  if (!els.prefWindowStart) return;
+  const prefs = state.preferences || DEFAULT_PREFS_UI;
+  els.prefWindowStart.value = prefs.windowStart || DEFAULT_PREFS_UI.windowStart;
+  els.prefWindowEnd.value = prefs.windowEnd || DEFAULT_PREFS_UI.windowEnd;
+  els.prefBufferMinutes.value = String(Number.isFinite(Number(prefs.bufferMinutes)) ? prefs.bufferMinutes : DEFAULT_PREFS_UI.bufferMinutes);
+  const preferred = derivePreferredTimeOfDayLocal(prefs.timeOfDayWeights);
+  els.prefTimeOfDay.value = preferred || "auto";
+}
+
+function readPreferencesFromInputs() {
+  const windowStart = els.prefWindowStart?.value || DEFAULT_PREFS_UI.windowStart;
+  const windowEnd = els.prefWindowEnd?.value || DEFAULT_PREFS_UI.windowEnd;
+  const bufferMinutes = clamp(parseInt(els.prefBufferMinutes?.value || String(DEFAULT_PREFS_UI.bufferMinutes), 10), 0, 120);
+  const timeOfDay = els.prefTimeOfDay?.value || "auto";
+
+  const payload = {
+    windowStart,
+    windowEnd,
+    bufferMinutes,
+  };
+
+  if (timeOfDay !== "auto") {
+    payload.timeOfDayWeights = {
+      morning: timeOfDay === "morning" ? 1 : 0,
+      afternoon: timeOfDay === "afternoon" ? 1 : 0,
+      evening: timeOfDay === "evening" ? 1 : 0,
+    };
+  }
+  return payload;
+}
+
+async function savePreferencesFromInputs() {
+  if (!els.prefSaveBtn) return;
+  state.preferencesSaving = true;
+  els.prefSaveBtn.disabled = true;
+  renderPreferences();
+
+  try {
+    const payload = readPreferencesFromInputs();
+    const res = await apiPatch("/api/preferences", payload);
+    if (res?.ok) {
+      state.preferences = res.preferences || state.preferences;
+      state.preferencesError = null;
+      state.preferencesLoadedAt = Date.now();
+      applyPreferencesToInputs();
+      if (els.prefStatus) els.prefStatus.textContent = "Präferenzen gespeichert ✅";
+    } else {
+      throw new Error(res?.message || "Speichern fehlgeschlagen");
+    }
+  } catch (e) {
+    const msg = String(e?.message || "Speichern fehlgeschlagen");
+    state.preferencesError = msg;
+    if (els.prefStatus) els.prefStatus.textContent = `Fehler: ${msg}`;
+  } finally {
+    state.preferencesSaving = false;
+    els.prefSaveBtn.disabled = false;
+    renderPreferences();
+  }
+}
+
+function renderPreferences() {
+  if (!els.prefStatus) return;
+  const pref = state.preferences || DEFAULT_PREFS_UI;
+  const learning = state.learning || {};
+  const preferred = derivePreferredTimeOfDayLocal(pref.timeOfDayWeights);
+  const preferredLabel = preferred ? timeOfDayLabel(preferred) : "Automatisch";
+  const lastUpdated = pref?.lastUpdated ? fmtDateTime(new Date(pref.lastUpdated)) : "—";
+
+  if (state.preferencesSaving) {
+    els.prefStatus.textContent = "Speichere Präferenzen…";
+  } else {
+    els.prefStatus.textContent = state.preferencesError
+      ? `Fehler: ${state.preferencesError}`
+      : `Zuletzt aktualisiert: ${lastUpdated}`;
+  }
+
+  if (els.prefLearningSummary) {
+    els.prefLearningSummary.textContent =
+      `Bevorzugt: ${preferredLabel} • Akzeptierte Vorschläge: ${learning?.acceptedSuggestions ?? 0}`;
+  }
+
+  if (els.prefLearningDetails) {
+    els.prefLearningDetails.innerHTML = "";
+    const details = [
+      { label: "Letzte Interaktion", value: learning?.lastInteractionAt ? fmtDateTime(new Date(learning.lastInteractionAt)) : "—" },
+      { label: "Morgens", value: Math.round((pref?.timeOfDayWeights?.morning || 0) * 100) + "%" },
+      { label: "Nachmittags", value: Math.round((pref?.timeOfDayWeights?.afternoon || 0) * 100) + "%" },
+      { label: "Abends", value: Math.round((pref?.timeOfDayWeights?.evening || 0) * 100) + "%" },
+    ];
+    details.forEach((row) => {
+      const item = document.createElement("div");
+      item.className = "item";
+      item.innerHTML = `<div class="itemTitle">${row.label}</div><div class="itemMeta">${row.value}</div>`;
+      els.prefLearningDetails.appendChild(item);
+    });
+  }
+}
+
 function renderSmartSuggestions() {
   if (!els.smartSuggestionList) return;
   els.smartSuggestionList.innerHTML = "";
+
+  if (els.smartPreferenceSummary) {
+    const applied = state.smartAppliedPreferences;
+    if (applied) {
+      const label = applied.timeOfDay && applied.timeOfDay !== "none"
+        ? timeOfDayLabel(applied.timeOfDay)
+        : "Keine Präferenz";
+      const sourceLabel = applied.source === "learned" ? "gelernt" : applied.source === "user" ? "manuell" : "neutral";
+      const habitHour = Number.isFinite(state.smartHabits?.leastBusyHour)
+        ? ` • Ruhigste Stunde: ${pad2(state.smartHabits.leastBusyHour)}:00`
+        : "";
+      els.smartPreferenceSummary.textContent =
+        `Berücksichtigte Präferenz: ${label} (${sourceLabel}) • Fenster ${applied.windowStart}–${applied.windowEnd} • Puffer ${applied.bufferMinutes} Min${habitHour}`;
+    } else {
+      els.smartPreferenceSummary.textContent = "Präferenzen werden beim Laden der Vorschläge berücksichtigt.";
+    }
+  }
 
   if (state.smartSuggestionsLoading) {
     const item = document.createElement("div");
@@ -2577,6 +2790,89 @@ function renderSmartOptimizations() {
     item.appendChild(title);
     item.appendChild(meta);
     els.smartOptimizationList.appendChild(item);
+  });
+}
+
+function renderMonitoring() {
+  if (!els.monitoringList || !els.monitoringStatus || !els.monitoringIssues) return;
+  els.monitoringList.innerHTML = "";
+  els.monitoringIssues.innerHTML = "";
+
+  if (state.monitoringLoading) {
+    els.monitoringStatus.textContent = "Monitoring wird geladen…";
+    return;
+  }
+
+  if (state.monitoringError) {
+    els.monitoringStatus.textContent = `Monitoring nicht verfügbar: ${state.monitoringError}`;
+    return;
+  }
+
+  const monitoring = state.monitoring;
+  if (!monitoring) {
+    els.monitoringStatus.textContent = "Noch keine Monitoring-Daten.";
+    return;
+  }
+
+  const uptimeMin = Math.round((monitoring.uptimeSeconds || 0) / 60);
+  const errorRate = monitoring.requestCount
+    ? Math.round((monitoring.errorCount / monitoring.requestCount) * 1000) / 10
+    : 0;
+  const healthy = errorRate < 2 && (monitoring.p95ResponseMs || 0) < 1200;
+
+  els.monitoringStatus.innerHTML = `
+    <span class="infoPill ${healthy ? "ok" : "warn"}">${healthy ? "Stabil" : "Beobachten"}</span>
+    <span class="infoPill">${uptimeMin} Min Uptime</span>
+    <span class="infoPill">Ø ${monitoring.avgResponseMs || 0} ms</span>
+  `;
+
+  const rows = [
+    { label: "Requests gesamt", value: monitoring.requestCount ?? 0 },
+    { label: "Fehlerquote", value: `${errorRate}%` },
+    { label: "P95 Latenz", value: `${monitoring.p95ResponseMs || 0} ms` },
+    { label: "Langsame Requests", value: monitoring.slowRequestCount ?? 0 },
+  ];
+
+  rows.forEach((row) => {
+    const item = document.createElement("div");
+    item.className = "item";
+    item.innerHTML = `<div class="itemTitle">${row.label}</div><div class="itemMeta">${row.value}</div>`;
+    els.monitoringList.appendChild(item);
+  });
+
+  const issues = [];
+  const lastErrors = Array.isArray(monitoring.lastErrors) ? monitoring.lastErrors : [];
+  const lastSlow = Array.isArray(monitoring.lastSlow) ? monitoring.lastSlow : [];
+
+  lastErrors.forEach((entry) => {
+    issues.push({
+      title: `Fehler ${entry.status || ""}`.trim(),
+      meta: `${entry.method || "?"} ${entry.path || ""} • ${entry.durationMs || 0} ms`,
+      at: entry.at ? fmtDateTime(new Date(entry.at)) : "",
+    });
+  });
+
+  lastSlow.forEach((entry) => {
+    issues.push({
+      title: "Langsame Antwort",
+      meta: `${entry.method || "?"} ${entry.path || ""} • ${entry.durationMs || 0} ms`,
+      at: entry.at ? fmtDateTime(new Date(entry.at)) : "",
+    });
+  });
+
+  if (!issues.length) {
+    const item = document.createElement("div");
+    item.className = "item";
+    item.innerHTML = `<div class="itemTitle">Keine Auffälligkeiten</div><div class="itemMeta">System läuft stabil.</div>`;
+    els.monitoringIssues.appendChild(item);
+    return;
+  }
+
+  issues.slice(0, 6).forEach((issue) => {
+    const item = document.createElement("div");
+    item.className = "item";
+    item.innerHTML = `<div class="itemTitle">${issue.title}</div><div class="itemMeta">${issue.meta}${issue.at ? ` • ${issue.at}` : ""}</div>`;
+    els.monitoringIssues.appendChild(item);
   });
 }
 
@@ -3056,6 +3352,8 @@ async function loadSmartSuggestions() {
     if (res?.ok) {
       state.smartSuggestions = Array.isArray(res.suggestions) ? res.suggestions : [];
       state.smartOptimizations = Array.isArray(res.optimizations) ? res.optimizations : [];
+      state.smartAppliedPreferences = res.appliedPreferences || null;
+      state.smartHabits = res.habits || null;
     } else {
       throw new Error(res?.message || "Keine Vorschläge erhalten");
     }
@@ -3064,6 +3362,8 @@ async function loadSmartSuggestions() {
     state.smartSuggestionsError = msg;
     state.smartSuggestions = [];
     state.smartOptimizations = [];
+    state.smartAppliedPreferences = null;
+    state.smartHabits = null;
   } finally {
     state.smartSuggestionsLoading = false;
     renderSmartSuggestions();
@@ -3782,6 +4082,21 @@ function fmtDateTime(d) { return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}
 function toInputDate(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
 function toInputTime(d) { return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
+function timeOfDayLabel(key) {
+  if (key === "morning") return "Vormittag";
+  if (key === "afternoon") return "Nachmittag";
+  if (key === "evening") return "Abend";
+  return "Keine Präferenz";
+}
+function derivePreferredTimeOfDayLocal(weights = {}) {
+  const entries = Object.entries(weights || {}).filter(([, value]) => Number.isFinite(value));
+  if (!entries.length) return null;
+  const total = entries.reduce((acc, [, value]) => acc + value, 0);
+  if (total < 0.2) return null;
+  const [topKey, topValue] = entries.sort((a, b) => b[1] - a[1])[0] || [];
+  if (!topKey || !topValue || topValue < 0.35) return null;
+  return topKey;
+}
 function toLocalIsoWithOffset(date) {
   const d = new Date(date);
   const offset = -d.getTimezoneOffset();
