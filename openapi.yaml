@@ -43,6 +43,50 @@ paths:
         "200":
           description: OK
 
+  /api/get-events:
+    get:
+      operationId: getGoogleEvents
+      summary: List Google Calendar events for a date range
+      parameters:
+        - name: daysPast
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 365
+        - name: daysFuture
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 365
+      responses:
+        "200":
+          description: OK
+
+  /api/create-event:
+    post:
+      operationId: createGoogleEvent
+      summary: Create a Google Calendar event
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, start, end]
+              properties:
+                title: { type: string }
+                start: { type: string, description: ISO datetime }
+                end: { type: string, description: ISO datetime }
+                location: { type: string }
+                notes: { type: string }
+      responses:
+        "200":
+          description: OK
+
   /api/events:
     get:
       operationId: listEvents
