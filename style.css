@@ -161,12 +161,12 @@ body.view-day .side {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  font-size: 11px;
+  font-size: 16px;
   font-weight: 700;
   color: #6a1b9a;
   cursor: pointer;
   scroll-snap-align: center;
-  border: 2px solid transparent;
+  border: 1px solid #e0e0e0;
   padding: 6px;
   line-height: 1.2;
 }
@@ -178,8 +178,8 @@ body.view-day .side {
 
 .day-chip.selected {
   border: 2px solid #d81b60;
-  color: white;
-  background-color: #d81b60;
+  color: #ffffff;
+  background-color: #ff4d4f;
 }
 
 .event-list {
