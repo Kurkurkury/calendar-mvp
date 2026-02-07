@@ -353,11 +353,64 @@ app.use(cors({ origin: true }));
 app.use(express.json({ limit: "1mb" }));
 
 // ---- Mini-DB (JSON Datei) ----
+const DEFAULT_PREFERENCES = {
+  timeOfDayWeights: { morning: 0, afternoon: 0, evening: 0 },
+  bufferMinutes: 15,
+  windowStart: "08:00",
+  windowEnd: "18:00",
+  lastUpdated: null,
+};
+
+const DEFAULT_LEARNING = {
+  acceptedSuggestions: 0,
+  timeOfDayCounts: { morning: 0, afternoon: 0, evening: 0 },
+  lastInteractionAt: null,
+  recentInteractions: [],
+};
+
+function buildDefaultDb() {
+  return {
+    events: [],
+    tasks: [],
+    preferences: { ...DEFAULT_PREFERENCES },
+    learning: { ...DEFAULT_LEARNING },
+  };
+}
+
+function normalizePreferences(pref) {
+  return {
+    timeOfDayWeights: {
+      morning: Number(pref?.timeOfDayWeights?.morning || 0),
+      afternoon: Number(pref?.timeOfDayWeights?.afternoon || 0),
+      evening: Number(pref?.timeOfDayWeights?.evening || 0),
+    },
+    bufferMinutes: Number.isFinite(Number(pref?.bufferMinutes)) ? Number(pref.bufferMinutes) : DEFAULT_PREFERENCES.bufferMinutes,
+    windowStart: String(pref?.windowStart || DEFAULT_PREFERENCES.windowStart),
+    windowEnd: String(pref?.windowEnd || DEFAULT_PREFERENCES.windowEnd),
+    lastUpdated: pref?.lastUpdated || null,
+  };
+}
+
+function normalizeLearning(learning) {
+  const recent = Array.isArray(learning?.recentInteractions) ? learning.recentInteractions : [];
+  return {
+    acceptedSuggestions: Number(learning?.acceptedSuggestions || 0),
+    timeOfDayCounts: {
+      morning: Number(learning?.timeOfDayCounts?.morning || 0),
+      afternoon: Number(learning?.timeOfDayCounts?.afternoon || 0),
+      evening: Number(learning?.timeOfDayCounts?.evening || 0),
+    },
+    lastInteractionAt: learning?.lastInteractionAt || null,
+    recentInteractions: recent.slice(-25),
+  };
+}
+
 function ensureDb() {
   if (!fs.existsSync(DB_PATH)) {
-    fs.writeFileSync(DB_PATH, JSON.stringify({ events: [], tasks: [] }, null, 2), "utf-8");
+    fs.writeFileSync(DB_PATH, JSON.stringify(buildDefaultDb(), null, 2), "utf-8");
   }
 }
+
 function readDb() {
   ensureDb();
   try {
@@ -365,9 +418,11 @@ function readDb() {
     const parsed = JSON.parse(raw || "{}");
     if (!Array.isArray(parsed.events)) parsed.events = [];
     if (!Array.isArray(parsed.tasks)) parsed.tasks = [];
+    parsed.preferences = normalizePreferences(parsed.preferences || {});
+    parsed.learning = normalizeLearning(parsed.learning || {});
     return parsed;
   } catch {
-    const safe = { events: [], tasks: [] };
+    const safe = buildDefaultDb();
     fs.writeFileSync(DB_PATH, JSON.stringify(safe, null, 2), "utf-8");
     return safe;
   }
@@ -448,6 +503,96 @@ function addMinutes(date, minutes) {
 
 function addDays(date, days) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function getTimeOfDayBucket(date) {
+  const hour = date.getHours();
+  if (hour >= 6 && hour < 12) return "morning";
+  if (hour >= 12 && hour < 17) return "afternoon";
+  if (hour >= 17 && hour < 21) return "evening";
+  return null;
+}
+
+function normalizeWeights(weights) {
+  const sum = Object.values(weights).reduce((acc, value) => acc + value, 0);
+  if (!sum) return { ...weights };
+  return Object.fromEntries(Object.entries(weights).map(([key, value]) => [key, value / sum]));
+}
+
+function updateLearningFromInteraction(db, { start, source = "unknown", title = "" } = {}) {
+  if (!db) return db;
+  const startDate = start ? new Date(start) : null;
+  if (!startDate || Number.isNaN(startDate.getTime())) return db;
+
+  const bucket = getTimeOfDayBucket(startDate);
+  const learning = normalizeLearning(db.learning || {});
+  const preferences = normalizePreferences(db.preferences || {});
+
+  learning.acceptedSuggestions += 1;
+  learning.lastInteractionAt = Date.now();
+
+  if (bucket) {
+    learning.timeOfDayCounts[bucket] += 1;
+
+    const decay = 0.85;
+    const weights = { ...preferences.timeOfDayWeights };
+    for (const key of Object.keys(weights)) {
+      weights[key] = weights[key] * decay;
+    }
+    weights[bucket] = (weights[bucket] || 0) + (1 - decay);
+    preferences.timeOfDayWeights = normalizeWeights(weights);
+    preferences.lastUpdated = Date.now();
+  }
+
+  const recent = Array.isArray(learning.recentInteractions) ? learning.recentInteractions : [];
+  recent.push({
+    at: Date.now(),
+    start: toLocalIsoWithOffset(startDate),
+    bucket: bucket || "unclassified",
+    source,
+    title: String(title || ""),
+  });
+  learning.recentInteractions = recent.slice(-25);
+
+  db.learning = learning;
+  db.preferences = preferences;
+  return db;
+}
+
+function derivePreferredTimeOfDay(preferences) {
+  const weights = preferences?.timeOfDayWeights || {};
+  const entries = Object.entries(weights).filter(([, value]) => Number.isFinite(value));
+  if (!entries.length) return null;
+  const total = entries.reduce((acc, [, value]) => acc + value, 0);
+  if (total < 0.2) return null;
+  const [topKey, topValue] = entries.sort((a, b) => b[1] - a[1])[0] || [];
+  if (!topKey || !topValue || topValue < 0.35) return null;
+  return topKey;
+}
+
+function summarizeRecurringPattern(events, title) {
+  if (!title) return null;
+  const normalized = String(title).trim().toLowerCase();
+  if (!normalized) return null;
+  const matches = (events || []).filter((ev) => String(ev?.title || "").trim().toLowerCase() === normalized);
+  if (matches.length < 2) return null;
+  const hours = [];
+  const weekdays = new Map();
+  for (const ev of matches) {
+    const start = ev?.start ? new Date(ev.start) : null;
+    if (!start || Number.isNaN(start.getTime())) continue;
+    hours.push(start.getHours() + start.getMinutes() / 60);
+    const day = start.getDay();
+    weekdays.set(day, (weekdays.get(day) || 0) + 1);
+  }
+  if (hours.length < 2) return null;
+  const avgHour = hours.reduce((acc, value) => acc + value, 0) / hours.length;
+  const topWeekday = Array.from(weekdays.entries()).sort((a, b) => b[1] - a[1])[0]?.[0];
+  return {
+    count: hours.length,
+    avgHour,
+    weekday: Number.isFinite(topWeekday) ? topWeekday : null,
+  };
 }
 
 function isConflict(occupied, start, end) {
@@ -938,6 +1083,7 @@ async function handleEventSuggestions(req, res) {
             end: endIso,
             location,
             notes,
+            source: "classic",
             createdAt: Date.now(),
           });
           suggestions.push({ id, start: startIso, end: endIso });
@@ -997,6 +1143,14 @@ async function handleEventSuggestionConfirm(req, res) {
       notes: entry.notes || "",
     });
     if (!created.ok) return res.status(created.status || 400).json(created.payload || { ok: false });
+
+    const db = readDb();
+    updateLearningFromInteraction(db, {
+      start: entry.start,
+      source: entry.source || "suggestion",
+      title: entry.title,
+    });
+    writeDb(db);
 
     suggestionStore.delete(String(suggestionId));
     return res.json({
@@ -1075,9 +1229,10 @@ function buildDayLoads(events, rangeStart, days) {
   return loads;
 }
 
-function getCandidateReason({ preferenceLabel, habitScore, dayLoadMinutes, bufferOk }) {
+function getCandidateReason({ preferenceLabel, habitScore, dayLoadMinutes, bufferOk, recurringMatch }) {
   const reasons = [];
   if (preferenceLabel) reasons.push(`passt zu deiner Präferenz (${preferenceLabel})`);
+  if (recurringMatch) reasons.push("passt zu deinen regelmäßigen Aktivitäten");
   if (habitScore <= 0.25) reasons.push("ruhige Gewohnheitszeit");
   if (dayLoadMinutes <= 240) reasons.push("Tag mit Luft für Fokus");
   if (bufferOk) reasons.push("Puffer zu anderen Terminen");
@@ -1093,21 +1248,27 @@ async function handleSmartSuggestions(req, res) {
       date,
       durationMinutes,
       daysForward = 7,
-      windowStart = "08:00",
-      windowEnd = "18:00",
+      windowStart,
+      windowEnd,
       stepMinutes = 30,
       maxSuggestions = 5,
       preference = "none",
-      bufferMinutes = 15,
+      bufferMinutes,
       lookbackDays = 21,
     } = req.body || {};
+
+    const db = readDb();
+    const storedPreferences = normalizePreferences(db.preferences || {});
 
     const baseDate = parseDateInput(date) || new Date();
     const duration = Math.max(5, Math.min(int(durationMinutes) || 60, 24 * 60));
     const days = Math.max(1, Math.min(int(daysForward) || 7, 14));
     const step = Math.max(5, Math.min(int(stepMinutes) || 30, 120));
     const limit = Math.max(1, Math.min(int(maxSuggestions) || 5, 10));
-    const buffer = Math.max(0, Math.min(int(bufferMinutes) || 0, 120));
+    const bufferFallback = Number.isFinite(Number(bufferMinutes)) ? int(bufferMinutes) : int(storedPreferences.bufferMinutes);
+    const buffer = Math.max(0, Math.min(bufferFallback || 0, 120));
+    const resolvedWindowStart = windowStart || storedPreferences.windowStart || "08:00";
+    const resolvedWindowEnd = windowEnd || storedPreferences.windowEnd || "18:00";
 
     if (!title || !duration) {
       return res.status(400).json({ ok: false, message: "title/durationMinutes required" });
@@ -1125,6 +1286,7 @@ async function handleSmartSuggestions(req, res) {
     const { events: pastEvents } = await loadEventsForRange(habitRangeStart, habitRangeEnd);
     const habitUsage = buildHourlyHabits(pastEvents || [], habitRangeStart, habitRangeEnd);
     const habitScores = normalizeHourlyUsage(habitUsage, habitRangeStart, habitRangeEnd);
+    const recurringPattern = summarizeRecurringPattern(pastEvents || [], title);
 
     const suggestions = [];
     const preferenceMap = {
@@ -1132,12 +1294,15 @@ async function handleSmartSuggestions(req, res) {
       afternoon: { start: 12, end: 17, label: "Nachmittag" },
       evening: { start: 17, end: 21, label: "Abend" },
     };
-    const pref = preferenceMap[preference] || null;
+    const learnedPreference = derivePreferredTimeOfDay(storedPreferences);
+    const effectivePreference = preference === "none" ? learnedPreference : preference;
+    const pref = preferenceMap[effectivePreference] || null;
+    const preferenceSource = pref ? (preference === "none" ? "learned" : "user") : "none";
 
     for (let dayOffset = 0; dayOffset < days; dayOffset += 1) {
       const dayDate = addDays(rangeStart, dayOffset);
-      const windowStartDate = atTime(dayDate, windowStart);
-      const windowEndDate = atTime(dayDate, windowEnd);
+      const windowStartDate = atTime(dayDate, resolvedWindowStart);
+      const windowEndDate = atTime(dayDate, resolvedWindowEnd);
       if (!windowStartDate || !windowEndDate || windowEndDate <= windowStartDate) continue;
 
       let cursor = windowStartDate;
@@ -1168,6 +1333,19 @@ async function handleSmartSuggestions(req, res) {
             if (inPref) score += 15;
           }
 
+          let recurringMatch = false;
+          if (recurringPattern) {
+            const candidateHour = cursor.getHours() + cursor.getMinutes() / 60;
+            const hourDelta = Math.abs(candidateHour - recurringPattern.avgHour);
+            const hourScore = (1 - clamp(hourDelta / 6, 0, 1)) * 12;
+            score += hourScore;
+            if (recurringPattern.weekday !== null && cursor.getDay() === recurringPattern.weekday) {
+              score += 6;
+              recurringMatch = true;
+            }
+            if (hourDelta <= 1.5) recurringMatch = true;
+          }
+
           for (const block of occupied) {
             if (block.end <= cursor) {
               minGap = Math.min(minGap, (cursor - block.end) / 60000);
@@ -1189,6 +1367,7 @@ async function handleSmartSuggestions(req, res) {
             habitScore: avgHabit,
             dayLoadMinutes: dayLoad,
             bufferOk,
+            recurringMatch,
           });
 
           suggestionStore.set(id, {
@@ -1198,6 +1377,8 @@ async function handleSmartSuggestions(req, res) {
             end: endIso,
             location: "",
             notes: "",
+            source: "smart",
+            preferenceUsed: pref ? effectivePreference : "none",
             createdAt: Date.now(),
           });
 
@@ -1235,6 +1416,14 @@ async function handleSmartSuggestions(req, res) {
       ok: true,
       suggestions: topSuggestions,
       optimizations,
+      appliedPreferences: {
+        timeOfDay: pref ? effectivePreference : "none",
+        source: preferenceSource,
+        weights: storedPreferences.timeOfDayWeights,
+        bufferMinutes: buffer,
+        windowStart: resolvedWindowStart,
+        windowEnd: resolvedWindowEnd,
+      },
       habits: {
         leastBusyHour: leastBusyHour?.hour ?? null,
       },
@@ -1337,6 +1526,40 @@ async function handleFreeSlots(req, res) {
   }
 }
 
+function handlePreferencesGet(req, res) {
+  const db = readDb();
+  res.json({
+    ok: true,
+    preferences: normalizePreferences(db.preferences || {}),
+    learning: normalizeLearning(db.learning || {}),
+  });
+}
+
+function handlePreferencesUpdate(req, res) {
+  const db = readDb();
+  const updates = req.body || {};
+  const nextPreferences = normalizePreferences({
+    ...db.preferences,
+    bufferMinutes: Number.isFinite(Number(updates.bufferMinutes)) ? Number(updates.bufferMinutes) : db.preferences?.bufferMinutes,
+    windowStart: updates.windowStart || db.preferences?.windowStart,
+    windowEnd: updates.windowEnd || db.preferences?.windowEnd,
+  });
+
+  if (updates.timeOfDayWeights && typeof updates.timeOfDayWeights === "object") {
+    const nextWeights = {
+      morning: Number(updates.timeOfDayWeights.morning ?? nextPreferences.timeOfDayWeights.morning ?? 0),
+      afternoon: Number(updates.timeOfDayWeights.afternoon ?? nextPreferences.timeOfDayWeights.afternoon ?? 0),
+      evening: Number(updates.timeOfDayWeights.evening ?? nextPreferences.timeOfDayWeights.evening ?? 0),
+    };
+    nextPreferences.timeOfDayWeights = normalizeWeights(nextWeights);
+  }
+
+  nextPreferences.lastUpdated = Date.now();
+  db.preferences = nextPreferences;
+  writeDb(db);
+  res.json({ ok: true, preferences: nextPreferences });
+}
+
 async function handleFreeSlotApprove(req, res) {
   try {
     await assertCorrectGoogleAccount();
@@ -1433,6 +1656,14 @@ async function handleFreeSlotConfirm(req, res) {
     });
     if (!created.ok) return res.status(created.status || 400).json(created.payload || { ok: false });
 
+    const db = readDb();
+    updateLearningFromInteraction(db, {
+      start: entry.start,
+      source: "free-slot",
+      title,
+    });
+    writeDb(db);
+
     approvedFreeSlotStore.delete(String(slotId));
     freeSlotStore.delete(String(slotId));
 
@@ -1474,6 +1705,8 @@ app.post("/api/free-slots", requireApiKey, handleFreeSlots);
 app.post("/api/free-slots/approve", requireApiKey, handleFreeSlotApprove);
 app.post("/api/free-slots/confirm", requireApiKey, handleFreeSlotConfirm);
 app.get("/api/free-slots/approved", requireApiKey, handleFreeSlotsApproved);
+app.get("/api/preferences", requireApiKey, handlePreferencesGet);
+app.patch("/api/preferences", requireApiKey, handlePreferencesUpdate);
 
 async function handleGoogleEventsList(req, res) {
   const tokens = (await loadTokens?.()) || null;
