@@ -95,6 +95,14 @@ body {
   font-size: 12px;
   color: var(--muted);
 }
+.live-sync-status.active {
+  color: green;
+  font-weight: bold;
+}
+.live-sync-status.inactive {
+  color: #b0b0b0;
+  font-weight: normal;
+}
 .googleActions {
   display: flex;
   gap: 8px;
