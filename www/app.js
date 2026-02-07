@@ -225,7 +225,7 @@ function startGooglePollingOnce() {
 // -------------------- State --------------------
 const state = {
   view: "day",
-  activeDate: loadDateLocal("calendarActiveDateV1", new Date()),
+  activeDate: loadDateLocal("calendarActiveDateV1", new Date(2013, 7, 27)),
   weekStart: startOfWeek(new Date()),
   dayMode: loadLocal(DAY_MODE_STORAGE_KEY, isMobile() ? "fit" : "scroll"),
 
@@ -1232,6 +1232,11 @@ function formatDayHeader(date) {
   return `${name} • ${pad2(date.getDate())}.${pad2(date.getMonth() + 1)}.${date.getFullYear()}`;
 }
 
+function formatHeaderDate(date) {
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  return `${pad2(date.getDate())}. ${dayNames[date.getDay()] || ""}`;
+}
+
 function renderTopBar() {
   if (!els.weekLabel) return;
 
@@ -1241,7 +1246,7 @@ function renderTopBar() {
     titleEl.textContent = monthYear;
   }
 
-  const dayLabel = formatDayHeader(state.activeDate);
+  const dayLabel = formatHeaderDate(state.activeDate);
   els.weekLabel.textContent = dayLabel;
 }
 
@@ -1453,17 +1458,24 @@ function renderMonthView() {
 
 function renderDayScroller() {
   if (!els.dayScroller) return;
-  const days = getWeekDays(state.weekStart);
+  const monthStart = new Date(state.activeDate.getFullYear(), state.activeDate.getMonth(), 1);
+  const monthEnd = new Date(state.activeDate.getFullYear(), state.activeDate.getMonth() + 1, 0);
+  const days = [];
+  for (let day = 1; day <= monthEnd.getDate(); day += 1) {
+    days.push(new Date(monthStart.getFullYear(), monthStart.getMonth(), day));
+  }
   const activeKey = dateKey(state.activeDate);
-  const dayNames = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+  const dayNames = ["SO", "MO", "DI", "MI", "DO", "FR", "SA"];
 
   els.dayScroller.innerHTML = "";
   days.forEach((day) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "day-chip";
-    const label = `${dayNames[day.getDay()]} • ${pad2(day.getDate())}.${pad2(day.getMonth() + 1)}.${day.getFullYear()}`;
-    button.innerHTML = `<span>${label}</span>`;
+    button.innerHTML = `
+      <span class="day-number">${pad2(day.getDate())}</span>
+      <span class="day-label">${dayNames[day.getDay()]}</span>
+    `;
     if (dateKey(day) === activeKey) button.classList.add("selected");
     button.addEventListener("click", async () => {
       state.activeDate = day;
@@ -1547,15 +1559,20 @@ function renderDayEventList() {
     details.className = "event-details";
     details.textContent = item.type === "task" ? item.description : `Ort: ${item.location}`;
 
-    const icon = document.createElement("div");
+    const icon = document.createElement("button");
     icon.className = "expand-icon";
-    icon.textContent = "▼";
+    icon.type = "button";
+    icon.setAttribute("aria-label", "Event-Details anzeigen");
+    icon.textContent = "›";
+    icon.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openDayEventDetailModal(item);
+    });
 
     card.appendChild(time);
     card.appendChild(title);
     card.appendChild(details);
     card.appendChild(icon);
-    card.addEventListener("dblclick", () => openDayEventDetailModal(item));
 
     els.dayEventList.appendChild(card);
   });

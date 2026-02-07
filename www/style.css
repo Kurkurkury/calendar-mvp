@@ -42,20 +42,32 @@ body {
   z-index: 5;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px 16px 18px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   background: linear-gradient(140deg, #6a1b9a 0%, #d81b60 100%);
   backdrop-filter: blur(6px);
   flex: 0 0 auto;
 }
 
-.left { display:flex; align-items:center; gap: 10px; }
-.right { display:flex; align-items:center; gap: 10px; }
-
-.title .h1 { font-size: 24px; font-weight: 800; letter-spacing: 1px; }
-.title .sub { font-size: 14px; color: var(--muted); margin-top: 6px; }
+.title {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+}
+.title .h1 {
+  font-size: 34px;
+  font-weight: 900;
+  letter-spacing: 2px;
+}
+.title .sub {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.9);
+  margin-top: 0;
+}
 
 .connectionStatus {
   margin-top: 6px;
@@ -159,8 +171,8 @@ body {
   position: fixed;
   right: 20px;
   bottom: 20px;
-  background: #007bff;
-  border-color: #007bff;
+  background: #4caf50;
+  border-color: #4caf50;
   color: #ffffff;
   padding: 14px 18px;
   border-radius: 999px;
@@ -201,22 +213,23 @@ body.view-day .side {
   display: flex;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
-  padding: 10px 2px 6px;
-  gap: 10px;
+  padding: 8px 2px 6px;
+  gap: 12px;
+  -webkit-overflow-scrolling: touch;
 }
 
 .day-chip {
   flex-shrink: 0;
-  width: 70px;
-  height: 70px;
+  width: 62px;
+  height: 62px;
   background-color: #ffffff;
-  border-radius: 50%;
+  border-radius: 999px;
   text-align: center;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: #6a1b9a;
   cursor: pointer;
@@ -224,24 +237,33 @@ body.view-day .side {
   border: 2px solid transparent;
   padding: 6px;
   line-height: 1.2;
+  box-shadow: 0 8px 18px rgba(27, 8, 45, 0.18);
 }
 
 .day-chip span {
   display: block;
   width: 100%;
 }
+.day-chip .day-number {
+  font-size: 16px;
+  font-weight: 800;
+}
+.day-chip .day-label {
+  font-size: 10px;
+  font-weight: 700;
+}
 
 .day-chip.selected {
-  border: 2px solid #d81b60;
+  border: 2px solid rgba(255, 255, 255, 0.9);
   color: white;
-  background-color: #d81b60;
+  background: linear-gradient(135deg, #4caf50 0%, #d81b60 100%);
 }
 
 .event-list {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 20px;
   padding: 12px;
-  box-shadow: 0 14px 30px rgba(26, 6, 46, 0.2);
+  box-shadow: 0 14px 30px rgba(26, 6, 46, 0.18);
 }
 
 .event-list-title {
@@ -254,6 +276,7 @@ body.view-day .side {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  align-items: center;
 }
 
 .event-card {
@@ -263,13 +286,12 @@ body.view-day .side {
   align-items: center;
   gap: 4px 10px;
   height: 60px;
-  width: 100%;
-  background: #ffffff;
+  width: min(100%, 320px);
+  background: rgba(255, 255, 255, 0.9);
   color: #3a2350;
   border-radius: 16px;
   padding: 8px 12px;
-  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.1);
-  cursor: pointer;
+  box-shadow: 0 10px 18px rgba(24, 5, 44, 0.15);
 }
 
 .event-time {
@@ -290,9 +312,12 @@ body.view-day .side {
 }
 
 .expand-icon {
-  font-size: 16px;
+  font-size: 18px;
   color: #d81b60;
   grid-row: 1 / span 2;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
 }
 
 .event-empty {
