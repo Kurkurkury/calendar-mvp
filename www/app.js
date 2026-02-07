@@ -224,9 +224,7 @@ function startGooglePollingOnce() {
 
 // -------------------- State --------------------
 const state = {
-  view: (isMobile()
-    ? (loadLocal("calendarViewV1", "day") || "day")
-    : (loadLocal("calendarViewV1", "week") || "week")),
+  view: "day",
   activeDate: loadDateLocal("calendarActiveDateV1", new Date()),
   weekStart: startOfWeek(new Date()),
   dayMode: loadLocal(DAY_MODE_STORAGE_KEY, isMobile() ? "fit" : "scroll"),
@@ -1212,56 +1210,23 @@ function shiftView(dir) {
   }
 }
 
+function formatDayHeader(date) {
+  const dayNames = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+  const name = dayNames[date.getDay()] || "";
+  return `${name} • ${pad2(date.getDate())}.${pad2(date.getMonth() + 1)}.${date.getFullYear()}`;
+}
+
 function renderTopBar() {
   if (!els.weekLabel) return;
 
-  let label = "";
-  if (state.view === "day") {
-    label = fmtDate(state.activeDate);
-  } else if (state.view === "week") {
-    const end = addDays(state.weekStart, 6);
-    label = `${fmtDate(state.weekStart)} – ${fmtDate(end)}`;
-  } else {
-    label = `${monthName(state.activeDate)} ${state.activeDate.getFullYear()}`;
+  const titleEl = document.querySelector(".title .h1");
+  const monthYear = `${monthName(state.activeDate).toUpperCase()} ${state.activeDate.getFullYear()}`;
+  if (titleEl) {
+    titleEl.textContent = monthYear;
   }
 
-  const showDayModeToggle = state.view === "day";
-  const dayMode = state.dayMode === "fit" ? "fit" : "scroll";
-  els.weekLabel.innerHTML = `
-    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-      <div style="font-weight:700;">${escapeHtml(label)}</div>
-      <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-        <div style="display:flex; gap:6px; background:rgba(255,255,255,.06); padding:6px; border-radius:12px;">
-          <button data-view="day"   style="${viewBtnStyle(state.view === "day")}">Tag</button>
-          <button data-view="week"  style="${viewBtnStyle(state.view === "week")}">Woche</button>
-          <button data-view="month" style="${viewBtnStyle(state.view === "month")}">Monat</button>
-        </div>
-        ${showDayModeToggle ? `
-          <div style="display:flex; gap:6px; background:rgba(255,255,255,.06); padding:6px; border-radius:12px;">
-            <button data-day-mode="fit" style="${viewBtnStyle(dayMode === "fit")}">Fit (0–24)</button>
-            <button data-day-mode="scroll" style="${viewBtnStyle(dayMode === "scroll")}">Scroll (0–24)</button>
-          </div>
-        ` : ""}
-      </div>
-    </div>
-  `;
-
-  els.weekLabel.querySelectorAll("button[data-view]").forEach(btn => {
-    btn.addEventListener("click", async () => {
-      setView(btn.dataset.view);
-      await render();
-    });
-  });
-
-  const modeButtons = els.weekLabel.querySelectorAll("button[data-day-mode]");
-  modeButtons.forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const nextMode = btn.dataset.dayMode;
-      state.dayMode = nextMode === "fit" ? "fit" : "scroll";
-      saveLocal(DAY_MODE_STORAGE_KEY, state.dayMode);
-      await render();
-    });
-  });
+  const dayLabel = formatDayHeader(state.activeDate);
+  els.weekLabel.textContent = dayLabel;
 }
 
 function viewBtnStyle(active) {
@@ -2200,6 +2165,50 @@ function renderSideLists() {
           item.classList.add("selected");
         }
 
+        const toggleBtn = document.createElement("button");
+        toggleBtn.className = "eventToggle";
+        toggleBtn.type = "button";
+        toggleBtn.setAttribute("aria-expanded", "false");
+        toggleBtn.setAttribute("aria-label", "Eventdetails anzeigen");
+        toggleBtn.textContent = "▾";
+        actions.appendChild(toggleBtn);
+
+        top.appendChild(title);
+        top.appendChild(actions);
+
+        item.appendChild(top);
+
+        const details = document.createElement("div");
+        details.className = "eventDropdown";
+
+        const start = ev?.start ? new Date(ev.start) : null;
+        const end = ev?.end ? new Date(ev.end) : null;
+        const hasStart = start && !Number.isNaN(start.getTime());
+        const hasEnd = end && !Number.isNaN(end.getTime());
+        const timeLabel = hasStart
+          ? `${fmtTime(start)}${hasEnd ? `–${fmtTime(end)}` : ""}`
+          : "Zeit offen";
+        const location = (ev?.location || ev?.place || ev?.locationName || "").trim() || "—";
+        const description = (ev?.notes || ev?.description || "").trim() || "—";
+
+        details.innerHTML = `
+          <div class="eventDropdownRow">
+            <span class="eventDropdownLabel">Zeit</span>
+            <span class="eventDropdownValue">${escapeHtml(timeLabel)}</span>
+          </div>
+          <div class="eventDropdownRow">
+            <span class="eventDropdownLabel">Ort</span>
+            <span class="eventDropdownValue">${escapeHtml(location)}</span>
+          </div>
+          <div class="eventDropdownRow">
+            <span class="eventDropdownLabel">Beschreibung</span>
+            <span class="eventDropdownValue">${escapeHtml(description)}</span>
+          </div>
+        `;
+
+        const actionRow = document.createElement("div");
+        actionRow.className = "eventDropdownActions";
+
         const editBtn = document.createElement("button");
         editBtn.className = "btn small";
         editBtn.type = "button";
@@ -2209,7 +2218,7 @@ function renderSideLists() {
           event.stopPropagation();
           openEditEventModal(ev);
         });
-        actions.appendChild(editBtn);
+        actionRow.appendChild(editBtn);
 
         const delBtn = document.createElement("button");
         delBtn.className = "btn small delete";
@@ -2220,17 +2229,27 @@ function renderSideLists() {
           event.stopPropagation();
           void deleteEvent(ev);
         });
-        actions.appendChild(delBtn);
+        actionRow.appendChild(delBtn);
 
-        top.appendChild(title);
-        top.appendChild(actions);
+        details.appendChild(actionRow);
+        item.appendChild(details);
 
-        item.appendChild(top);
-        item.addEventListener("click", () => selectEvent(ev));
-        item.addEventListener("dblclick", (event) => {
+        const toggleDetails = () => {
+          const next = !item.classList.contains("expanded");
+          item.classList.toggle("expanded", next);
+          toggleBtn.textContent = next ? "▴" : "▾";
+          toggleBtn.setAttribute("aria-expanded", next ? "true" : "false");
+        };
+
+        toggleBtn.addEventListener("click", (event) => {
           event.stopPropagation();
+          toggleDetails();
+        });
+
+        item.addEventListener("click", (event) => {
+          if (event.target.closest("button")) return;
           selectEvent(ev);
-          openEventDetailModal(ev);
+          toggleDetails();
         });
         els.eventsList.appendChild(item);
       });
