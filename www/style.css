@@ -1,15 +1,15 @@
 :root {
-  --bg: #ffffff;
-  --panel: #ffffff;
-  --panel2: #ffffff;
-  --text: #111111;
-  --muted: #555555;
-  --line: #e0e0e0;
-  --grid-line: #e6e6e6;
-  --primary: #333333;
-  --danger: #111111;
-  --ok: #333333;
-  --shadow: none;
+  --bg: #121212;
+  --panel: #121212;
+  --panel2: #1a1a1a;
+  --text: #ffffff;
+  --muted: #b3b3b3;
+  --line: #2a2a2a;
+  --grid-line: #2f2f2f;
+  --primary: #007bff;
+  --danger: #ff4d4f;
+  --ok: #3ee28f;
+  --shadow: 0 12px 28px rgba(0,0,0,.4);
   --r: 10px;
   --r2: 8px;
   --font: "Arial", "Helvetica", sans-serif;
@@ -18,9 +18,9 @@
   --event-inset: 6px;
 
   /* Neon-Grün Highlight für "Heute" */
-  --today: #111111;
-  --todayGlow: transparent;
-  --todayLine: #cfcfcf;
+  --today: #ffffff;
+  --todayGlow: rgba(255,255,255,.2);
+  --todayLine: rgba(255,255,255,.3);
 }
 
 * { box-sizing: border-box; }
@@ -94,50 +94,58 @@ body {
   padding: 4px 8px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  background: #f5f5f5;
+  background: #1e1e1e;
   color: var(--muted);
   white-space: normal;
   line-height: 1.2;
 }
 .statusBadge.ok {
   color: var(--text);
-  background: #f5f5f5;
+  background: #1e1e1e;
   border-color: var(--line);
 }
 .statusBadge.warn {
   color: var(--text);
-  background: #f5f5f5;
+  background: #1e1e1e;
   border-color: var(--line);
 }
 
 .btn {
-  border: 1px solid var(--line);
-  background: #f5f5f5;
-  color: var(--text);
+  border: 0;
+  background: #007bff;
+  color: #ffffff;
   padding: 10px 12px;
-  border-radius: 999px;
+  border-radius: 12px;
   cursor: pointer;
   font-weight: 650;
   touch-action: manipulation;
-  min-height: 44px;
+  width: 200px;
+  height: 50px;
+  min-height: 50px;
 }
-.btn:hover { background: #ededed; }
+.btn:hover { filter: brightness(1.05); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
-.btn.small { padding: 6px 10px; font-size: 12px; border-radius: 10px; }
-.btn.delete {
-  border-color: var(--line);
-  background: #f5f5f5;
-  color: var(--text);
+.btn.small {
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 10px;
+  width: auto;
+  height: auto;
+  min-height: 0;
 }
-.btn.delete:hover { background: #ededed; }
+.btn.delete {
+  background: #007bff;
+  color: #ffffff;
+}
+.btn.delete:hover { filter: brightness(1.05); }
 
 .btn.primary {
-  background: #e9e9e9;
-  border: 1px solid var(--line);
+  background: #007bff;
+  border: 0;
 }
-.btn.primary:hover { background: #e0e0e0; }
+.btn.primary:hover { filter: brightness(1.05); }
 
-.btn.ghost { background: #f8f8f8; }
+.btn.ghost { background: #007bff; }
 
 .layout {
   display: grid;
@@ -197,8 +205,8 @@ body {
 
 /* Heute-Highlight im Header */
 .dayHead.today {
-  background: #f5f5f5;
-  box-shadow: none;
+  background: #1c1c1c;
+  box-shadow: inset 0 -2px 0 var(--todayLine);
 }
 .dayHead.today .dow { color: var(--text); }
 .dayHead.today .date {
@@ -238,7 +246,7 @@ body {
 }
 
 .timeLabel {
-  height: 48px;
+  height: 60px;
   padding: 2px 8px 0 0;
   font-size: 12px;
   font-weight: 600;
@@ -304,7 +312,7 @@ body {
 
 /* Heute-Highlight in der Spalte */
 .col.today {
-  background: #fafafa;
+  background: #1a1a1a;
 }
 
 .slotLine {
@@ -314,7 +322,7 @@ body {
   background: var(--line);
 }
 .slotLine.minor {
-  background: #f0f0f0;
+  background: rgba(255,255,255,.08);
 }
 
 .nowLine {
@@ -330,43 +338,49 @@ body {
 .taskBlock {
   position: absolute;
   left: var(--event-inset);
-  right: var(--event-inset);
+  width: 250px;
+  height: 60px;
   border-radius: 10px;
   padding: 6px 8px;
-  background: #f1f1f1;
-  border: 1px solid var(--line);
-  box-shadow: none;
+  background: rgba(44,44,44,.85);
+  border: 1px solid rgba(255,255,255,.12);
+  box-shadow: 0 8px 18px rgba(0,0,0,.35);
   cursor: default;
+  color: #ffffff;
+  overflow: hidden;
 }
-.taskBlock .t { font-weight: 800; font-size: 13px; }
-.taskBlock .m { color: var(--muted); font-size: 11px; margin-top: 2px; }
+.taskBlock .t { font-weight: 800; font-size: 16px; }
+.taskBlock .m { color: rgba(255,255,255,.82); font-size: 16px; margin-top: 2px; }
 
 .eventBlock {
   position: absolute;
   left: var(--event-inset);
-  right: var(--event-inset);
+  width: 250px;
+  height: 60px;
   border-radius: 10px;
   padding: 6px 8px;
-  background: #f1f1f1;
-  border: 1px solid var(--line);
-  box-shadow: none;
+  background: rgba(44,44,44,.85);
+  border: 1px solid rgba(255,255,255,.12);
+  box-shadow: 0 8px 18px rgba(0,0,0,.35);
   cursor: pointer;
   user-select: none;
+  color: #ffffff;
+  overflow: hidden;
 }
 .eventBlock,
 .eventBlock * {
   cursor: inherit !important;
 }
 .eventBlock.selected {
-  border-color: #bdbdbd;
-  box-shadow: none;
+  border-color: rgba(255,255,255,.35);
+  box-shadow: 0 10px 22px rgba(0,0,0,.4);
 }
 .eventBlock.dragging {
   opacity: 0.4;
   cursor: grabbing;
 }
-.eventBlock .t { font-weight: 800; font-size: 13px; }
-.eventBlock .m { color: var(--muted); font-size: 11px; margin-top: 2px; }
+.eventBlock .t { font-weight: 800; font-size: 16px; }
+.eventBlock .m { color: rgba(255,255,255,.82); font-size: 16px; margin-top: 2px; }
 
 .eventGhost {
   position: absolute;
