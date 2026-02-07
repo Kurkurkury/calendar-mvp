@@ -90,6 +90,7 @@ const GCAL_POLL_MS = 5 * 60 * 1000; // 5 Minuten (Fallback, falls Push-Sync nich
 const SYNC_STATUS_POLL_MS = 30 * 1000; // Phase 3 Push-Sync: App fragt Status alle 30s
 const WEEK_LOAD_TTL_MS = 2 * 60 * 1000;
 const SCROLL_BUFFER_PX = isMobile() ? 220 : 120;
+const ENABLE_DAY_SCROLLER_MONTH_SWAP = false;
 const DEFAULT_VIEW_START_HOUR = 0;
 const DEFAULT_VIEW_END_HOUR = 24;
 const DEFAULT_STEP_MINUTES = 30;
@@ -350,6 +351,9 @@ const els = {
   prevWeekBtn: byId("prevWeekBtn"),
   todayBtn: byId("todayBtn"),
   nextWeekBtn: byId("nextWeekBtn"),
+  prevMonthBtn: byId("prevMonthBtn"),
+  monthNameBtn: byId("monthNameBtn"),
+  nextMonthBtn: byId("nextMonthBtn"),
 
   btnNew: byId("btnNew"),
   sidebar: byId("sidebar"),
@@ -502,14 +506,28 @@ async function boot() {
     "prevWeekBtn",
     "todayBtn",
     "nextWeekBtn",
+    "prevMonthBtn",
+    "monthNameBtn",
+    "nextMonthBtn",
     "btnNew",
     "googleConnectBtn",
     "googleDisconnectBtn",
   ]);
 
   // Nav (view-aware)
-  bindButtonsById("prevWeekBtn", async () => { shiftView(-1); await render(); });
-  bindButtonsById("nextWeekBtn", async () => { shiftView(1); await render(); });
+  bindButtonsById("prevWeekBtn", async () => {
+    if (state.view === "month") return;
+    shiftView(-1);
+    await render();
+  });
+  bindButtonsById("nextWeekBtn", async () => {
+    if (state.view === "month") return;
+    shiftView(1);
+    await render();
+  });
+  bindButtonsById("prevMonthBtn", async () => { await changeMonth("prev"); });
+  bindButtonsById("nextMonthBtn", async () => { await changeMonth("next"); });
+  bindButtonsById("monthNameBtn", async () => { await changeMonth("next"); });
   bindButtonsById("todayBtn", async () => {
     setActiveDate(new Date());
     saveDateLocal("calendarActiveDateV1", state.activeDate);
@@ -1227,6 +1245,19 @@ function resolveMonthShift(year, month, delta) {
   return { year: date.getFullYear(), month: date.getMonth() };
 }
 
+async function changeMonth(direction) {
+  const shift = direction === "prev" ? -1 : 1;
+  const next = resolveMonthShift(state.currentYear, state.currentMonth, shift);
+  const safeDay = Math.min(state.selectedDay, daysInMonth(next.year, next.month));
+  setDaySelection(next.year, next.month, safeDay);
+  await render();
+  const scroller = els.dayScroller;
+  if (scroller) {
+    scroller.scrollLeft = 0;
+    lastDayScrollerScrollLeft = 0;
+  }
+}
+
 function buildMonthDays(year, month) {
   const total = daysInMonth(year, month);
   const days = [];
@@ -1271,6 +1302,7 @@ async function commitDayScrollerMonth(direction) {
 }
 
 function handleDayScrollerScroll() {
+  if (!ENABLE_DAY_SCROLLER_MONTH_SWAP) return;
   const scroller = els.dayScroller;
   if (!scroller || dayScrollerIsSwapping) return;
   if (dayScrollerScrollRaf) return;
@@ -1328,7 +1360,7 @@ function formatHeaderDate(date) {
 function renderTopBar() {
   if (!els.weekLabel) return;
 
-  const titleEl = document.querySelector(".title .h1");
+  const titleEl = els.monthNameBtn || document.querySelector(".title .h1");
   const monthYear = monthTitle(state.currentYear, state.currentMonth);
   if (titleEl) {
     titleEl.textContent = monthYear;
@@ -1546,20 +1578,9 @@ function renderMonthView() {
 function renderDayScroller() {
   if (!els.dayScroller) return;
   const dayNames = ["SO", "MO", "DI", "MI", "DO", "FR", "SA"];
-  const prev = resolveMonthShift(state.currentYear, state.currentMonth, -1);
-  const next = resolveMonthShift(state.currentYear, state.currentMonth, 1);
-  const prevDays = buildMonthDays(prev.year, prev.month);
   const curDays = buildMonthDays(state.currentYear, state.currentMonth);
-  const nextDays = buildMonthDays(next.year, next.month);
-  const days = [
-    ...prevDays.map(day => ({ ...day, year: prev.year, month: prev.month })),
-    ...curDays.map(day => ({ ...day, year: state.currentYear, month: state.currentMonth })),
-    ...nextDays.map(day => ({ ...day, year: next.year, month: next.month })),
-  ];
   const strips = [
-    { key: "prev", year: prev.year, month: prev.month, days: prevDays },
     { key: "cur", year: state.currentYear, month: state.currentMonth, days: curDays },
-    { key: "next", year: next.year, month: next.month, days: nextDays },
   ];
 
   els.dayScroller.innerHTML = "";
@@ -1593,16 +1614,12 @@ function renderDayScroller() {
     els.dayScroller.appendChild(stripEl);
   });
 
-  if (!days.length) return;
   const selected = els.dayScroller.querySelector('.month-strip[data-strip="cur"] .day-chip.selected');
   selected?.scrollIntoView({ inline: "center", block: "nearest" });
   requestAnimationFrame(() => {
     const scroller = els.dayScroller;
-    const widths = getDayScrollerWidths(scroller);
-    dayScrollerPrevWidth = widths.prevWidth;
-    dayScrollerCurWidth = widths.curWidth;
-    scroller.scrollLeft = dayScrollerPrevWidth;
-    lastDayScrollerScrollLeft = scroller.scrollLeft;
+    scroller.scrollLeft = 0;
+    lastDayScrollerScrollLeft = 0;
     if (dayScrollerIsSwapping) {
       dayScrollerIsSwapping = false;
     }
