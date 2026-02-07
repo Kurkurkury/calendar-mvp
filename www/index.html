@@ -14,41 +14,41 @@
   </script>
 </head>
 <body>
-  <header class="topbar">
-    <div class="left">
-      <nav class="weekNav" aria-label="Kalender Navigation">
-        <button id="prevWeekBtn" class="btn ghost" title="Vorherige Woche" aria-label="Vorherige Woche">←</button>
-        <button id="todayBtn" class="btn ghost" aria-label="Heute anzeigen">Heute</button>
-        <button id="nextWeekBtn" class="btn ghost" title="Nächste Woche" aria-label="Nächste Woche">→</button>
-      </nav>
-      <div class="title">
-        <div class="h1">Woche</div>
-        <div id="weekLabel" class="sub"></div>
+  <div class="calendar-container">
+    <header class="topbar">
+      <div class="left">
+        <nav class="weekNav" aria-label="Kalender Navigation">
+          <button id="prevWeekBtn" class="btn ghost" title="Vorherige Woche" aria-label="Vorherige Woche">←</button>
+          <button id="todayBtn" class="btn ghost" aria-label="Heute anzeigen">Heute</button>
+          <button id="nextWeekBtn" class="btn ghost" title="Nächste Woche" aria-label="Nächste Woche">→</button>
+        </nav>
+        <div class="title">
+          <div class="h1">Woche</div>
+          <div id="weekLabel" class="sub"></div>
 
-        <!-- Status + Google Controls -->
-        <div id="statusLine" class="sub"></div>
-        <div id="connectionStatus" class="connectionStatus">
-          <div id="googleConnectionState" class="connectionMain"></div>
-          <div id="liveSyncState" class="connectionSub"></div>
-          <div id="reconnectHint" class="connectionHint"></div>
-        </div>
-        <div class="googleActions">
-          <button id="googleConnectBtn" class="btn ghost" type="button" aria-label="Mit Google verbinden">Mit Google verbinden</button>
-          <button id="googleDisconnectBtn" class="btn ghost" type="button" aria-label="Google Verbindung trennen">Trennen</button>
+          <!-- Status + Google Controls -->
+          <div id="statusLine" class="sub"></div>
+          <div id="connectionStatus" class="connectionStatus">
+            <div id="googleConnectionState" class="connectionMain"></div>
+            <div id="liveSyncState" class="connectionSub"></div>
+            <div id="reconnectHint" class="connectionHint"></div>
+          </div>
+          <div class="googleActions">
+            <button id="googleConnectBtn" class="btn ghost" type="button" aria-label="Mit Google verbinden">Mit Google verbinden</button>
+            <button id="googleDisconnectBtn" class="btn ghost" type="button" aria-label="Google Verbindung trennen">Trennen</button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="right">
-      <div class="statusBadges">
-        <span id="googleStatusBadge" class="statusBadge"></span>
-        <span id="syncStatusBadge" class="statusBadge"></span>
+      <div class="right">
+        <div class="statusBadges">
+          <span id="googleStatusBadge" class="statusBadge"></span>
+          <span id="syncStatusBadge" class="statusBadge"></span>
+        </div>
+        <button id="btnNew" class="btn primary fab" aria-label="Neuen Eintrag erstellen">+ Neu</button>
       </div>
-      <button id="btnNew" class="btn primary fab" aria-label="Neuen Eintrag erstellen">+ Neu</button>
-    </div>
-  </header>
+    </header>
 
-  <main class="layout">
     <section class="agendaView">
       <div id="dayScroller" class="day-scroller" aria-label="Tagesauswahl"></div>
       <div class="event-list">
@@ -57,19 +57,20 @@
       </div>
     </section>
 
-    <section class="calendar">
-      <div class="calHead">
-        <div class="timeColHead"></div>
-        <div id="dayHeaders" class="dayHeaders"></div>
-      </div>
+    <main class="layout">
+      <section class="calendar">
+        <div class="calHead">
+          <div class="timeColHead"></div>
+          <div id="dayHeaders" class="dayHeaders"></div>
+        </div>
 
-      <div class="calBody">
-        <div id="timeCol" class="timeCol"></div>
-        <div id="grid" class="grid"></div>
-      </div>
-    </section>
+        <div class="calBody">
+          <div id="timeCol" class="timeCol"></div>
+          <div id="grid" class="grid"></div>
+        </div>
+      </section>
 
-    <aside id="sidebar" class="side sidebar" aria-label="Seitenleiste">
+      <aside id="sidebar" class="side sidebar" aria-label="Seitenleiste">
       <div id="selectedEventCard" class="card hidden">
         <div class="cardTitle">Ausgewählter Termin</div>
         <div id="selectedEventMeta" class="cardSub"></div>
@@ -342,8 +343,9 @@
         <div id="windowsList" class="list small"></div>
       </div>
 
-    </aside>
-  </main>
+      </aside>
+    </main>
+  </div>
 
   <div id="sidebarOverlay" class="sidebarOverlay hidden" aria-hidden="true"></div>
 

@@ -36,6 +36,13 @@ body {
   overflow: hidden;
 }
 
+.calendar-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-height: 0;
+}
+
 .topbar {
   position: sticky;
   top: 0;
@@ -198,6 +205,7 @@ body.view-day .layout {
   display: none;
   flex-direction: column;
   gap: 16px;
+  padding: 0 14px 80px;
 }
 
 body.view-day .agendaView {
@@ -213,10 +221,13 @@ body.view-day .side {
   display: flex;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
-  padding: 20px 10px;
-  gap: 15px;
+  padding: 10px;
+  gap: 10px;
   height: 80px;
+  margin-top: 10px;
   align-items: center;
+  justify-content: center;
+  background: linear-gradient(to right, #6a1b9a, #d81b60);
   -webkit-overflow-scrolling: touch;
 }
 
