@@ -257,6 +257,35 @@ function int(x) {
   return Number.isFinite(n) ? Math.trunc(n) : 0;
 }
 
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
+
+function dateKeyLocal(date) {
+  const d = new Date(date);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function startOfWeekLocal(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const jsDay = d.getDay();
+  const isoDay = jsDay === 0 ? 7 : jsDay;
+  d.setDate(d.getDate() - (isoDay - 1));
+  return d;
+}
+
+function overlapMinutes(start, end, rangeStart, rangeEnd) {
+  const s = start > rangeStart ? start : rangeStart;
+  const e = end < rangeEnd ? end : rangeEnd;
+  const diff = e.getTime() - s.getTime();
+  return diff > 0 ? diff / 60000 : 0;
+}
+
 // ---- Config ----
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.API_KEY || "";
@@ -1173,6 +1202,109 @@ async function handleGoogleEventsList(req, res) {
 // Query: ?daysPast=365&daysFuture=365
 app.get("/api/google/events", handleGoogleEventsList);
 app.get("/api/get-events", handleGoogleEventsList);
+
+async function loadWeekEvents(rangeStart, rangeEnd) {
+  const tokens = (await loadTokens?.()) || null;
+  if (tokens?.refresh_token) {
+    try {
+      await assertCorrectGoogleAccount();
+      const out = await listGoogleEvents({
+        timeMin: rangeStart.toISOString(),
+        timeMax: rangeEnd.toISOString(),
+      });
+      if (out?.ok && Array.isArray(out.events)) {
+        return { source: "google", events: out.events };
+      }
+    } catch (e) {
+      console.error("[/api/weekly-load] google load failed:", e?.message || e);
+    }
+  }
+
+  const db = readDb();
+  return { source: "local", events: Array.isArray(db.events) ? db.events : [] };
+}
+
+app.get("/api/weekly-load", async (req, res) => {
+  try {
+    const rawWeekStart = parseDateInput(String(req.query.weekStart || ""));
+    const weekStart = rawWeekStart ? startOfWeekLocal(rawWeekStart) : startOfWeekLocal(new Date());
+    const weekEnd = addDays(weekStart, 7);
+
+    const { events, source } = await loadWeekEvents(weekStart, weekEnd);
+    const days = [];
+    const suggestions = [];
+    let totalMinutes = 0;
+    let totalStress = 0;
+    let busiest = null;
+
+    for (let i = 0; i < 7; i++) {
+      const dayStart = addDays(weekStart, i);
+      const dayEnd = addDays(dayStart, 1);
+      let minutes = 0;
+      let count = 0;
+
+      for (const ev of events || []) {
+        const start = ev?.start ? new Date(ev.start) : null;
+        const end = ev?.end ? new Date(ev.end) : null;
+        if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
+        const overlap = overlapMinutes(start, end, dayStart, dayEnd);
+        if (overlap > 0) {
+          minutes += overlap;
+          count += 1;
+        }
+      }
+
+      const stressScore = clamp(Math.round((minutes / 480) * 100 + (count / 6) * 15), 0, 100);
+      const densityScore = clamp(Math.round((count / 8) * 100), 0, 100);
+
+      const dayKey = dateKeyLocal(dayStart);
+      days.push({
+        date: dayKey,
+        minutes: Math.round(minutes),
+        count,
+        stress: stressScore,
+        density: densityScore,
+      });
+
+      totalMinutes += minutes;
+      totalStress += stressScore;
+
+      if (!busiest || minutes > busiest.minutes) {
+        busiest = { date: dayKey, minutes, count };
+      }
+
+      if (minutes >= 480 || count >= 8) {
+        suggestions.push({
+          date: dayKey,
+          message: "Sehr viele Termine – plane einen Pufferblock (30–60 Min) für Erholung.",
+        });
+      } else if (minutes >= 360 || count >= 6) {
+        suggestions.push({
+          date: dayKey,
+          message: "Hohe Dichte – plane mindestens zwei kurze Pausen (15–30 Min).",
+        });
+      }
+    }
+
+    const averageStress = Math.round(totalStress / 7);
+    res.json({
+      ok: true,
+      source,
+      weekStart: dateKeyLocal(weekStart),
+      days,
+      totals: {
+        totalMinutes: Math.round(totalMinutes),
+        averageStress,
+        busiestDay: busiest?.date || null,
+        busiestMinutes: Math.round(busiest?.minutes || 0),
+        busiestCount: busiest?.count || 0,
+      },
+      suggestions,
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e?.message || "weekly load failed" });
+  }
+});
 
 
 

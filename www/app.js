@@ -88,6 +88,7 @@ const GCAL_DAYS_PAST = 365;
 const GCAL_DAYS_FUTURE = 365;
 const GCAL_POLL_MS = 5 * 60 * 1000; // 5 Minuten (Fallback, falls Push-Sync nicht verfuegbar)
 const SYNC_STATUS_POLL_MS = 30 * 1000; // Phase 3 Push-Sync: App fragt Status alle 30s
+const WEEK_LOAD_TTL_MS = 2 * 60 * 1000;
 const SCROLL_BUFFER_PX = isMobile() ? 220 : 120;
 const DEFAULT_VIEW_START_HOUR = 8;
 const DEFAULT_VIEW_END_HOUR = 20;
@@ -222,6 +223,11 @@ const state = {
   eventSuggestionRequest: null,
   freeSlots: [],
   approvedFreeSlots: [],
+  weekLoad: null,
+  weekLoadKey: null,
+  weekLoadFetchedAt: 0,
+  weekLoadLoading: false,
+  weekLoadError: null,
 
   windows: loadLocal("windowsV1", [
     { id: "w1", name: "Fokus", days: [1, 2, 3, 4, 5], start: "09:00", end: "12:00", weight: 3 },
@@ -254,6 +260,9 @@ const els = {
   inboxList: byId("inboxList"),
   plannedList: byId("plannedList"),
   windowsList: byId("windowsList"),
+  weekLoadSummary: byId("weekLoadSummary"),
+  weekLoadChart: byId("weekLoadChart"),
+  weekLoadSuggestions: byId("weekLoadSuggestions"),
 
   prevWeekBtn: byId("prevWeekBtn"),
   todayBtn: byId("todayBtn"),
@@ -1012,6 +1021,7 @@ async function render() {
 
   renderSideLists();
   renderWindows();
+  refreshWeeklyLoad();
   saveLocal("windowsV1", state.windows);
 
   syncSelectedEvent();
@@ -1817,6 +1827,132 @@ function renderSelectedEventDetails() {
   }
 
   els.selectedEventCard.classList.remove("hidden");
+}
+
+// -------------------- Weekly load --------------------
+function refreshWeeklyLoad() {
+  if (!els.weekLoadChart || !els.weekLoadSummary || !els.weekLoadSuggestions) return;
+
+  const key = dateKey(state.weekStart);
+  const now = Date.now();
+  const shouldRefresh =
+    !state.weekLoad ||
+    state.weekLoadKey !== key ||
+    now - (state.weekLoadFetchedAt || 0) > WEEK_LOAD_TTL_MS;
+
+  if (!shouldRefresh || state.weekLoadLoading) {
+    renderWeeklyLoad();
+    return;
+  }
+
+  state.weekLoadLoading = true;
+  state.weekLoadKey = key;
+  state.weekLoadError = null;
+  renderWeeklyLoad();
+
+  void apiGet(`/api/weekly-load?weekStart=${encodeURIComponent(key)}`)
+    .then((data) => {
+      state.weekLoad = data;
+      state.weekLoadFetchedAt = Date.now();
+      state.weekLoadError = null;
+    })
+    .catch((err) => {
+      state.weekLoadError = err;
+    })
+    .finally(() => {
+      state.weekLoadLoading = false;
+      renderWeeklyLoad();
+    });
+}
+
+function renderWeeklyLoad() {
+  if (!els.weekLoadChart || !els.weekLoadSummary || !els.weekLoadSuggestions) return;
+
+  const names = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+  els.weekLoadChart.innerHTML = "";
+  els.weekLoadSuggestions.innerHTML = "";
+
+  if (state.weekLoadLoading) {
+    els.weekLoadSummary.innerHTML = `<div class="weekLoadMeta">Lade Wochenbelastung...</div>`;
+    return;
+  }
+
+  if (state.weekLoadError) {
+    els.weekLoadSummary.innerHTML = `<div class="weekLoadMeta">Wochenbelastung nicht verfügbar.</div>`;
+    return;
+  }
+
+  const data = state.weekLoad;
+  if (!data?.days?.length) {
+    els.weekLoadSummary.innerHTML = `<div class="weekLoadMeta">Noch keine Daten für diese Woche.</div>`;
+    return;
+  }
+
+  const totalHours = (data.totals?.totalMinutes || 0) / 60;
+  const avgStress = data.totals?.averageStress ?? 0;
+  const busiestDay = data.totals?.busiestDay || "";
+
+  els.weekLoadSummary.innerHTML = `
+    <div class="weekLoadMeta">
+      <div><strong>${totalHours.toFixed(1)} Std.</strong> geplant</div>
+      <div>Ø Stress: <strong>${avgStress}%</strong></div>
+      ${busiestDay ? `<div>Spitzen-Tag: <strong>${busiestDay}</strong></div>` : ""}
+    </div>
+  `;
+
+  data.days.forEach((day, index) => {
+    const dayWrap = document.createElement("div");
+    dayWrap.className = "weekLoadDay";
+
+    const bars = document.createElement("div");
+    bars.className = "weekLoadBars";
+
+    const stressBar = document.createElement("div");
+    stressBar.className = "weekLoadBar stress";
+    stressBar.style.setProperty("--value", `${day.stress || 0}`);
+    stressBar.title = `Stress ${day.stress || 0}%`;
+
+    const densityBar = document.createElement("div");
+    densityBar.className = "weekLoadBar density";
+    densityBar.style.setProperty("--value", `${day.density || 0}`);
+    densityBar.title = `Dichte ${day.count || 0} Termine`;
+
+    bars.appendChild(stressBar);
+    bars.appendChild(densityBar);
+
+    const label = document.createElement("div");
+    label.className = "weekLoadLabel";
+    label.textContent = names[index] || day.date;
+
+    const meta = document.createElement("div");
+    meta.className = "weekLoadMetaSmall";
+    const minutes = Number(day.minutes || 0);
+    meta.textContent = `${(minutes / 60).toFixed(1)}h • ${day.count || 0}x`;
+
+    dayWrap.appendChild(bars);
+    dayWrap.appendChild(label);
+    dayWrap.appendChild(meta);
+    els.weekLoadChart.appendChild(dayWrap);
+  });
+
+  if (!data.suggestions?.length) {
+    els.weekLoadSuggestions.innerHTML = `<div class="item"><div class="itemTitle">Alles im grünen Bereich</div><div class="itemMeta">Aktuell sind ausreichend Pausen vorhanden.</div></div>`;
+    return;
+  }
+
+  data.suggestions.forEach((tip) => {
+    const item = document.createElement("div");
+    item.className = "item";
+    const title = document.createElement("div");
+    title.className = "itemTitle";
+    title.textContent = tip.date || "Tipp";
+    const meta = document.createElement("div");
+    meta.className = "itemMeta";
+    meta.textContent = tip.message || "";
+    item.appendChild(title);
+    item.appendChild(meta);
+    els.weekLoadSuggestions.appendChild(item);
+  });
 }
 
 // -------------------- Side lists / Windows --------------------
