@@ -474,6 +474,56 @@ body {
 .cardTitle { font-weight: 850; font-size: 14px; }
 .cardSub { color: var(--muted); font-size: 12px; margin-top: 3px; }
 
+.weekLoadSummary {
+  margin-top: 10px;
+}
+.weekLoadMeta {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.weekLoadChart {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+}
+.weekLoadDay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.weekLoadBars {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 84px;
+}
+.weekLoadBar {
+  width: 12px;
+  border-radius: 8px;
+  height: calc(var(--value, 0) * 1%);
+  transition: height 0.2s ease;
+}
+.weekLoadBar.stress {
+  background: linear-gradient(180deg, #ff8a8a 0%, #e44c4c 100%);
+  box-shadow: 0 4px 12px rgba(228, 76, 76, 0.25);
+}
+.weekLoadBar.density {
+  background: linear-gradient(180deg, #7dbbff 0%, #3b82f6 100%);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+}
+.weekLoadLabel {
+  font-size: 12px;
+  font-weight: 700;
+}
+.weekLoadMetaSmall {
+  font-size: 11px;
+  color: var(--muted);
+}
+
 .list { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
 .list.small .item { font-size: 12px; }
 
