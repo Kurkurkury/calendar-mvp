@@ -111,14 +111,14 @@ body {
 }
 
 body.view-day .layout {
-  display: block;
-  padding: 12px 14px 80px;
+  display: none;
 }
 
 .agendaView {
   display: none;
   flex-direction: column;
   gap: 16px;
+  padding: 0 14px 80px;
 }
 
 body.view-day .agendaView {
@@ -134,7 +134,9 @@ body.view-day .side {
   display: flex;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
-  padding: 10px 2px 6px;
+  padding: 10px;
+  height: 80px;
+  margin-top: 20px;
   gap: 10px;
 }
 
@@ -186,7 +188,7 @@ body.view-day .side {
 .event-list-items {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
 }
 
 .event-card {
@@ -195,12 +197,13 @@ body.view-day .side {
   grid-template-rows: auto auto;
   align-items: center;
   gap: 4px 10px;
-  height: 60px;
+  height: 70px;
   width: 100%;
   background: #ffffff;
   color: #3a2350;
   border-radius: 16px;
-  padding: 8px 12px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
   box-shadow: 0 10px 18px rgba(0, 0, 0, 0.1);
   cursor: pointer;
 }
