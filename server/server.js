@@ -352,6 +352,89 @@ const GOOGLE_ALLOWED_EMAIL = (process.env.GOOGLE_ALLOWED_EMAIL || "").trim().toL
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: "1mb" }));
 
+// ---- Monitoring ----
+const MONITORING_SAMPLE_LIMIT = 120;
+const MONITORING_ERROR_LIMIT = 8;
+const MONITORING_SLOW_LIMIT = 8;
+const MONITORING_SLOW_MS = 1200;
+const monitoringState = {
+  startedAt: Date.now(),
+  requestCount: 0,
+  errorCount: 0,
+  slowRequestCount: 0,
+  totalResponseMs: 0,
+  responseSamples: [],
+  lastErrors: [],
+  lastSlow: [],
+};
+
+function recordMonitoringSample({ durationMs, statusCode, method, path: reqPath }) {
+  monitoringState.requestCount += 1;
+  monitoringState.totalResponseMs += durationMs;
+  monitoringState.responseSamples.push(durationMs);
+  if (monitoringState.responseSamples.length > MONITORING_SAMPLE_LIMIT) {
+    monitoringState.responseSamples.shift();
+  }
+
+  if (statusCode >= 500) {
+    monitoringState.errorCount += 1;
+    monitoringState.lastErrors.unshift({
+      at: Date.now(),
+      method,
+      path: reqPath,
+      status: statusCode,
+      durationMs: Math.round(durationMs),
+    });
+    monitoringState.lastErrors = monitoringState.lastErrors.slice(0, MONITORING_ERROR_LIMIT);
+  }
+
+  if (durationMs >= MONITORING_SLOW_MS) {
+    monitoringState.slowRequestCount += 1;
+    monitoringState.lastSlow.unshift({
+      at: Date.now(),
+      method,
+      path: reqPath,
+      durationMs: Math.round(durationMs),
+    });
+    monitoringState.lastSlow = monitoringState.lastSlow.slice(0, MONITORING_SLOW_LIMIT);
+  }
+}
+
+function getMonitoringSnapshot() {
+  const samples = monitoringState.responseSamples.slice().sort((a, b) => a - b);
+  const avg = samples.length ? samples.reduce((acc, v) => acc + v, 0) / samples.length : 0;
+  const p95Index = samples.length ? Math.floor(samples.length * 0.95) - 1 : -1;
+  const p95 = p95Index >= 0 ? samples[Math.max(0, p95Index)] : 0;
+  return {
+    startedAt: monitoringState.startedAt,
+    uptimeSeconds: Math.round(process.uptime()),
+    requestCount: monitoringState.requestCount,
+    errorCount: monitoringState.errorCount,
+    slowRequestCount: monitoringState.slowRequestCount,
+    avgResponseMs: Math.round(avg),
+    p95ResponseMs: Math.round(p95),
+    lastErrors: monitoringState.lastErrors,
+    lastSlow: monitoringState.lastSlow,
+    memory: process.memoryUsage(),
+    nodeVersion: process.version,
+  };
+}
+
+app.use((req, res, next) => {
+  const start = process.hrtime.bigint ? process.hrtime.bigint() : null;
+  res.on("finish", () => {
+    const end = process.hrtime.bigint ? process.hrtime.bigint() : null;
+    const durationMs = start && end ? Number(end - start) / 1e6 : 0;
+    recordMonitoringSample({
+      durationMs,
+      statusCode: res.statusCode || 0,
+      method: req.method,
+      path: req.originalUrl || req.url || "",
+    });
+  });
+  next();
+});
+
 // ---- Mini-DB (JSON Datei) ----
 const DEFAULT_PREFERENCES = {
   timeOfDayWeights: { morning: 0, afternoon: 0, evening: 0 },
@@ -691,6 +774,10 @@ if (WEB_DIR) {
 // ---- Health ----
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, service: "calendar-api", authEnabled: !!API_KEY, webDir: WEB_DIR || null });
+});
+
+app.get("/api/monitoring", requireApiKey, (req, res) => {
+  res.json({ ok: true, monitoring: getMonitoringSnapshot() });
 });
 
 // ---- Google OAuth + Status ----
@@ -2544,9 +2631,6 @@ function clampInt(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
 function pad4(n) {
   return String(n).padStart(4, "0");
 }

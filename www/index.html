@@ -106,6 +106,7 @@
       <div class="card" id="smartSuggestionsCard">
         <div class="cardTitle">Smarte Terminoptimierung</div>
         <div class="cardSub">Vorschläge basieren auf freien Zeiten &amp; deinen Präferenzen – es wird nichts automatisch erstellt.</div>
+        <div id="smartPreferenceSummary" class="prefSummary"></div>
 
         <div class="list">
           <label class="field">
@@ -172,6 +173,60 @@
 
         <div class="cardSub" style="margin-top:12px;">Terminoptimierungen</div>
         <div id="smartOptimizationList" class="list small"></div>
+      </div>
+
+      <div class="card" id="preferencesCard">
+        <div class="cardTitle">Nutzerpräferenzen</div>
+        <div class="cardSub">Beeinflusst smarte Vorschläge &amp; Fokusfenster.</div>
+
+        <div class="list">
+          <div class="row">
+            <label class="field">
+              <span>Fenster Start</span>
+              <input id="prefWindowStart" type="time" value="08:00" />
+            </label>
+            <label class="field">
+              <span>Fenster Ende</span>
+              <input id="prefWindowEnd" type="time" value="18:00" />
+            </label>
+          </div>
+
+          <div class="row">
+            <label class="field">
+              <span>Puffer (Min)</span>
+              <input id="prefBufferMinutes" type="number" min="0" max="120" step="5" value="15" />
+            </label>
+            <label class="field">
+              <span>Bevorzugte Tageszeit</span>
+              <select id="prefTimeOfDay">
+                <option value="auto">Automatisch lernen</option>
+                <option value="morning">Vormittag</option>
+                <option value="afternoon">Nachmittag</option>
+                <option value="evening">Abend</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="modalFoot">
+            <button id="prefSaveBtn" class="btn ghost" type="button">Präferenzen speichern</button>
+          </div>
+          <div id="prefStatus" class="cardSub"></div>
+        </div>
+
+        <div class="cardSub" style="margin-top:12px;">Lernstatus</div>
+        <div id="prefLearningSummary" class="prefSummary"></div>
+        <div id="prefLearningDetails" class="list small"></div>
+      </div>
+
+      <div class="card" id="monitoringCard">
+        <div class="cardTitle">Monitoring &amp; Wartung</div>
+        <div class="cardSub">Produktions-Status, Latenzen und Auffälligkeiten.</div>
+
+        <div id="monitoringStatus" class="monitorStatus"></div>
+        <div id="monitoringList" class="list small"></div>
+
+        <div class="cardSub" style="margin-top:12px;">Letzte Auffälligkeiten</div>
+        <div id="monitoringIssues" class="list small"></div>
       </div>
 
       <div class="card">
