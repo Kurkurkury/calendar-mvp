@@ -298,11 +298,30 @@ function uid(prefix) {
 const SUGGESTION_TTL_MS = 30 * 60 * 1000;
 const suggestionStore = new Map();
 
+// ---- Free slot suggestions (Phase 3) ----
+const FREE_SLOT_TTL_MS = 30 * 60 * 1000;
+const freeSlotStore = new Map();
+const approvedFreeSlotStore = new Map();
+
 function pruneSuggestions() {
   const now = Date.now();
   for (const [id, entry] of suggestionStore.entries()) {
     if (!entry?.createdAt || now - entry.createdAt > SUGGESTION_TTL_MS) {
       suggestionStore.delete(id);
+    }
+  }
+}
+
+function pruneFreeSlots() {
+  const now = Date.now();
+  for (const [id, entry] of freeSlotStore.entries()) {
+    if (!entry?.createdAt || now - entry.createdAt > FREE_SLOT_TTL_MS) {
+      freeSlotStore.delete(id);
+    }
+  }
+  for (const [id, entry] of approvedFreeSlotStore.entries()) {
+    if (!entry?.createdAt || now - entry.createdAt > FREE_SLOT_TTL_MS) {
+      approvedFreeSlotStore.delete(id);
     }
   }
 }
@@ -892,11 +911,234 @@ async function handleEventSuggestionConfirm(req, res) {
   }
 }
 
+async function handleFreeSlots(req, res) {
+  try {
+    await assertCorrectGoogleAccount();
+    pruneFreeSlots();
+
+    const {
+      date,
+      durationMinutes,
+      daysForward = 5,
+      windowStart = "08:00",
+      windowEnd = "18:00",
+      stepMinutes = 30,
+      maxSlots = 8,
+    } = req.body || {};
+
+    const baseDate = parseDateInput(date);
+    const duration = Math.max(5, Math.min(int(durationMinutes), 24 * 60));
+    const days = Math.max(1, Math.min(int(daysForward) || 5, 14));
+    const step = Math.max(5, Math.min(int(stepMinutes) || 30, 120));
+    const limit = Math.max(1, Math.min(int(maxSlots) || 8, 12));
+
+    if (!baseDate || !duration) {
+      return res.status(400).json({ ok: false, message: "date/durationMinutes required" });
+    }
+
+    const rangeStart = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), 0, 0, 0, 0);
+    const rangeEnd = addDays(rangeStart, days);
+
+    const eventsRes = await listGoogleEvents({
+      timeMin: rangeStart.toISOString(),
+      timeMax: rangeEnd.toISOString(),
+    });
+    if (!eventsRes?.ok) {
+      return res.status(500).json({ ok: false, message: "events fetch failed" });
+    }
+
+    const occupied = buildOccupiedIntervals(eventsRes.events || [], rangeStart, rangeEnd);
+    const slots = [];
+
+    for (let dayOffset = 0; dayOffset < days; dayOffset += 1) {
+      const dayDate = addDays(rangeStart, dayOffset);
+      const windowStartDate = atTime(dayDate, windowStart);
+      const windowEndDate = atTime(dayDate, windowEnd);
+      if (!windowStartDate || !windowEndDate || windowEndDate <= windowStartDate) continue;
+
+      let cursor = windowStartDate;
+      while (addMinutes(cursor, duration) <= windowEndDate) {
+        const candidateEnd = addMinutes(cursor, duration);
+        if (!isConflict(occupied, cursor, candidateEnd)) {
+          const id = crypto.randomUUID ? crypto.randomUUID() : uid("slot");
+          const startIso = toLocalIsoWithOffset(cursor);
+          const endIso = toLocalIsoWithOffset(candidateEnd);
+          freeSlotStore.set(id, {
+            id,
+            start: startIso,
+            end: endIso,
+            createdAt: Date.now(),
+          });
+          slots.push({ id, start: startIso, end: endIso });
+          if (slots.length >= limit) break;
+        }
+        cursor = addMinutes(cursor, step);
+      }
+      if (slots.length >= limit) break;
+    }
+
+    return res.json({
+      ok: true,
+      slots,
+      timezone: getGoogleConfig().GOOGLE_TIMEZONE || "Europe/Zurich",
+    });
+  } catch (e) {
+    const msg = String(e?.message || "");
+    const isNotConnected =
+      msg.includes("Nicht verbunden") ||
+      msg.includes("keine Tokens") ||
+      msg.includes("Google nicht verbunden") ||
+      msg.includes("Access Token") ||
+      msg.includes("Tokens");
+
+    if (isNotConnected) {
+      return res.status(401).json({
+        ok: false,
+        error: "GOOGLE_NOT_CONNECTED",
+        message: "Google nicht verbunden",
+      });
+    }
+
+    res.status(500).json({ ok: false, message: e?.message || "unknown" });
+  }
+}
+
+async function handleFreeSlotApprove(req, res) {
+  try {
+    await assertCorrectGoogleAccount();
+    pruneFreeSlots();
+
+    const { slotId } = req.body || {};
+    if (!slotId) {
+      return res.status(400).json({ ok: false, message: "slotId required" });
+    }
+
+    const entry = freeSlotStore.get(String(slotId));
+    if (!entry) {
+      return res.status(404).json({ ok: false, message: "slot not found or expired" });
+    }
+
+    approvedFreeSlotStore.set(String(slotId), {
+      ...entry,
+      approvedAt: Date.now(),
+      createdAt: entry.createdAt || Date.now(),
+    });
+
+    return res.json({
+      ok: true,
+      approvedSlots: Array.from(approvedFreeSlotStore.values()),
+    });
+  } catch (e) {
+    const msg = String(e?.message || "");
+    const isNotConnected =
+      msg.includes("Nicht verbunden") ||
+      msg.includes("keine Tokens") ||
+      msg.includes("Google nicht verbunden") ||
+      msg.includes("Access Token") ||
+      msg.includes("Tokens");
+
+    if (isNotConnected) {
+      return res.status(401).json({
+        ok: false,
+        error: "GOOGLE_NOT_CONNECTED",
+        message: "Google nicht verbunden",
+      });
+    }
+
+    res.status(500).json({ ok: false, message: e?.message || "unknown" });
+  }
+}
+
+async function handleFreeSlotsApproved(req, res) {
+  try {
+    await assertCorrectGoogleAccount();
+    pruneFreeSlots();
+    return res.json({ ok: true, approvedSlots: Array.from(approvedFreeSlotStore.values()) });
+  } catch (e) {
+    const msg = String(e?.message || "");
+    const isNotConnected =
+      msg.includes("Nicht verbunden") ||
+      msg.includes("keine Tokens") ||
+      msg.includes("Google nicht verbunden") ||
+      msg.includes("Access Token") ||
+      msg.includes("Tokens");
+
+    if (isNotConnected) {
+      return res.status(401).json({
+        ok: false,
+        error: "GOOGLE_NOT_CONNECTED",
+        message: "Google nicht verbunden",
+      });
+    }
+
+    res.status(500).json({ ok: false, message: e?.message || "unknown" });
+  }
+}
+
+async function handleFreeSlotConfirm(req, res) {
+  try {
+    await assertCorrectGoogleAccount();
+    pruneFreeSlots();
+
+    const { slotId, title, location = "", notes = "" } = req.body || {};
+    if (!slotId || !title) {
+      return res.status(400).json({ ok: false, message: "slotId/title required" });
+    }
+
+    const entry = approvedFreeSlotStore.get(String(slotId));
+    if (!entry) {
+      return res.status(404).json({ ok: false, message: "approved slot not found or expired" });
+    }
+
+    const created = await createAndMirrorEvent({
+      title,
+      start: entry.start,
+      end: entry.end,
+      location,
+      notes,
+    });
+    if (!created.ok) return res.status(created.status || 400).json(created.payload || { ok: false });
+
+    approvedFreeSlotStore.delete(String(slotId));
+    freeSlotStore.delete(String(slotId));
+
+    return res.json({
+      ok: true,
+      event: created.normalizedEvent,
+      googleEvent: created.googleEvent,
+      mirroredEvent: created.mirroredEvent,
+      approvedSlots: Array.from(approvedFreeSlotStore.values()),
+    });
+  } catch (e) {
+    const msg = String(e?.message || "");
+    const isNotConnected =
+      msg.includes("Nicht verbunden") ||
+      msg.includes("keine Tokens") ||
+      msg.includes("Google nicht verbunden") ||
+      msg.includes("Access Token") ||
+      msg.includes("Tokens");
+
+    if (isNotConnected) {
+      return res.status(401).json({
+        ok: false,
+        error: "GOOGLE_NOT_CONNECTED",
+        message: "Google nicht verbunden",
+      });
+    }
+
+    res.status(500).json({ ok: false, message: e?.message || "unknown" });
+  }
+}
+
 // ---- Create event in Google Calendar (insert) + Spiegelung in db.json ----
 app.post("/api/google/events", requireApiKey, handleGoogleEventCreate);
 app.post("/api/create-event", requireApiKey, handleGoogleEventCreate);
 app.post("/api/event-suggestions", requireApiKey, handleEventSuggestions);
 app.post("/api/event-suggestions/confirm", requireApiKey, handleEventSuggestionConfirm);
+app.post("/api/free-slots", requireApiKey, handleFreeSlots);
+app.post("/api/free-slots/approve", requireApiKey, handleFreeSlotApprove);
+app.post("/api/free-slots/confirm", requireApiKey, handleFreeSlotConfirm);
+app.get("/api/free-slots/approved", requireApiKey, handleFreeSlotsApproved);
 
 async function handleGoogleEventsList(req, res) {
   const tokens = (await loadTokens?.()) || null;

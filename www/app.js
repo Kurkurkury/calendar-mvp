@@ -220,6 +220,8 @@ const state = {
   eventSuggestions: [],
   selectedSuggestionId: null,
   eventSuggestionRequest: null,
+  freeSlots: [],
+  approvedFreeSlots: [],
 
   windows: loadLocal("windowsV1", [
     { id: "w1", name: "Fokus", days: [1, 2, 3, 4, 5], start: "09:00", end: "12:00", weight: 3 },
@@ -293,6 +295,15 @@ const els = {
   eventLocation: byId("eventLocation"),
   eventNotes: byId("eventNotes"),
   createEventFormBtn: byId("createEventFormBtn"),
+
+  // Free slots (Phase 3)
+  freeSlotTitle: byId("freeSlotTitle"),
+  freeSlotDate: byId("freeSlotDate"),
+  freeSlotDuration: byId("freeSlotDuration"),
+  freeSlotDaysForward: byId("freeSlotDaysForward"),
+  freeSlotFindBtn: byId("freeSlotFindBtn"),
+  freeSlotList: byId("freeSlotList"),
+  approvedSlotList: byId("approvedSlotList"),
 
   // Event modal
   eventBackdrop: byId("eventBackdrop"),
@@ -446,6 +457,10 @@ async function boot() {
 
   // Create event form
   els.createEventFormBtn?.addEventListener("click", createEventFromForm);
+
+  // Free slots (Phase 3)
+  ensureFreeSlotDefaults();
+  els.freeSlotFindBtn?.addEventListener("click", loadFreeSlots);
 
   // Event modal
   els.closeEventBtn?.addEventListener("click", closeEventModal);
@@ -892,6 +907,19 @@ async function refreshFromApi() {
     state.tasks = tasksRes.tasks || [];
   } catch (e) {
     console.error("Fehler beim Laden von /api/tasks", e);
+    if (isNetworkFetchFail(e)) {
+      hadNetworkFailure = true;
+    } else {
+      hadApiFailure = true;
+    }
+  }
+
+  try {
+    const approvedRes = await apiGet("/api/free-slots/approved");
+    if (approvedRes?.ok && Array.isArray(approvedRes.approvedSlots)) {
+      state.approvedFreeSlots = approvedRes.approvedSlots;
+    }
+  } catch (e) {
     if (isNetworkFetchFail(e)) {
       hadNetworkFailure = true;
     } else {
@@ -1877,6 +1905,9 @@ function renderSideLists() {
       });
     }
   }
+
+  renderFreeSlotList();
+  renderApprovedSlotList();
 }
 
 function taskItem(task, showTime = false) {
@@ -2051,6 +2082,128 @@ function renderSuggestionList() {
   if (els.suggestionConfirmBtn) {
     els.suggestionConfirmBtn.disabled = !state.selectedSuggestionId;
   }
+}
+
+function ensureFreeSlotDefaults() {
+  if (els.freeSlotDate && !els.freeSlotDate.value) {
+    els.freeSlotDate.value = toInputDate(new Date());
+  }
+  if (els.freeSlotDuration && !els.freeSlotDuration.value) {
+    els.freeSlotDuration.value = "60";
+  }
+  if (els.freeSlotDaysForward && !els.freeSlotDaysForward.value) {
+    els.freeSlotDaysForward.value = "5";
+  }
+}
+
+function renderFreeSlotList() {
+  if (!els.freeSlotList) return;
+  els.freeSlotList.innerHTML = "";
+
+  const slots = Array.isArray(state.freeSlots) ? state.freeSlots : [];
+  if (slots.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "item";
+    empty.innerHTML = `<div class="itemTitle">Keine Vorschläge</div><div class="itemMeta">Noch keine freien Slots gefunden.</div>`;
+    els.freeSlotList.appendChild(empty);
+    return;
+  }
+
+  slots.forEach((slot) => {
+    const start = slot?.start ? new Date(slot.start) : null;
+    const end = slot?.end ? new Date(slot.end) : null;
+    const hasStart = start && !Number.isNaN(start.getTime());
+    const hasEnd = end && !Number.isNaN(end.getTime());
+    const duration = hasStart && hasEnd ? Math.round((end - start) / 60000) : null;
+
+    const item = document.createElement("div");
+    item.className = "item";
+
+    const top = document.createElement("div");
+    top.className = "itemTop";
+
+    const title = document.createElement("div");
+    title.className = "itemTitle";
+    title.textContent = hasStart ? `${fmtDate(start)} • ${fmtTime(start)}–${fmtTime(end)}` : "Unbekannter Slot";
+
+    const actions = document.createElement("div");
+    actions.className = "itemActions";
+
+    const approveBtn = document.createElement("button");
+    approveBtn.className = "btn small";
+    approveBtn.type = "button";
+    approveBtn.textContent = "Freigeben";
+    approveBtn.addEventListener("click", async () => {
+      await approveFreeSlot(slot);
+    });
+    actions.appendChild(approveBtn);
+
+    top.appendChild(title);
+    top.appendChild(actions);
+
+    const meta = document.createElement("div");
+    meta.className = "itemMeta";
+    meta.textContent = duration ? `${duration} min` : "Dauer unbekannt";
+
+    item.appendChild(top);
+    item.appendChild(meta);
+    els.freeSlotList.appendChild(item);
+  });
+}
+
+function renderApprovedSlotList() {
+  if (!els.approvedSlotList) return;
+  els.approvedSlotList.innerHTML = "";
+
+  const slots = Array.isArray(state.approvedFreeSlots) ? state.approvedFreeSlots : [];
+  if (slots.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "item";
+    empty.innerHTML = `<div class="itemTitle">Keine Freigaben</div><div class="itemMeta">Noch keine Slots freigegeben.</div>`;
+    els.approvedSlotList.appendChild(empty);
+    return;
+  }
+
+  slots.forEach((slot) => {
+    const start = slot?.start ? new Date(slot.start) : null;
+    const end = slot?.end ? new Date(slot.end) : null;
+    const hasStart = start && !Number.isNaN(start.getTime());
+    const hasEnd = end && !Number.isNaN(end.getTime());
+    const duration = hasStart && hasEnd ? Math.round((end - start) / 60000) : null;
+
+    const item = document.createElement("div");
+    item.className = "item";
+
+    const top = document.createElement("div");
+    top.className = "itemTop";
+
+    const title = document.createElement("div");
+    title.className = "itemTitle";
+    title.textContent = hasStart ? `${fmtDate(start)} • ${fmtTime(start)}–${fmtTime(end)}` : "Freigegebener Slot";
+
+    const actions = document.createElement("div");
+    actions.className = "itemActions";
+
+    const createBtn = document.createElement("button");
+    createBtn.className = "btn small primary";
+    createBtn.type = "button";
+    createBtn.textContent = "Termin erstellen";
+    createBtn.addEventListener("click", async () => {
+      await confirmFreeSlot(slot);
+    });
+    actions.appendChild(createBtn);
+
+    top.appendChild(title);
+    top.appendChild(actions);
+
+    const meta = document.createElement("div");
+    meta.className = "itemMeta";
+    meta.textContent = duration ? `${duration} min` : "Dauer unbekannt";
+
+    item.appendChild(top);
+    item.appendChild(meta);
+    els.approvedSlotList.appendChild(item);
+  });
 }
 
 function openEditEventModal(event) {
@@ -2457,6 +2610,116 @@ async function confirmSuggestedEvent() {
       btn.textContent = oldText;
       btn.removeAttribute('aria-busy');
     }
+  }
+}
+
+async function loadFreeSlots() {
+  const dateStr = els.freeSlotDate?.value || "";
+  const durationMinutes = clamp(parseInt(els.freeSlotDuration?.value || "60", 10), 5, 24 * 60);
+  const daysForward = clamp(parseInt(els.freeSlotDaysForward?.value || "5", 10), 1, 14);
+
+  if (!dateStr) {
+    uiNotify("error", "Bitte ein Startdatum auswählen.");
+    return;
+  }
+
+  const btn = els.freeSlotFindBtn;
+  const oldText = btn?.textContent || "Freie Zeiten finden";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Suche…";
+  }
+
+  uiNotify("info", "Lädt… freie Zeiten werden gesucht.");
+  setSyncLoading(true, "Lädt… freie Zeiten werden gesucht");
+
+  try {
+    const res = await apiPost("/api/free-slots", {
+      date: dateStr,
+      durationMinutes,
+      daysForward,
+      windowStart: `${pad2(state.viewStartHour)}:00`,
+      windowEnd: `${pad2(state.viewEndHour)}:00`,
+      stepMinutes: state.stepMinutes,
+      maxSlots: 8,
+    });
+
+    if (res?.ok && Array.isArray(res.slots)) {
+      state.freeSlots = res.slots;
+      renderFreeSlotList();
+      if (res.slots.length === 0) {
+        uiNotify("error", "Keine freien Slots gefunden.");
+      }
+    } else {
+      throw new Error("Keine freien Slots erhalten");
+    }
+  } catch (e) {
+    const msg = String(e?.message || "");
+    uiNotify("error", `Fehler beim Laden der freien Slots: ${msg || "unbekannt"}`);
+  } finally {
+    setSyncLoading(false);
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText;
+    }
+  }
+}
+
+async function approveFreeSlot(slot) {
+  if (!slot?.id) {
+    uiNotify("error", "Slot ungültig.");
+    return;
+  }
+
+  try {
+    const res = await apiPost("/api/free-slots/approve", { slotId: slot.id });
+    if (res?.ok && Array.isArray(res.approvedSlots)) {
+      state.approvedFreeSlots = res.approvedSlots;
+      state.freeSlots = state.freeSlots.filter((s) => s.id !== slot.id);
+      renderFreeSlotList();
+      renderApprovedSlotList();
+      uiNotify("success", "Slot freigegeben.");
+    } else {
+      throw new Error("Slot konnte nicht freigegeben werden");
+    }
+  } catch (e) {
+    const msg = String(e?.message || "");
+    uiNotify("error", `Fehler beim Freigeben: ${msg || "unbekannt"}`);
+  }
+}
+
+async function confirmFreeSlot(slot) {
+  const title = (els.freeSlotTitle?.value || "").trim();
+  if (!title) {
+    uiNotify("error", "Bitte einen Titel für den Termin eingeben.");
+    return;
+  }
+  if (!slot?.id) {
+    uiNotify("error", "Slot ungültig.");
+    return;
+  }
+
+  uiNotify("info", "Lädt… Termin wird erstellt.");
+  setSyncLoading(true, "Lädt… Termin wird erstellt");
+
+  try {
+    const createdRes = await apiPost("/api/free-slots/confirm", {
+      slotId: slot.id,
+      title,
+    });
+    await applyCreatedEvent(createdRes, title);
+    if (Array.isArray(createdRes?.approvedSlots)) {
+      state.approvedFreeSlots = createdRes.approvedSlots;
+    } else {
+      state.approvedFreeSlots = state.approvedFreeSlots.filter((s) => s.id !== slot.id);
+    }
+    renderApprovedSlotList();
+    uiNotify("success", "Termin erstellt");
+  } catch (e) {
+    const msg = String(e?.message || "");
+    uiNotify("error", `Fehler beim Erstellen: ${msg || "unbekannt"}`);
+  } finally {
+    setSyncLoading(false);
   }
 }
 
