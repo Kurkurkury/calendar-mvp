@@ -1,26 +1,26 @@
 :root {
-  --bg: #121212;
-  --panel: #121212;
-  --panel2: #1a1a1a;
-  --text: #ffffff;
-  --muted: #b3b3b3;
-  --line: #2a2a2a;
-  --grid-line: #2f2f2f;
-  --primary: #007bff;
-  --danger: #ff4d4f;
-  --ok: #3ee28f;
-  --shadow: 0 12px 28px rgba(0,0,0,.4);
-  --r: 10px;
-  --r2: 8px;
+  --bg: #ffffff;
+  --panel: #ffffff;
+  --panel2: #ffffff;
+  --text: #000000;
+  --muted: #000000;
+  --line: #e0e0e0;
+  --grid-line: #e6e6e6;
+  --primary: #808080;
+  --danger: #000000;
+  --ok: #000000;
+  --shadow: none;
+  --r: 0px;
+  --r2: 0px;
   --font: "Arial", "Helvetica", sans-serif;
   --timecol: 64px;
   --day-gutter: 1px;
   --event-inset: 6px;
 
-  /* Neon-Grün Highlight für "Heute" */
-  --today: #ffffff;
-  --todayGlow: rgba(255,255,255,.2);
-  --todayLine: rgba(255,255,255,.3);
+  /* Highlight für "Heute" */
+  --today: #000000;
+  --todayGlow: transparent;
+  --todayLine: #e0e0e0;
 }
 
 * { box-sizing: border-box; }
@@ -94,58 +94,58 @@ body {
   padding: 4px 8px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  background: #1e1e1e;
+  background: #ffffff;
   color: var(--muted);
   white-space: normal;
   line-height: 1.2;
 }
 .statusBadge.ok {
   color: var(--text);
-  background: #1e1e1e;
+  background: #ffffff;
   border-color: var(--line);
 }
 .statusBadge.warn {
   color: var(--text);
-  background: #1e1e1e;
+  background: #ffffff;
   border-color: var(--line);
 }
 
 .btn {
-  border: 0;
-  background: #007bff;
+  border: 1px solid #808080;
+  background: #808080;
   color: #ffffff;
-  padding: 10px 12px;
-  border-radius: 12px;
+  padding: 8px 10px;
+  border-radius: 0;
   cursor: pointer;
   font-weight: 650;
   touch-action: manipulation;
-  width: 200px;
-  height: 50px;
-  min-height: 50px;
+  width: 150px;
+  height: 40px;
+  min-height: 40px;
 }
 .btn:hover { filter: brightness(1.05); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn.small {
   padding: 6px 10px;
   font-size: 12px;
-  border-radius: 10px;
+  border-radius: 0;
   width: auto;
   height: auto;
   min-height: 0;
 }
 .btn.delete {
-  background: #007bff;
+  background: #808080;
   color: #ffffff;
 }
 .btn.delete:hover { filter: brightness(1.05); }
 
 .btn.primary {
-  background: #007bff;
-  border: 0;
+  background: #808080;
+  border: 1px solid #808080;
 }
 .btn.primary:hover { filter: brightness(1.05); }
 
-.btn.ghost { background: #007bff; }
+.btn.ghost { background: #808080; }
 
 .layout {
   display: grid;
@@ -205,7 +205,7 @@ body {
 
 /* Heute-Highlight im Header */
 .dayHead.today {
-  background: #1c1c1c;
+  background: #f5f5f5;
   box-shadow: inset 0 -2px 0 var(--todayLine);
 }
 .dayHead.today .dow { color: var(--text); }
@@ -217,7 +217,7 @@ body {
   content:"";
   position:absolute;
   inset: 6px;
-  border-radius: 10px;
+  border-radius: 0;
   border: 1px solid var(--todayLine);
   pointer-events:none;
 }
@@ -246,7 +246,7 @@ body {
 }
 
 .timeLabel {
-  height: 60px;
+  height: 50px;
   padding: 2px 8px 0 0;
   font-size: 12px;
   font-weight: 600;
@@ -312,7 +312,7 @@ body {
 
 /* Heute-Highlight in der Spalte */
 .col.today {
-  background: #1a1a1a;
+  background: #f5f5f5;
 }
 
 .slotLine {
@@ -322,7 +322,7 @@ body {
   background: var(--line);
 }
 .slotLine.minor {
-  background: rgba(255,255,255,.08);
+  background: #f0f0f0;
 }
 
 .nowLine {
@@ -338,33 +338,33 @@ body {
 .taskBlock {
   position: absolute;
   left: var(--event-inset);
-  width: 250px;
-  height: 60px;
-  border-radius: 10px;
+  width: 200px;
+  height: 50px;
+  border-radius: 0;
   padding: 6px 8px;
-  background: rgba(44,44,44,.85);
-  border: 1px solid rgba(255,255,255,.12);
-  box-shadow: 0 8px 18px rgba(0,0,0,.35);
+  background: #ffffff;
+  border: 1px solid #000000;
+  box-shadow: none;
   cursor: default;
-  color: #ffffff;
+  color: #000000;
   overflow: hidden;
 }
 .taskBlock .t { font-weight: 800; font-size: 16px; }
-.taskBlock .m { color: rgba(255,255,255,.82); font-size: 16px; margin-top: 2px; }
+.taskBlock .m { color: #000000; font-size: 16px; margin-top: 2px; }
 
 .eventBlock {
   position: absolute;
   left: var(--event-inset);
-  width: 250px;
-  height: 60px;
-  border-radius: 10px;
+  width: 200px;
+  height: 50px;
+  border-radius: 0;
   padding: 6px 8px;
-  background: rgba(44,44,44,.85);
-  border: 1px solid rgba(255,255,255,.12);
-  box-shadow: 0 8px 18px rgba(0,0,0,.35);
+  background: #ffffff;
+  border: 1px solid #000000;
+  box-shadow: none;
   cursor: pointer;
   user-select: none;
-  color: #ffffff;
+  color: #000000;
   overflow: hidden;
 }
 .eventBlock,
@@ -372,19 +372,19 @@ body {
   cursor: inherit !important;
 }
 .eventBlock.selected {
-  border-color: rgba(255,255,255,.35);
-  box-shadow: 0 10px 22px rgba(0,0,0,.4);
+  border-color: #000000;
+  box-shadow: none;
 }
 .eventBlock.dragging {
   opacity: 0.4;
   cursor: grabbing;
 }
 .eventBlock .t { font-weight: 800; font-size: 16px; }
-.eventBlock .m { color: rgba(255,255,255,.82); font-size: 16px; margin-top: 2px; }
+.eventBlock .m { color: #000000; font-size: 16px; margin-top: 2px; }
 
 .eventGhost {
   position: absolute;
-  border-radius: 10px;
+  border-radius: 0;
   padding: 6px 8px;
   background: #f4f4f4;
   border: 1px dashed #bdbdbd;
@@ -428,7 +428,7 @@ body {
 .detailNotesBlock textarea {
   min-height: 120px;
   padding: 12px;
-  border-radius: 12px;
+  border-radius: 0;
   border: 1px solid var(--line);
   background: #ffffff;
   color: var(--text);
@@ -464,7 +464,7 @@ body {
   display: inline-flex;
   align-items: center;
   padding: 6px 10px;
-  border-radius: 999px;
+  border-radius: 0;
   background: #f5f5f5;
   border: 1px solid var(--line);
   font-size: 12px;
@@ -483,7 +483,7 @@ body {
 .sidebarOverlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.12);
+  background: rgba(0, 0, 0, 0.04);
   z-index: 40;
 }
 
@@ -516,7 +516,7 @@ body {
   align-items: center;
   gap: 6px;
   padding: 4px 8px;
-  border-radius: 999px;
+  border-radius: 0;
   border: 1px solid var(--line);
   background: #f5f5f5;
   font-size: 11px;
@@ -666,7 +666,7 @@ body {
 .field span { color: var(--muted); font-size: 12px; }
 .field input {
   padding: 12px 12px;
-  border-radius: 12px;
+  border-radius: 0;
   border: 1px solid var(--line);
   background: #ffffff;
   color: var(--text);
@@ -677,7 +677,7 @@ body {
 /* ✅ NEU: textarea im gleichen Stil */
 .field textarea{
   padding: 12px 12px;
-  border-radius: 12px;
+  border-radius: 0;
   border: 1px solid var(--line);
   background: #ffffff;
   color: var(--text);
@@ -704,7 +704,7 @@ body {
   align-items:center;
   border: 1px solid var(--line);
   padding: 10px;
-  border-radius: 12px;
+  border-radius: 0;
   background: #ffffff;
 }
 .toggle input { transform: scale(1.15); }
@@ -742,7 +742,7 @@ body {
 .cardMiniSub{ color: var(--muted); font-size: 12px; line-height: 1.35; }
 code{
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 0;
   padding: 2px 6px;
   background: #f5f5f5;
   color: var(--text);
@@ -757,7 +757,7 @@ code{
   width: 100%;
   text-align: left;
   padding: 12px;
-  border-radius: 12px;
+  border-radius: 0;
   border: 1px solid var(--line);
   background: #ffffff;
   color: var(--text);
