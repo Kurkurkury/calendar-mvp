@@ -39,8 +39,10 @@ body {
 .app-shell {
   width: 100%;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: stretch;
   flex: 1 1 auto;
+  min-height: 0;
 }
 
 .app-container {
@@ -90,6 +92,7 @@ body {
   height: 100vh;
   min-height: 0;
   position: relative;
+  width: 100%;
 }
 
 .topbar {
@@ -100,11 +103,34 @@ body {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 20px 16px 18px;
+  padding: 20px 0 18px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   background: linear-gradient(140deg, #6a1b9a 0%, #d81b60 100%);
   backdrop-filter: blur(6px);
   flex: 0 0 auto;
+}
+
+.topbar-content {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+}
+
+.month-title-wrap {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100vw;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.month-title-wrap .title {
+  pointer-events: auto;
 }
 
 .title {
@@ -438,6 +464,8 @@ body.view-day .side {
   flex-direction: column;
   gap: 10px;
   align-items: stretch;
+  width: 100%;
+  margin: 0 auto;
 }
 
 .event-card {
@@ -1300,6 +1328,19 @@ code{
     align-items: stretch;
     gap: 10px;
     padding: 10px 12px;
+  }
+
+  .topbar-content {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .month-title-wrap {
+    position: static;
+    transform: none;
+    width: 100%;
+    pointer-events: auto;
   }
 
   .left,

@@ -15,43 +15,48 @@
 </head>
 <body>
   <div class="app-shell">
-    <div class="app-container">
-      <div class="calendar-container">
-        <header class="topbar">
-      <div class="left">
-        <nav class="weekNav" aria-label="Kalender Navigation">
-          <button id="prevWeekBtn" class="btn ghost" title="Vorherige Woche" aria-label="Vorherige Woche">←</button>
-          <button id="todayBtn" class="btn ghost" aria-label="Heute anzeigen">Heute</button>
-          <button id="nextWeekBtn" class="btn ghost" title="Nächste Woche" aria-label="Nächste Woche">→</button>
-        </nav>
-        <div class="title">
-          <div class="month-header" aria-label="Monat wechseln">
-            <button id="prevMonthBtn" class="month-arrow" type="button" aria-label="Vorheriger Monat">‹</button>
-            <button id="monthNameBtn" class="month-name" type="button" aria-label="Monat wechseln">AUGUST 2013</button>
-            <button id="nextMonthBtn" class="month-arrow" type="button" aria-label="Nächster Monat">›</button>
+    <div class="calendar-container">
+      <header class="topbar">
+        <div class="topbar-content app-container">
+          <div class="left">
+            <nav class="weekNav" aria-label="Kalender Navigation">
+              <button id="prevWeekBtn" class="btn ghost" title="Vorherige Woche" aria-label="Vorherige Woche">←</button>
+              <button id="todayBtn" class="btn ghost" aria-label="Heute anzeigen">Heute</button>
+              <button id="nextWeekBtn" class="btn ghost" title="Nächste Woche" aria-label="Nächste Woche">→</button>
+            </nav>
           </div>
-          <div id="weekLabel" class="sub"></div>
+
+          <div class="month-title-wrap">
+            <div class="title">
+              <div class="month-header" aria-label="Monat wechseln">
+                <button id="prevMonthBtn" class="month-arrow" type="button" aria-label="Vorheriger Monat">‹</button>
+                <button id="monthNameBtn" class="month-name" type="button" aria-label="Monat wechseln">AUGUST 2013</button>
+                <button id="nextMonthBtn" class="month-arrow" type="button" aria-label="Nächster Monat">›</button>
+              </div>
+              <div id="weekLabel" class="sub"></div>
+            </div>
+          </div>
+
+          <div class="right">
+            <div class="statusBadges">
+              <span id="googleStatusBadge" class="statusBadge"></span>
+              <span id="syncStatusBadge" class="statusBadge"></span>
+            </div>
+            <button id="btnNew" class="btn primary fab" aria-label="Neuen Eintrag erstellen">+ Neu</button>
+          </div>
         </div>
-      </div>
+      </header>
 
-      <div class="right">
-        <div class="statusBadges">
-          <span id="googleStatusBadge" class="statusBadge"></span>
-          <span id="syncStatusBadge" class="statusBadge"></span>
-        </div>
-        <button id="btnNew" class="btn primary fab" aria-label="Neuen Eintrag erstellen">+ Neu</button>
-      </div>
-    </header>
+      <div class="app-container">
+        <section class="agendaView">
+          <div id="dayScroller" class="day-scroller" aria-label="Tagesauswahl"></div>
+          <div class="event-list">
+            <div class="event-list-title">Events &amp; Tasks</div>
+            <div id="dayEventList" class="event-list-items"></div>
+          </div>
+        </section>
 
-    <section class="agendaView">
-      <div id="dayScroller" class="day-scroller" aria-label="Tagesauswahl"></div>
-      <div class="event-list">
-        <div class="event-list-title">Events &amp; Tasks</div>
-        <div id="dayEventList" class="event-list-items"></div>
-      </div>
-    </section>
-
-    <main class="layout">
+        <main class="layout">
       <section class="calendar">
         <div class="calHead">
           <div class="timeColHead"></div>
