@@ -256,15 +256,27 @@ function startGooglePollingOnce() {
 }
 
 
+const VALID_VIEWS = new Set(["day", "week", "month"]);
+const INITIAL_VIEW = (() => {
+  const saved = loadLocal("calendarViewV1", "day");
+  const normalized = VALID_VIEWS.has(saved) ? saved : "day";
+  return isMobile() ? "day" : normalized;
+})();
+const INITIAL_DAY_MODE = loadLocal(DAY_MODE_STORAGE_KEY, isMobile() ? "fit" : "scroll");
+
+function setAppReady(ready) {
+  document.body.classList.toggle("app-ready", ready);
+}
+
 // -------------------- State --------------------
 const state = {
-  view: "day",
+  view: INITIAL_VIEW,
   activeDate: loadDateLocal("calendarActiveDateV1", new Date(2013, 7, 27)),
   currentYear: null,
   currentMonth: null,
   selectedDay: null,
   weekStart: startOfWeek(new Date()),
-  dayMode: loadLocal(DAY_MODE_STORAGE_KEY, isMobile() ? "fit" : "scroll"),
+  dayMode: INITIAL_DAY_MODE,
 
   tasks: [],
   events: [],
@@ -806,6 +818,8 @@ boot();
 
 // -------------------- Boot --------------------
 async function boot() {
+  setAppReady(false);
+  setBodyViewClass(state.view);
   setActiveDate(state.activeDate);
 
   warnDuplicateIds([
@@ -982,9 +996,13 @@ async function boot() {
   window.addEventListener("resize", () => {
     requestAnimationFrame(updateCalendarScrollbarGutter);
   });
-  await refreshFromApi();
-  startGooglePollingOnce();
-  await render();
+  try {
+    await refreshFromApi();
+    startGooglePollingOnce();
+    await render();
+  } finally {
+    setAppReady(true);
+  }
 }
 
 // -------------------- Google UI --------------------

@@ -36,6 +36,17 @@ body {
   overflow: hidden;
 }
 
+body:not(.app-ready) .calendar-container {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+body.app-ready .calendar-container {
+  opacity: 1;
+  visibility: visible;
+}
+
 .app-shell {
   width: 100%;
   display: flex;
