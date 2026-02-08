@@ -2646,7 +2646,7 @@ app.post(
               required: ["mime"],
               properties: {
                 mime: { type: "string" },
-                pages: { type: "number" },
+                pages: { type: ["integer", "null"] },
               },
             },
             proposals: {
@@ -2704,6 +2704,14 @@ app.post(
           },
         };
 
+        const schema = docSchema;
+        console.log(
+          "[ai-extract] doc schema keys=",
+          Object.keys(schema),
+          "source.required=",
+          schema?.properties?.source?.required,
+        );
+
         const payload = {
           model: AI_EXTRACT_MODEL,
           input: [
@@ -2721,7 +2729,7 @@ app.post(
               type: "json_schema",
               name: "calendar_extract_doc",
               strict: true,
-              schema: docSchema,
+              schema,
             },
           },
           max_output_tokens: 900,
