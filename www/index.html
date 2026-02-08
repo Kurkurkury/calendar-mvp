@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Kalender</title>
+  <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="/style.css" />
   <script type="importmap">
     {
@@ -18,12 +19,21 @@
     <div class="calendar-container">
       <header class="topbar">
         <div class="topbar-grid">
-          <div class="left topbar-left">
-            <nav class="weekNav" aria-label="Kalender Navigation">
-              <button id="prevWeekBtn" class="btn ghost" title="Vorherige Woche" aria-label="Vorherige Woche">←</button>
-              <button id="todayBtn" class="btn ghost" aria-label="Heute anzeigen">Heute</button>
-              <button id="nextWeekBtn" class="btn ghost" title="Nächste Woche" aria-label="Nächste Woche">→</button>
-            </nav>
+          <div class="topbar-row app-container max-w-5xl mx-auto px-3 sm:px-6 w-full">
+            <div class="left topbar-left">
+              <nav class="weekNav" aria-label="Kalender Navigation">
+                <button id="prevWeekBtn" class="btn ghost" title="Vorherige Woche" aria-label="Vorherige Woche">←</button>
+                <button id="todayBtn" class="btn ghost" aria-label="Heute anzeigen">Heute</button>
+                <button id="nextWeekBtn" class="btn ghost" title="Nächste Woche" aria-label="Nächste Woche">→</button>
+              </nav>
+            </div>
+            <div class="right topbar-right">
+              <div class="statusBadges">
+                <span id="googleStatusBadge" class="statusBadge"></span>
+                <span id="syncStatusBadge" class="statusBadge"></span>
+              </div>
+              <button id="btnNew" class="btn primary fab" aria-label="Neuen Eintrag erstellen">+ Neu</button>
+            </div>
           </div>
 
           <div class="month-title-wrap topbar-center">
@@ -36,18 +46,10 @@
               <div id="weekLabel" class="sub"></div>
             </div>
           </div>
-
-          <div class="right topbar-right">
-            <div class="statusBadges">
-              <span id="googleStatusBadge" class="statusBadge"></span>
-              <span id="syncStatusBadge" class="statusBadge"></span>
-            </div>
-            <button id="btnNew" class="btn primary fab" aria-label="Neuen Eintrag erstellen">+ Neu</button>
-          </div>
         </div>
       </header>
 
-      <div class="content-container">
+      <div class="app-container max-w-5xl mx-auto px-3 sm:px-6 w-full">
         <section class="agendaView">
           <div id="dayScroller" class="day-scroller" aria-label="Tagesauswahl"></div>
           <div class="event-list">
@@ -370,7 +372,7 @@
     </main>
 
         <div class="google-connection" aria-label="Google Verbindung">
-          <div class="content-container google-connection-inner">
+          <div class="app-container max-w-5xl mx-auto px-3 sm:px-6 w-full google-connection-inner">
             <div id="statusLine" class="sub"></div>
             <div id="connectionStatus" class="connectionStatus">
               <div id="googleConnectionState" class="connectionMain"></div>
