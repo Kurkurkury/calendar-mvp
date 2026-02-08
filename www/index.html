@@ -14,8 +14,10 @@
   </script>
 </head>
 <body>
-  <div class="calendar-container">
-    <header class="topbar">
+  <div class="app-shell">
+    <div class="app-container">
+      <div class="calendar-container">
+        <header class="topbar">
       <div class="left">
         <nav class="weekNav" aria-label="Kalender Navigation">
           <button id="prevWeekBtn" class="btn ghost" title="Vorherige Woche" aria-label="Vorherige Woche">←</button>
@@ -362,15 +364,17 @@
       </aside>
     </main>
 
-    <div class="google-connection" aria-label="Google Verbindung">
-      <div id="statusLine" class="sub"></div>
-      <div id="connectionStatus" class="connectionStatus">
-        <div id="googleConnectionState" class="connectionMain"></div>
-        <div id="reconnectHint" class="connectionHint"></div>
-      </div>
-      <div class="googleActions">
-        <button id="googleConnectBtn" class="btn ghost" type="button" aria-label="Mit Google verbinden">Mit Google verbinden</button>
-        <button id="googleDisconnectBtn" class="btn ghost" type="button" aria-label="Google Verbindung trennen">Trennen</button>
+        <div class="google-connection" aria-label="Google Verbindung">
+          <div id="statusLine" class="sub"></div>
+          <div id="connectionStatus" class="connectionStatus">
+            <div id="googleConnectionState" class="connectionMain"></div>
+            <div id="reconnectHint" class="connectionHint"></div>
+          </div>
+          <div class="googleActions">
+            <button id="googleConnectBtn" class="btn ghost" type="button" aria-label="Mit Google verbinden">Mit Google verbinden</button>
+            <button id="googleDisconnectBtn" class="btn ghost" type="button" aria-label="Google Verbindung trennen">Trennen</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>

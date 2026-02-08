@@ -36,6 +36,28 @@ body {
   overflow: hidden;
 }
 
+.app-shell {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  flex: 1 1 auto;
+}
+
+.app-container {
+  width: 100%;
+  max-width: 1200px;
+  padding-left: 16px;
+  padding-right: 16px;
+  box-sizing: border-box;
+}
+
+@media (min-width: 900px) {
+  .app-container {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+}
+
 .calendar-container {
   display: flex;
   flex-direction: column;
