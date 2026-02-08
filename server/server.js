@@ -2187,9 +2187,12 @@ app.post("/api/assistant/parse", async (req, res) => {
         { role: "system", content: [{ type: "input_text", text: systemPrompt }] },
         { role: "user", content: [{ type: "input_text", text: userPrompt }] },
       ],
-      response_format: {
-        type: "json_schema",
-        json_schema: { name: "calendar_proposal", schema, strict: true },
+      // Responses API: response_format -> text.format migration
+      text: {
+        format: {
+          type: "json_schema",
+          json_schema: { name: "calendar_proposal", schema, strict: true },
+        },
       },
     };
 
