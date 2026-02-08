@@ -65,6 +65,33 @@ const TOKENS_PATH = path.join(__dirname, "google-tokens.json"); // legacy discon
 // ---- Phase 3 Push-Sync (Google Watch API) ----
 const WATCH_PATH = path.join(__dirname, "google-watch.json");
 
+function getOpenAiRequestId(headers) {
+  if (!headers) return null;
+  return headers.get("x-request-id") || headers.get("openai-request-id") || null;
+}
+
+function toSnippet(text, maxLen = 500) {
+  if (!text) return "";
+  const str = String(text);
+  return str.length > maxLen ? `${str.slice(0, maxLen)}...` : str;
+}
+
+function logOpenAiError({ status, requestId, errorType, errorCode, errorMessage, bodySnippet }) {
+  console.error(
+    [
+      "[ai-extract][openai-error]",
+      `status=${status ?? "n/a"}`,
+      `request_id=${requestId ?? "n/a"}`,
+      `type=${errorType ?? "n/a"}`,
+      `code=${errorCode ?? "n/a"}`,
+      `message=${errorMessage ?? "n/a"}`,
+      bodySnippet ? `body_snippet=${bodySnippet}` : null,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+}
+
 function loadWatchState() {
   try {
     if (!fs.existsSync(WATCH_PATH)) {
@@ -719,6 +746,15 @@ function parseAIJson(rawText) {
   }
 
   return parsed;
+}
+
+function safeJsonParse(rawText) {
+  if (!rawText || typeof rawText !== "string") return null;
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    return null;
+  }
 }
 
 function parseDocExtractJson(rawText) {
@@ -2695,6 +2731,7 @@ app.post(
 
         let resp;
         let body;
+        let rawBody = "";
         try {
           resp = await fetch("https://api.openai.com/v1/responses", {
             method: "POST",
@@ -2704,22 +2741,58 @@ app.post(
             },
             body: JSON.stringify(payload),
           });
-          body = await resp.json();
-        } catch {
+          rawBody = await resp.text();
+        } catch (err) {
           const durationMs = Date.now() - startedAt;
           console.log(
             `[ai-extract] mime=${file.mimeType} pages=${pages ?? "n/a"} extracted_chars=${extractedText.length} duration_ms=${durationMs}`,
           );
-          return res.status(500).json({ ok: false, message: "OpenAI request failed", warnings });
+          logOpenAiError({
+            status: null,
+            requestId: null,
+            errorType: "request_failed",
+            errorCode: null,
+            errorMessage: err?.message || String(err),
+            bodySnippet: null,
+          });
+          return res.status(502).json({ ok: false, message: "OpenAI upstream error", warnings });
         }
 
         if (!resp.ok) {
           const durationMs = Date.now() - startedAt;
+          const parsedError = safeJsonParse(rawBody || "");
+          const errorPayload = parsedError?.error || {};
+          const requestId = getOpenAiRequestId(resp.headers);
+          const bodySnippet = toSnippet(rawBody);
           console.log(
             `[ai-extract] mime=${file.mimeType} pages=${pages ?? "n/a"} extracted_chars=${extractedText.length} duration_ms=${durationMs}`,
           );
-          return res.status(500).json({ ok: false, message: "OpenAI request failed", warnings });
+          logOpenAiError({
+            status: resp.status,
+            requestId,
+            errorType: errorPayload?.type || null,
+            errorCode: errorPayload?.code || null,
+            errorMessage: errorPayload?.message || parsedError?.message || null,
+            bodySnippet,
+          });
+
+          let status = 502;
+          let message = "OpenAI upstream error";
+          let warningTag = null;
+          if (resp.status === 401 || resp.status === 403) {
+            status = 500;
+            message = "OpenAI auth/config error";
+            warningTag = "openai_auth";
+          } else if (resp.status === 429) {
+            status = 503;
+            message = "OpenAI rate limited";
+            warningTag = "openai_429";
+          }
+          const nextWarnings = warningTag ? [...warnings, warningTag] : [...warnings];
+          return res.status(status).json({ ok: false, message, warnings: nextWarnings });
         }
+
+        body = safeJsonParse(rawBody || "");
 
         const outputText =
           body?.output_text ||
