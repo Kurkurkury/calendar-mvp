@@ -117,6 +117,15 @@ const DEFAULT_PREFS_UI = {
   bufferMinutes: 15,
   timeOfDay: "auto",
 };
+const AI_EXTRACT_ACCEPT = ".png,.jpg,.jpeg,.webp,.pdf,.docx";
+const AI_EXTRACT_ALLOWED_MIME = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
+const AI_EXTRACT_ALLOWED_EXT = new Set(["png", "jpg", "jpeg", "webp", "pdf", "docx"]);
 
 async function openExternal(url) {
   if (window.Capacitor?.Plugins?.Browser?.open) {
@@ -331,6 +340,13 @@ const els = {
   smartSuggestionList: byId("smartSuggestionList"),
   smartOptimizationList: byId("smartOptimizationList"),
 
+  aiExtractInput: byId("aiExtractInput"),
+  aiExtractDrop: byId("aiExtractDrop"),
+  aiExtractStatus: byId("aiExtractStatus"),
+  aiExtractError: byId("aiExtractError"),
+  aiExtractResults: byId("aiExtractResults"),
+  aiExtractWarnings: byId("aiExtractWarnings"),
+
   prefWindowStart: byId("prefWindowStart"),
   prefWindowEnd: byId("prefWindowEnd"),
   prefBufferMinutes: byId("prefBufferMinutes"),
@@ -513,6 +529,251 @@ function bindViewportResize() {
   window.addEventListener("orientationchange", handleResize);
 }
 
+function initAiExtractUI() {
+  if (!els.aiExtractInput || !els.aiExtractDrop) return;
+
+  els.aiExtractInput.accept = AI_EXTRACT_ACCEPT;
+  els.aiExtractDrop.style.borderStyle = "dashed";
+  els.aiExtractDrop.style.cursor = "pointer";
+
+  const setDropActive = (active) => {
+    if (!els.aiExtractDrop) return;
+    els.aiExtractDrop.style.borderColor = active ? "rgba(91,140,255,.6)" : "";
+    els.aiExtractDrop.style.background = active ? "rgba(91,140,255,.08)" : "";
+  };
+
+  const handleFiles = (files) => {
+    if (!files?.length) return;
+    void handleAiExtractFile(files[0]);
+  };
+
+  els.aiExtractInput.addEventListener("change", (event) => {
+    handleFiles(event.target.files);
+  });
+
+  els.aiExtractDrop.addEventListener("click", () => {
+    els.aiExtractInput?.click();
+  });
+
+  els.aiExtractDrop.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      els.aiExtractInput?.click();
+    }
+  });
+
+  els.aiExtractDrop.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    setDropActive(true);
+  });
+
+  els.aiExtractDrop.addEventListener("dragleave", (event) => {
+    if (event.currentTarget.contains(event.relatedTarget)) return;
+    setDropActive(false);
+  });
+
+  els.aiExtractDrop.addEventListener("drop", (event) => {
+    event.preventDefault();
+    setDropActive(false);
+    handleFiles(event.dataTransfer?.files);
+  });
+
+  clearAiExtractResults();
+  clearAiExtractWarnings();
+  setAiExtractStatus("");
+  setAiExtractError("");
+}
+
+function clearAiExtractResults() {
+  if (els.aiExtractResults) {
+    els.aiExtractResults.innerHTML = "";
+  }
+}
+
+function clearAiExtractWarnings() {
+  if (els.aiExtractWarnings) {
+    els.aiExtractWarnings.innerHTML = "";
+  }
+}
+
+function setAiExtractStatus(message) {
+  if (!els.aiExtractStatus) return;
+  els.aiExtractStatus.textContent = message || "";
+  els.aiExtractStatus.style.color = "";
+}
+
+function setAiExtractError(message) {
+  if (!els.aiExtractError) return;
+  els.aiExtractError.textContent = message || "";
+  els.aiExtractError.style.color = message ? "rgba(255,120,120,.95)" : "";
+}
+
+function setAiExtractLoading(isLoading) {
+  if (els.aiExtractInput) {
+    els.aiExtractInput.disabled = isLoading;
+  }
+  if (els.aiExtractDrop) {
+    els.aiExtractDrop.setAttribute("aria-busy", String(isLoading));
+    els.aiExtractDrop.style.opacity = isLoading ? "0.6" : "";
+  }
+}
+
+function isAiExtractAllowedFile(file) {
+  if (!file) return false;
+  if (AI_EXTRACT_ALLOWED_MIME.has(file.type)) return true;
+  const ext = String(file.name || "").split(".").pop()?.toLowerCase();
+  return AI_EXTRACT_ALLOWED_EXT.has(ext);
+}
+
+async function handleAiExtractFile(file) {
+  if (!file) return;
+  if (!isAiExtractAllowedFile(file)) {
+    setAiExtractError("Dateityp nicht unterstützt. Bitte PNG/JPG/WebP, PDF oder DOCX wählen.");
+    return;
+  }
+
+  setAiExtractLoading(true);
+  setAiExtractError("");
+  setAiExtractStatus(`Lade "${file.name}" hoch…`);
+  clearAiExtractResults();
+  clearAiExtractWarnings();
+
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const res = await fetch(`${API_BASE_CLEAN}/api/ai/extract`, {
+      method: "POST",
+      body: formData,
+    });
+
+    const text = await res.text();
+    const body = parseApiBody(text);
+    const data = body.kind === "json" ? body.json : null;
+
+    if (!res.ok || !data?.ok) {
+      const message = data?.message || data?.error || res.statusText || "Extraktion fehlgeschlagen.";
+      throw new Error(message);
+    }
+
+    renderAiExtractResults(data);
+    renderAiExtractWarnings(data?.warnings);
+
+    const sourceBits = [];
+    if (data?.source?.mime) sourceBits.push(data.source.mime);
+    if (Number.isFinite(data?.source?.pages)) {
+      sourceBits.push(`${data.source.pages} Seite(n)`);
+    }
+
+    setAiExtractStatus(sourceBits.length ? `Quelle: ${sourceBits.join(" • ")}` : "Extraktion abgeschlossen.");
+  } catch (error) {
+    setAiExtractStatus("");
+    setAiExtractError(`Fehler: ${error?.message || "Extraktion fehlgeschlagen."}`);
+  } finally {
+    setAiExtractLoading(false);
+    if (els.aiExtractInput) els.aiExtractInput.value = "";
+  }
+}
+
+function renderAiExtractResults(payload) {
+  if (!els.aiExtractResults) return;
+  const events = Array.isArray(payload?.proposals?.events) ? payload.proposals.events : [];
+  const tasks = Array.isArray(payload?.proposals?.tasks) ? payload.proposals.tasks : [];
+
+  els.aiExtractResults.innerHTML = "";
+
+  if (!events.length && !tasks.length) {
+    const empty = document.createElement("div");
+    empty.className = "item";
+    empty.textContent = "Keine Vorschläge gefunden.";
+    els.aiExtractResults.appendChild(empty);
+    return;
+  }
+
+  appendAiExtractGroup("Events", events, (event) =>
+    pickAiExtractValue(event?.date, event?.startDate, event?.start, event?.startTime, event?.when)
+  );
+  appendAiExtractGroup("Tasks", tasks, (task) =>
+    pickAiExtractValue(task?.due, task?.dueDate, task?.deadline, task?.date)
+  );
+}
+
+function appendAiExtractGroup(label, items, getDateLabel) {
+  if (!els.aiExtractResults) return;
+  const heading = document.createElement("div");
+  heading.className = "cardSub";
+  heading.textContent = `${label} (${items.length})`;
+  els.aiExtractResults.appendChild(heading);
+
+  if (!items.length) {
+    const empty = document.createElement("div");
+    empty.className = "item";
+    empty.textContent = `Keine ${label.toLowerCase()} gefunden.`;
+    els.aiExtractResults.appendChild(empty);
+    return;
+  }
+
+  items.forEach((item) => {
+    const title = pickAiExtractValue(item?.title, item?.summary, item?.name, item?.task, "Ohne Titel");
+    const dateLabel = getDateLabel ? getDateLabel(item) : "";
+    const confidence = formatAiExtractConfidence(item?.confidence ?? item?.score);
+    const metaParts = [label.slice(0, -1)];
+    if (dateLabel) metaParts.push(dateLabel);
+    if (confidence) metaParts.push(`Confidence ${confidence}`);
+
+    const entry = document.createElement("div");
+    entry.className = "item";
+
+    const top = document.createElement("div");
+    top.className = "itemTop";
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "itemTitle";
+    titleEl.textContent = title;
+
+    top.appendChild(titleEl);
+
+    const meta = document.createElement("div");
+    meta.className = "itemMeta";
+    meta.textContent = metaParts.filter(Boolean).join(" • ");
+
+    entry.appendChild(top);
+    entry.appendChild(meta);
+    els.aiExtractResults.appendChild(entry);
+  });
+}
+
+function renderAiExtractWarnings(warnings) {
+  if (!els.aiExtractWarnings) return;
+  els.aiExtractWarnings.innerHTML = "";
+  const list = Array.isArray(warnings) ? warnings.filter(Boolean) : [];
+  if (!list.length) return;
+
+  list.forEach((warning) => {
+    const item = document.createElement("div");
+    item.className = "item";
+    const message = typeof warning === "string" ? warning : warning?.message;
+    item.textContent = message ? String(message) : JSON.stringify(warning);
+    els.aiExtractWarnings.appendChild(item);
+  });
+}
+
+function pickAiExtractValue(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (Number.isFinite(value)) return String(value);
+    if (value) return String(value);
+  }
+  return "";
+}
+
+function formatAiExtractConfidence(value) {
+  if (!Number.isFinite(value)) return "";
+  const numeric = Number(value);
+  const percent = numeric <= 1 ? numeric * 100 : numeric;
+  return `${Math.round(percent)}%`;
+}
+
 const deletingEvents = new Set();
 let activeEventDrag = null;
 let pendingUndoToast = null;
@@ -597,6 +858,9 @@ async function boot() {
   // Free slots (Phase 3)
   ensureFreeSlotDefaults();
   els.freeSlotFindBtn?.addEventListener("click", loadFreeSlots);
+
+  // AI Extract (Phase 3 Minimal UI)
+  initAiExtractUI();
 
   // Smart suggestions (Phase 5)
   applySmartPrefsToInputs();
