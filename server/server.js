@@ -2643,7 +2643,7 @@ app.post(
             source: {
               type: "object",
               additionalProperties: false,
-              required: ["mime"],
+              required: ["mime", "pages"],
               properties: {
                 mime: { type: "string" },
                 pages: { type: ["integer", "null"] },
@@ -2659,7 +2659,17 @@ app.post(
                   items: {
                     type: "object",
                     additionalProperties: false,
-                    required: ["title", "confidence", "evidence"],
+                    required: [
+                      "title",
+                      "date",
+                      "start",
+                      "end",
+                      "durationMin",
+                      "description",
+                      "location",
+                      "confidence",
+                      "evidence",
+                    ],
                     properties: {
                       title: { type: "string" },
                       date: { type: ["string", "null"], description: "YYYY-MM-DD or null" },
@@ -2678,7 +2688,7 @@ app.post(
                   items: {
                     type: "object",
                     additionalProperties: false,
-                    required: ["title", "confidence", "evidence"],
+                    required: ["title", "dueDate", "description", "location", "confidence", "evidence"],
                     properties: {
                       title: { type: "string" },
                       dueDate: { type: ["string", "null"], description: "YYYY-MM-DD or null" },
