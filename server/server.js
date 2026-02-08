@@ -390,9 +390,6 @@ function findBestBreakSlot(events, dayStart, windowStart = "08:00", windowEnd = 
 // ---- Config ----
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.API_KEY || "";
-// Dev override: ALLOW_GOOGLE_DISCONNECT=true erlaubt Token-Reset ohne API Key.
-const ALLOW_GOOGLE_DISCONNECT = process.env.ALLOW_GOOGLE_DISCONNECT === "true";
-
 // Setze z.B. GOOGLE_ALLOWED_EMAIL=noahsp@gmx.ch
 const GOOGLE_ALLOWED_EMAIL = (process.env.GOOGLE_ALLOWED_EMAIL || "").trim().toLowerCase();
 
@@ -1032,20 +1029,22 @@ async function loadEventsForRange(rangeStart, rangeEnd) {
   return { source: "local", events: filterEventsByRange(db.events, rangeStart, rangeEnd) };
 }
 
-function isLocalhostRequest(req) {
+function isLocalDevRequest(req) {
   const host = String(req.hostname || req.headers?.host || "").toLowerCase();
   const ip = String(req.ip || "").toLowerCase();
   if (host === "localhost" || host.startsWith("localhost:")) return true;
   if (host === "127.0.0.1" || host.startsWith("127.0.0.1:")) return true;
+  if (host.startsWith("192.168.")) return true;
   if (host === "[::1]" || host === "::1") return true;
   if (ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1") return true;
+  if (ip.startsWith("192.168.") || ip.startsWith("::ffff:192.168.")) return true;
   return false;
 }
 
 function allowGoogleDisconnectOverride(req) {
+  // Dev-only: allow disconnect without API key on localhost/192.168.* or non-production NODE_ENV.
   if (!IS_PROD) return true;
-  if (ALLOW_GOOGLE_DISCONNECT) return true;
-  return isLocalhostRequest(req);
+  return isLocalDevRequest(req);
 }
 
 // ---- Auth (API Key) ----
