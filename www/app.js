@@ -2020,18 +2020,18 @@ function renderDayEventList() {
 
   items.forEach((item) => {
     const card = document.createElement("div");
-    card.className = "event-card";
+    card.className = "event-card mirror-axis";
 
     const time = document.createElement("div");
-    time.className = "event-time";
+    time.className = "event-time mirror-left";
     time.textContent = item.timeLabel;
 
     const title = document.createElement("div");
-    title.className = "event-title";
+    title.className = "event-title mirror-right";
     title.textContent = item.title;
 
     const icon = document.createElement("button");
-    icon.className = "expand-icon";
+    icon.className = "expand-icon mirror-center";
     icon.type = "button";
     icon.setAttribute("aria-label", "Event-Details anzeigen");
     icon.setAttribute("aria-expanded", "false");

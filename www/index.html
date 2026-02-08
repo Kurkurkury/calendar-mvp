@@ -17,8 +17,8 @@
   <div class="app-shell">
     <div class="calendar-container">
       <header class="topbar">
-        <div class="topbar-content app-container">
-          <div class="left">
+        <div class="topbar-content app-container mirror-axis">
+          <div class="left mirror-left">
             <nav class="weekNav" aria-label="Kalender Navigation">
               <button id="prevWeekBtn" class="btn ghost" title="Vorherige Woche" aria-label="Vorherige Woche">←</button>
               <button id="todayBtn" class="btn ghost" aria-label="Heute anzeigen">Heute</button>
@@ -26,7 +26,7 @@
             </nav>
           </div>
 
-          <div class="month-title-wrap">
+          <div class="month-title-wrap mirror-center">
             <div class="title">
               <div class="month-header" aria-label="Monat wechseln">
                 <button id="prevMonthBtn" class="month-arrow" type="button" aria-label="Vorheriger Monat">‹</button>
@@ -37,7 +37,7 @@
             </div>
           </div>
 
-          <div class="right">
+          <div class="right mirror-right">
             <div class="statusBadges">
               <span id="googleStatusBadge" class="statusBadge"></span>
               <span id="syncStatusBadge" class="statusBadge"></span>
