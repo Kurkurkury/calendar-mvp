@@ -776,12 +776,19 @@ function parseDocExtractJson(rawText) {
   for (const event of parsed.proposals.events) {
     if (!event || typeof event !== "object") return null;
     if (typeof event.title !== "string") return null;
-    if (event.date !== null && typeof event.date !== "string") return null;
-    if (event.start !== null && typeof event.start !== "string") return null;
-    if (event.end !== null && typeof event.end !== "string") return null;
-    if (event.durationMin !== null && !Number.isFinite(event.durationMin)) return null;
-    if (typeof event.description !== "string") return null;
-    if (typeof event.location !== "string") return null;
+    if ("date" in event && event.date !== null && typeof event.date !== "string") return null;
+    if ("start" in event && event.start !== null && typeof event.start !== "string") return null;
+    if ("end" in event && event.end !== null && typeof event.end !== "string") return null;
+    if (
+      "durationMin" in event &&
+      event.durationMin !== null &&
+      !Number.isFinite(event.durationMin)
+    )
+      return null;
+    if ("description" in event && event.description !== null && typeof event.description !== "string")
+      return null;
+    if ("location" in event && event.location !== null && typeof event.location !== "string")
+      return null;
     if (!Number.isFinite(event.confidence) || event.confidence < 0 || event.confidence > 1) return null;
     if (!Array.isArray(event.evidence)) return null;
   }
@@ -789,9 +796,10 @@ function parseDocExtractJson(rawText) {
   for (const task of parsed.proposals.tasks) {
     if (!task || typeof task !== "object") return null;
     if (typeof task.title !== "string") return null;
-    if (task.dueDate !== null && typeof task.dueDate !== "string") return null;
-    if (typeof task.description !== "string") return null;
-    if (typeof task.location !== "string") return null;
+    if ("dueDate" in task && task.dueDate !== null && typeof task.dueDate !== "string") return null;
+    if ("description" in task && task.description !== null && typeof task.description !== "string")
+      return null;
+    if ("location" in task && task.location !== null && typeof task.location !== "string") return null;
     if (!Number.isFinite(task.confidence) || task.confidence < 0 || task.confidence > 1) return null;
     if (!Array.isArray(task.evidence)) return null;
   }
@@ -2651,25 +2659,15 @@ app.post(
                   items: {
                     type: "object",
                     additionalProperties: false,
-                    required: [
-                      "title",
-                      "date",
-                      "start",
-                      "end",
-                      "durationMin",
-                      "description",
-                      "location",
-                      "confidence",
-                      "evidence",
-                    ],
+                    required: ["title", "confidence", "evidence"],
                     properties: {
                       title: { type: "string" },
                       date: { type: ["string", "null"], description: "YYYY-MM-DD or null" },
                       start: { type: ["string", "null"], description: "HH:MM 24h or null" },
                       end: { type: ["string", "null"], description: "HH:MM 24h or null" },
                       durationMin: { type: ["number", "null"] },
-                      description: { type: "string" },
-                      location: { type: "string" },
+                      description: { type: ["string", "null"] },
+                      location: { type: ["string", "null"] },
                       confidence: { type: "number", minimum: 0, maximum: 1 },
                       evidence: { type: "array", items: { type: "string" } },
                     },
@@ -2680,12 +2678,12 @@ app.post(
                   items: {
                     type: "object",
                     additionalProperties: false,
-                    required: ["title", "dueDate", "description", "location", "confidence", "evidence"],
+                    required: ["title", "confidence", "evidence"],
                     properties: {
                       title: { type: "string" },
                       dueDate: { type: ["string", "null"], description: "YYYY-MM-DD or null" },
-                      description: { type: "string" },
-                      location: { type: "string" },
+                      description: { type: ["string", "null"] },
+                      location: { type: ["string", "null"] },
                       confidence: { type: "number", minimum: 0, maximum: 1 },
                       evidence: { type: "array", items: { type: "string" } },
                     },
