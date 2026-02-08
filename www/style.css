@@ -20,6 +20,11 @@
   --app-gutter: 16px;
   --app-gutter-desktop: 24px;
   --topbar-side-width: 280px;
+  --content-gutter: var(--app-gutter);
+  --content-edge: max(
+    var(--content-gutter),
+    calc((100vw - var(--app-max-width)) / 2 + var(--content-gutter))
+  );
 
   /* Highlight für "Heute" */
   --today: #ffffff;
@@ -60,10 +65,13 @@ body.app-ready .calendar-container {
   min-height: 0;
 }
 
+.content-container,
 .app-container {
   width: 100%;
-  padding-left: var(--app-gutter);
-  padding-right: var(--app-gutter);
+  max-width: var(--app-max-width);
+  margin: 0 auto;
+  padding-left: var(--content-gutter);
+  padding-right: var(--content-gutter);
   box-sizing: border-box;
 }
 
@@ -72,62 +80,19 @@ body.app-ready .calendar-container {
 }
 
 @media (min-width: 900px) {
+  :root {
+    --content-gutter: var(--app-gutter-desktop);
+  }
+
+  .content-container,
   .app-container {
-    max-width: var(--app-max-width);
-    margin: 0 auto;
-    padding-left: var(--app-gutter-desktop);
-    padding-right: var(--app-gutter-desktop);
+    padding-left: var(--content-gutter);
+    padding-right: var(--content-gutter);
   }
 
   .topbar {
     padding-left: 0;
     padding-right: 0;
-  }
-
-  .topbar-content.app-container {
-    max-width: none;
-    margin: 0;
-    padding-left: var(--app-gutter-desktop);
-    padding-right: var(--app-gutter-desktop);
-  }
-
-  .mirror-axis {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .mirror-axis > .mirror-left {
-    justify-self: end;
-    text-align: right;
-  }
-
-  .mirror-axis > .mirror-center {
-    justify-self: center;
-  }
-
-  .mirror-axis > .mirror-right {
-    justify-self: start;
-    text-align: left;
-  }
-
-  .month-title-wrap {
-    position: static;
-    left: auto;
-    transform: none;
-    width: auto;
-    justify-self: center;
-    pointer-events: auto;
-  }
-
-  .left {
-    justify-content: flex-end;
-  }
-
-  .right {
-    min-width: var(--topbar-side-width);
-    justify-content: flex-start;
   }
 
   .fab {
@@ -173,7 +138,6 @@ body.app-ready .calendar-container {
   z-index: 5;
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 6px;
   padding: 20px 0 18px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
@@ -182,23 +146,26 @@ body.app-ready .calendar-container {
   flex: 0 0 auto;
 }
 
-.topbar-content {
+.topbar-grid {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
+  gap: 12px;
   width: 100%;
 }
 
+.topbar-center {
+  justify-self: center;
+  display: flex;
+  justify-content: center;
+  text-align: center;
+}
+
 .month-title-wrap {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
   width: 100%;
   display: flex;
   justify-content: center;
-  pointer-events: none;
 }
 
 .left,
@@ -208,12 +175,55 @@ body.app-ready .calendar-container {
   gap: 8px;
 }
 
+.topbar-left {
+  justify-self: start;
+  padding-left: var(--content-edge);
+  justify-content: flex-start;
+}
+
 .right {
+  justify-content: flex-end;
+}
+
+.topbar-right {
+  justify-self: end;
+  padding-right: var(--content-edge);
   justify-content: flex-end;
 }
 
 .month-title-wrap .title {
   pointer-events: auto;
+}
+
+@media (max-width: 720px) {
+  .topbar-grid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "center"
+      "left"
+      "right";
+  }
+
+  .topbar-center {
+    grid-area: center;
+  }
+
+  .topbar-left {
+    grid-area: left;
+    padding-left: var(--content-gutter);
+    padding-right: var(--content-gutter);
+  }
+
+  .topbar-right {
+    grid-area: right;
+    padding-left: var(--content-gutter);
+    padding-right: var(--content-gutter);
+  }
+
+  .right {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
 }
 
 .title {
@@ -311,11 +321,16 @@ body.app-ready .calendar-container {
 
 .google-connection {
   position: absolute;
+  left: 0;
+  right: 0;
   bottom: 0;
-  width: 100%;
   background: linear-gradient(to right, #6a1b9a, #d81b60);
   color: #ffffff;
-  padding: 15px;
+  width: 100%;
+}
+
+.google-connection-inner {
+  padding: 15px 0;
   text-align: center;
   display: flex;
   flex-direction: column;
