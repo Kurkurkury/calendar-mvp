@@ -57,6 +57,31 @@ body {
     padding-left: 24px;
     padding-right: 24px;
   }
+
+  .topbar {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .layout {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  body.view-day .layout {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .agendaView {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .day-scroller {
+    padding-left: 0;
+    padding-right: 0;
+  }
 }
 
 .calendar-container {
