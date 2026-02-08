@@ -176,6 +176,30 @@
         <div id="smartOptimizationList" class="list small"></div>
       </div>
 
+      <div class="card" id="aiExtractCard">
+        <div class="cardTitle">AI Datei-Extraktion</div>
+        <div class="cardSub">Lade Bilder oder Dokumente hoch, um Events &amp; Tasks zu extrahieren.</div>
+
+        <div class="list">
+          <label class="field">
+            <span>Datei auswählen</span>
+            <input id="aiExtractInput" type="file" accept=".png,.jpg,.jpeg,.webp,.pdf,.docx" />
+          </label>
+          <div id="aiExtractDrop" class="item" role="button" tabindex="0" aria-label="Datei hier ablegen">
+            <div class="itemTitle">Datei hier ablegen</div>
+            <div class="itemMeta">oder klicken, um eine Datei auszuwählen</div>
+          </div>
+        </div>
+        <div id="aiExtractStatus" class="cardSub"></div>
+        <div id="aiExtractError" class="cardSub"></div>
+
+        <div class="cardSub" style="margin-top:12px;">Ergebnisse</div>
+        <div id="aiExtractResults" class="list"></div>
+
+        <div class="cardSub" style="margin-top:12px;">Warnungen</div>
+        <div id="aiExtractWarnings" class="list small"></div>
+      </div>
+
       <div class="card" id="preferencesCard">
         <div class="cardTitle">Nutzerpräferenzen</div>
         <div class="cardSub">Beeinflusst smarte Vorschläge &amp; Fokusfenster.</div>
