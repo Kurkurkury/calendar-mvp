@@ -16,6 +16,10 @@
   --timecol: 64px;
   --day-gutter: 1px;
   --event-inset: 6px;
+  --app-max-width: 1240px;
+  --app-gutter: 16px;
+  --app-gutter-desktop: 24px;
+  --topbar-side-width: 280px;
 
   /* Highlight für "Heute" */
   --today: #ffffff;
@@ -58,22 +62,55 @@ body.app-ready .calendar-container {
 
 .app-container {
   width: 100%;
-  padding-left: 16px;
-  padding-right: 16px;
+  padding-left: var(--app-gutter);
+  padding-right: var(--app-gutter);
   box-sizing: border-box;
 }
 
 @media (min-width: 900px) {
   .app-container {
-    max-width: 1280px;
+    max-width: var(--app-max-width);
     margin: 0 auto;
-    padding-left: 24px;
-    padding-right: 24px;
+    padding-left: var(--app-gutter-desktop);
+    padding-right: var(--app-gutter-desktop);
   }
 
   .topbar {
     padding-left: 0;
     padding-right: 0;
+  }
+
+  .topbar-content {
+    display: grid;
+    grid-template-columns: minmax(var(--topbar-side-width), 1fr) auto minmax(var(--topbar-side-width), 1fr);
+    align-items: center;
+    gap: 12px;
+  }
+
+  .month-title-wrap {
+    position: static;
+    left: auto;
+    transform: none;
+    width: auto;
+    justify-self: center;
+    pointer-events: auto;
+  }
+
+  .left {
+    justify-self: start;
+  }
+
+  .right {
+    justify-self: end;
+    min-width: var(--topbar-side-width);
+    justify-content: flex-end;
+  }
+
+  .fab {
+    position: static;
+    right: auto;
+    bottom: auto;
+    box-shadow: none;
   }
 
   .layout {
@@ -134,10 +171,21 @@ body.app-ready .calendar-container {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  width: 100vw;
+  width: 100%;
   display: flex;
   justify-content: center;
   pointer-events: none;
+}
+
+.left,
+.right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.right {
+  justify-content: flex-end;
 }
 
 .month-title-wrap .title {
