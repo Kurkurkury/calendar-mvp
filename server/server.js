@@ -2193,18 +2193,53 @@ app.post("/api/assistant/parse", async (req, res) => {
       },
     };
 
-    const resp = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
+    // TEMP DEBUG (remove later): return safe OpenAI error details to client.
+    const buildOpenAiDebugPayload = ({ err, status, details }) => {
+      const statusCode = status ?? err?.status ?? err?.response?.status ?? null;
+      const code = err?.code || err?.error?.code || details?.error?.code || null;
+      const type = err?.type || err?.error?.type || details?.error?.type || null;
+      const message =
+        err?.message ||
+        details?.error?.message ||
+        details?.message ||
+        "OpenAI request failed";
+      const safeDetails = details ?? err?.response?.data ?? err?.error?.message ?? null;
+      return {
+        ok: false,
+        where: "ai_quick_add",
+        status: statusCode,
+        message,
+        code,
+        type,
+        details: safeDetails,
+        hint: "TEMP_DEBUG_REMOVE_LATER",
+      };
+    };
 
-    const body = await resp.json();
+    let resp;
+    let body;
+    try {
+      resp = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      body = await resp.json();
+    } catch (err) {
+      return res.status(500).json(buildOpenAiDebugPayload({ err }));
+    }
+
     if (!resp.ok) {
-      return res.status(500).json({ ok: false, message: "OpenAI error", details: body });
+      return res.status(500).json(
+        buildOpenAiDebugPayload({
+          err: new Error(body?.error?.message || "OpenAI error"),
+          status: resp.status,
+          details: body,
+        }),
+      );
     }
 
     const outputText =
