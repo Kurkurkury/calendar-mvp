@@ -1219,7 +1219,7 @@ async function onGoogleConnect() {
 async function onGoogleDisconnect() {
   try {
     if (!API_KEY && !state.google?.allowDisconnect) {
-      uiNotify('error', 'Trennen ist gesperrt (API-Key fehlt). Für Normalnutzung nicht nötig.');
+      uiNotify('error', 'Trennen ist gesperrt (API-Key fehlt oder nicht erlaubt).');
       return;
     }
 
