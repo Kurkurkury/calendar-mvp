@@ -15,6 +15,8 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { google } from "googleapis";
+import pdfParse from "pdf-parse";
+import mammoth from "mammoth";
 
 import {
   getGoogleStatus,
@@ -43,14 +45,13 @@ const logDebug = (...args) => {
 const ASSISTANT_MODEL = process.env.ASSISTANT_MODEL || "gpt-4.1";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const AI_EXTRACT_MODEL = process.env.AI_EXTRACT_MODEL || "gpt-4o-mini";
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_FILE_MB = 10;
+const MAX_UPLOAD_BYTES = MAX_FILE_MB * 1024 * 1024;
 const MAX_FORM_BYTES = MAX_UPLOAD_BYTES + 512 * 1024;
-const PDF_MAX_PAGES = toPositiveInt(process.env.PDF_MAX_PAGES, 8);
-const PDF_MAX_TEXT_CHARS = toPositiveInt(process.env.PDF_MAX_TEXT_CHARS, 12000);
-const PDF_VISION_MAX_PAGES = toPositiveInt(process.env.PDF_VISION_MAX_PAGES, 5);
-const PDF_VISION_ENABLED = String(process.env.AI_EXTRACT_PDF_VISION || "true").toLowerCase() !== "false";
+const MAX_EXTRACTED_TEXT_CHARS = toPositiveInt(process.env.MAX_EXTRACTED_TEXT_CHARS, 30000);
 const ALLOWED_UPLOAD_MIME_TYPES = new Set([
   "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "image/png",
   "image/jpeg",
   "image/webp",
@@ -720,6 +721,48 @@ function parseAIJson(rawText) {
   return parsed;
 }
 
+function parseDocExtractJson(rawText) {
+  if (!rawText || typeof rawText !== "string") return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(rawText);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  if (typeof parsed.ok !== "boolean") return null;
+  if (!parsed.source || typeof parsed.source !== "object") return null;
+  if (typeof parsed.source.mime !== "string") return null;
+  if (!parsed.proposals || typeof parsed.proposals !== "object") return null;
+  if (!Array.isArray(parsed.proposals.events) || !Array.isArray(parsed.proposals.tasks)) return null;
+  if (!Array.isArray(parsed.warnings)) return null;
+
+  for (const event of parsed.proposals.events) {
+    if (!event || typeof event !== "object") return null;
+    if (typeof event.title !== "string") return null;
+    if (event.date !== null && typeof event.date !== "string") return null;
+    if (event.start !== null && typeof event.start !== "string") return null;
+    if (event.end !== null && typeof event.end !== "string") return null;
+    if (event.durationMin !== null && !Number.isFinite(event.durationMin)) return null;
+    if (typeof event.description !== "string") return null;
+    if (typeof event.location !== "string") return null;
+    if (!Number.isFinite(event.confidence) || event.confidence < 0 || event.confidence > 1) return null;
+    if (!Array.isArray(event.evidence)) return null;
+  }
+
+  for (const task of parsed.proposals.tasks) {
+    if (!task || typeof task !== "object") return null;
+    if (typeof task.title !== "string") return null;
+    if (task.dueDate !== null && typeof task.dueDate !== "string") return null;
+    if (typeof task.description !== "string") return null;
+    if (typeof task.location !== "string") return null;
+    if (!Number.isFinite(task.confidence) || task.confidence < 0 || task.confidence > 1) return null;
+    if (!Array.isArray(task.evidence)) return null;
+  }
+
+  return parsed;
+}
+
 function normalizeExtractItems(items) {
   if (!Array.isArray(items)) return [];
   return items.map((item) => {
@@ -741,70 +784,17 @@ function normalizeExtractItems(items) {
   });
 }
 
-async function extractPdfText(buffer, { maxPages, maxChars } = {}) {
-  const limits = {
-    maxPages: Number.isFinite(maxPages) && maxPages > 0 ? maxPages : PDF_MAX_PAGES,
-    maxChars: Number.isFinite(maxChars) && maxChars > 0 ? maxChars : PDF_MAX_TEXT_CHARS,
-  };
-  const raw = buffer.toString("latin1");
-  const pageMatches = raw.match(/\/Type\s*\/Page\b/g);
-  const totalPages = pageMatches ? pageMatches.length : 1;
-  const pageLimit = Math.min(totalPages, limits.maxPages);
-  const blocks = raw.match(/BT[\s\S]*?ET/g) || [];
-  const maxBlocks = Math.max(1, Math.ceil(blocks.length * (pageLimit / totalPages)));
-  const selectedBlocks = blocks.slice(0, maxBlocks);
-  let text = "";
-  let truncatedByChars = false;
-
-  const decodePdfString = (value) => {
-    return value
-      .replace(/\\n/g, "\n")
-      .replace(/\\r/g, "\r")
-      .replace(/\\t/g, "\t")
-      .replace(/\\b/g, "\b")
-      .replace(/\\f/g, "\f")
-      .replace(/\\\\/g, "\\")
-      .replace(/\\\(/g, "(")
-      .replace(/\\\)/g, ")");
-  };
-
-  const extractStrings = (block) => {
-    const parts = [];
-    const tjMatches = block.match(/\((?:\\.|[^\\])*?\)\s*Tj/g) || [];
-    for (const match of tjMatches) {
-      const contentMatch = match.match(/\(([\s\S]*?)\)\s*Tj/);
-      if (contentMatch?.[1]) parts.push(decodePdfString(contentMatch[1]));
-    }
-    const tjArrayMatches = block.match(/\[(?:.|\n|\r)*?\]\s*TJ/g) || [];
-    for (const arrayMatch of tjArrayMatches) {
-      const strings = arrayMatch.match(/\((?:\\.|[^\\])*?\)/g) || [];
-      for (const strMatch of strings) {
-        const inner = strMatch.slice(1, -1);
-        parts.push(decodePdfString(inner));
-      }
-    }
-    return parts.join(" ");
-  };
-
-  for (const block of selectedBlocks) {
-    const extracted = extractStrings(block);
-    if (extracted) {
-      text += `${extracted}\n`;
-    }
-    if (text.length >= limits.maxChars) {
-      text = text.slice(0, limits.maxChars);
-      truncatedByChars = true;
-      break;
-    }
-  }
-
+async function extractPdfText(buffer) {
+  const result = await pdfParse(buffer);
   return {
-    text: text.trim(),
-    totalPages,
-    pageLimit,
-    truncatedByPages: totalPages > pageLimit,
-    truncatedByChars,
+    text: result.text || "",
+    totalPages: Number.isFinite(result.numpages) ? result.numpages : null,
   };
+}
+
+async function extractDocxText(buffer) {
+  const result = await mammoth.extractRawText({ buffer });
+  return { text: result.value || "" };
 }
 
 function normalizeAssistantProposal(raw) {
@@ -2533,6 +2523,7 @@ app.post(
         "Return JSON only with the schema provided.",
         "Do not invent times or dates; use null when unknown and lower confidence.",
         "Never auto-save; suggestions only.",
+        "Include evidence hints (page or snippet references) for each proposal.",
       ].join(" ");
 
       const userPrompt = [
@@ -2542,6 +2533,227 @@ app.post(
         `ReferenceDate: ${refDate}`,
         "If locale is de-CH or de-DE and dates are ambiguous, prefer dd.mm.yyyy interpretation.",
       ].join("\n");
+
+      const isImage = file.mimeType.startsWith("image/");
+      const isPdf = file.mimeType === "application/pdf";
+      const isDocx =
+        file.mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+      if (!isImage && !isPdf && !isDocx) {
+        return res.status(400).json({ ok: false, message: "invalid file type" });
+      }
+
+      if (isPdf || isDocx) {
+        const startedAt = Date.now();
+        let extractedText = "";
+        let pages = null;
+        const warnings = [];
+
+        try {
+          if (isPdf) {
+            const pdfResult = await extractPdfText(file.buffer);
+            extractedText = pdfResult.text || "";
+            pages = Number.isFinite(pdfResult.totalPages) ? pdfResult.totalPages : null;
+          } else {
+            const docxResult = await extractDocxText(file.buffer);
+            extractedText = docxResult.text || "";
+          }
+        } catch (err) {
+          const durationMs = Date.now() - startedAt;
+          console.log(
+            `[ai-extract] mime=${file.mimeType} pages=${pages ?? "n/a"} extracted_chars=0 duration_ms=${durationMs}`,
+          );
+          return res.status(200).json({
+            ok: false,
+            message: "text extraction failed",
+            warnings: [err?.message || String(err)],
+            source: { mime: file.mimeType, ...(pages ? { pages } : {}) },
+          });
+        }
+
+        extractedText = extractedText.trim();
+        if (!extractedText) {
+          const durationMs = Date.now() - startedAt;
+          console.log(
+            `[ai-extract] mime=${file.mimeType} pages=${pages ?? "n/a"} extracted_chars=0 duration_ms=${durationMs}`,
+          );
+          return res.status(200).json({
+            ok: false,
+            message: "no text extracted",
+            warnings: ["no text extracted"],
+            source: { mime: file.mimeType, ...(pages ? { pages } : {}) },
+          });
+        }
+
+        if (extractedText.length > MAX_EXTRACTED_TEXT_CHARS) {
+          extractedText = extractedText.slice(0, MAX_EXTRACTED_TEXT_CHARS);
+          warnings.push(`Text truncated to ${MAX_EXTRACTED_TEXT_CHARS} characters.`);
+        }
+
+        const docSchema = {
+          type: "object",
+          additionalProperties: false,
+          required: ["ok", "source", "proposals", "warnings"],
+          properties: {
+            ok: { type: "boolean" },
+            source: {
+              type: "object",
+              additionalProperties: false,
+              required: ["mime"],
+              properties: {
+                mime: { type: "string" },
+                pages: { type: "number" },
+              },
+            },
+            proposals: {
+              type: "object",
+              additionalProperties: false,
+              required: ["events", "tasks"],
+              properties: {
+                events: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    required: [
+                      "title",
+                      "date",
+                      "start",
+                      "end",
+                      "durationMin",
+                      "description",
+                      "location",
+                      "confidence",
+                      "evidence",
+                    ],
+                    properties: {
+                      title: { type: "string" },
+                      date: { type: ["string", "null"], description: "YYYY-MM-DD or null" },
+                      start: { type: ["string", "null"], description: "HH:MM 24h or null" },
+                      end: { type: ["string", "null"], description: "HH:MM 24h or null" },
+                      durationMin: { type: ["number", "null"] },
+                      description: { type: "string" },
+                      location: { type: "string" },
+                      confidence: { type: "number", minimum: 0, maximum: 1 },
+                      evidence: { type: "array", items: { type: "string" } },
+                    },
+                  },
+                },
+                tasks: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    required: ["title", "dueDate", "description", "location", "confidence", "evidence"],
+                    properties: {
+                      title: { type: "string" },
+                      dueDate: { type: ["string", "null"], description: "YYYY-MM-DD or null" },
+                      description: { type: "string" },
+                      location: { type: "string" },
+                      confidence: { type: "number", minimum: 0, maximum: 1 },
+                      evidence: { type: "array", items: { type: "string" } },
+                    },
+                  },
+                },
+              },
+            },
+            warnings: { type: "array", items: { type: "string" } },
+            usage: {
+              type: "object",
+              additionalProperties: false,
+              required: ["input_tokens", "output_tokens"],
+              properties: {
+                input_tokens: { type: "number" },
+                output_tokens: { type: "number" },
+              },
+            },
+          },
+        };
+
+        const payload = {
+          model: AI_EXTRACT_MODEL,
+          input: [
+            { role: "system", content: [{ type: "input_text", text: systemPrompt }] },
+            {
+              role: "user",
+              content: [
+                { type: "input_text", text: userPrompt },
+                { type: "input_text", text: `Document text:\n${extractedText}` },
+              ],
+            },
+          ],
+          text: {
+            format: {
+              type: "json_schema",
+              name: "calendar_extract_doc",
+              strict: true,
+              schema: docSchema,
+            },
+          },
+          max_output_tokens: 900,
+        };
+
+        let resp;
+        let body;
+        try {
+          resp = await fetch("https://api.openai.com/v1/responses", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${OPENAI_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          });
+          body = await resp.json();
+        } catch {
+          const durationMs = Date.now() - startedAt;
+          console.log(
+            `[ai-extract] mime=${file.mimeType} pages=${pages ?? "n/a"} extracted_chars=${extractedText.length} duration_ms=${durationMs}`,
+          );
+          return res.status(500).json({ ok: false, message: "OpenAI request failed", warnings });
+        }
+
+        if (!resp.ok) {
+          const durationMs = Date.now() - startedAt;
+          console.log(
+            `[ai-extract] mime=${file.mimeType} pages=${pages ?? "n/a"} extracted_chars=${extractedText.length} duration_ms=${durationMs}`,
+          );
+          return res.status(500).json({ ok: false, message: "OpenAI request failed", warnings });
+        }
+
+        const outputText =
+          body?.output_text ||
+          body?.output?.[0]?.content?.find((c) => c.type === "output_text")?.text ||
+          body?.output?.[0]?.content?.[0]?.text ||
+          "";
+
+        const aiParsed = parseDocExtractJson(outputText || "");
+        const durationMs = Date.now() - startedAt;
+        console.log(
+          `[ai-extract] mime=${file.mimeType} pages=${pages ?? "n/a"} extracted_chars=${extractedText.length} duration_ms=${durationMs}`,
+        );
+        if (!aiParsed) {
+          return res.status(502).json({
+            ok: false,
+            message: "invalid ai output",
+            warnings: warnings.length ? warnings : ["invalid ai output"],
+            source: { mime: file.mimeType, ...(pages ? { pages } : {}) },
+          });
+        }
+
+        const mergedWarnings = [...warnings, ...(aiParsed.warnings || [])];
+        const usage = body?.usage
+          ? { input_tokens: body.usage.input_tokens, output_tokens: body.usage.output_tokens }
+          : undefined;
+
+        return res.json({
+          ok: aiParsed.ok,
+          source: { mime: file.mimeType, ...(pages ? { pages } : {}) },
+          proposals: aiParsed.proposals,
+          warnings: mergedWarnings,
+          ...(usage ? { usage } : {}),
+        });
+      }
 
       const schema = {
         type: "object",
@@ -2582,74 +2794,20 @@ app.post(
         },
       };
 
-      const isImage = file.mimeType.startsWith("image/");
-      const isPdf = file.mimeType === "application/pdf";
       const base64File = file.buffer.toString("base64");
-      let pdfText = "";
-      let pdfMeta = null;
-      let pdfParseError = null;
-
-      if (isPdf) {
-        try {
-          pdfMeta = await extractPdfText(file.buffer, {
-            maxPages: PDF_MAX_PAGES,
-            maxChars: PDF_MAX_TEXT_CHARS,
-          });
-          pdfText = pdfMeta.text;
-        } catch (err) {
-          pdfParseError = err?.message || String(err);
-        }
-      }
-
-      const buildFileContent = () => {
-        if (isImage) {
-          return {
-            type: "input_image",
-            image_url: `data:${file.mimeType};base64,${base64File}`,
-          };
-        }
-        if (isPdf) {
-          return {
-            type: "input_file",
-            file_data: base64File,
-            filename: file.originalName || "upload.pdf",
-            mime_type: file.mimeType,
-          };
-        }
-        return null;
-      };
-
-      const pdfVisionEligible =
-        isPdf &&
-        PDF_VISION_ENABLED &&
-        !pdfParseError &&
-        Number.isFinite(pdfMeta?.totalPages) &&
-        pdfMeta.totalPages <= PDF_VISION_MAX_PAGES;
-
-      const pdfTextNote = isPdf
-        ? [
-            pdfText ? "PDF text extracted." : "No PDF text extracted.",
-            pdfParseError ? "PDF text extraction failed." : null,
-            pdfMeta?.truncatedByPages ? `Limited to first ${pdfMeta.pageLimit} pages.` : null,
-            pdfMeta?.truncatedByChars ? "Text truncated for length." : null,
-          ]
-            .filter(Boolean)
-            .join(" ")
-        : "";
-
-      const baseContent = [
-        { type: "input_text", text: userPrompt },
-        pdfTextNote ? { type: "input_text", text: pdfTextNote } : null,
-        pdfText ? { type: "input_text", text: `PDF text:\n${pdfText}` } : null,
-      ].filter(Boolean);
-
-      const buildPayload = ({ includeFile }) => ({
+      const payload = {
         model: AI_EXTRACT_MODEL,
         input: [
           { role: "system", content: [{ type: "input_text", text: systemPrompt }] },
           {
             role: "user",
-            content: [...baseContent, ...(includeFile ? [buildFileContent()].filter(Boolean) : [])],
+            content: [
+              { type: "input_text", text: userPrompt },
+              {
+                type: "input_image",
+                image_url: `data:${file.mimeType};base64,${base64File}`,
+              },
+            ],
           },
         ],
         text: {
@@ -2661,10 +2819,7 @@ app.post(
           },
         },
         max_output_tokens: 800,
-      });
-
-      const primaryPayload = buildPayload({ includeFile: isImage || pdfVisionEligible });
-      const fallbackPayload = isPdf ? buildPayload({ includeFile: false }) : null;
+      };
 
       let resp;
       let body;
@@ -2675,27 +2830,11 @@ app.post(
             Authorization: `Bearer ${OPENAI_API_KEY}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(primaryPayload),
+          body: JSON.stringify(payload),
         });
         body = await resp.json();
       } catch {
         return res.status(500).json({ ok: false, message: "OpenAI request failed" });
-      }
-
-      if (!resp.ok && fallbackPayload) {
-        try {
-          resp = await fetch("https://api.openai.com/v1/responses", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${OPENAI_API_KEY}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(fallbackPayload),
-          });
-          body = await resp.json();
-        } catch {
-          return res.status(500).json({ ok: false, message: "OpenAI request failed" });
-        }
       }
 
       if (!resp.ok) {
