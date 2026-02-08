@@ -17,14 +17,6 @@
   --day-gutter: 1px;
   --event-inset: 6px;
   --app-max-width: 1240px;
-  --app-gutter: 16px;
-  --app-gutter-desktop: 24px;
-  --topbar-side-width: 280px;
-  --content-gutter: var(--app-gutter);
-  --content-edge: max(
-    var(--content-gutter),
-    calc((100vw - var(--app-max-width)) / 2 + var(--content-gutter))
-  );
 
   /* Highlight für "Heute" */
   --today: #ffffff;
@@ -68,11 +60,6 @@ body.app-ready .calendar-container {
 .content-container,
 .app-container {
   width: 100%;
-  max-width: var(--app-max-width);
-  margin: 0 auto;
-  padding-left: var(--content-gutter);
-  padding-right: var(--content-gutter);
-  box-sizing: border-box;
 }
 
 .mirror-axis {
@@ -80,46 +67,11 @@ body.app-ready .calendar-container {
 }
 
 @media (min-width: 900px) {
-  :root {
-    --content-gutter: var(--app-gutter-desktop);
-  }
-
-  .content-container,
-  .app-container {
-    padding-left: var(--content-gutter);
-    padding-right: var(--content-gutter);
-  }
-
-  .topbar {
-    padding-left: 0;
-    padding-right: 0;
-  }
-
   .fab {
     position: static;
     right: auto;
     bottom: auto;
     box-shadow: none;
-  }
-
-  .layout {
-    padding-left: 0;
-    padding-right: 0;
-  }
-
-  body.view-day .layout {
-    padding-left: 0;
-    padding-right: 0;
-  }
-
-  .agendaView {
-    padding-left: 0;
-    padding-right: 0;
-  }
-
-  .day-scroller {
-    padding-left: 0;
-    padding-right: 0;
   }
 }
 
@@ -148,15 +100,25 @@ body.app-ready .calendar-container {
 
 .topbar-grid {
   position: relative;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
   align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.topbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
   width: 100%;
 }
 
 .topbar-center {
-  justify-self: center;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   justify-content: center;
   text-align: center;
@@ -176,8 +138,6 @@ body.app-ready .calendar-container {
 }
 
 .topbar-left {
-  justify-self: start;
-  padding-left: var(--content-edge);
   justify-content: flex-start;
 }
 
@@ -186,8 +146,6 @@ body.app-ready .calendar-container {
 }
 
 .topbar-right {
-  justify-self: end;
-  padding-right: var(--content-edge);
   justify-content: flex-end;
 }
 
@@ -197,27 +155,29 @@ body.app-ready .calendar-container {
 
 @media (max-width: 720px) {
   .topbar-grid {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "center"
-      "left"
-      "right";
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .topbar-row {
+    order: 1;
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .topbar-center {
-    grid-area: center;
+    position: static;
+    transform: none;
+    margin-bottom: 8px;
+    order: 0;
   }
 
   .topbar-left {
-    grid-area: left;
-    padding-left: var(--content-gutter);
-    padding-right: var(--content-gutter);
+    width: 100%;
   }
 
   .topbar-right {
-    grid-area: right;
-    padding-left: var(--content-gutter);
-    padding-right: var(--content-gutter);
+    width: 100%;
   }
 
   .right {
@@ -445,21 +405,21 @@ body.app-ready .calendar-container {
   display: grid;
   grid-template-columns: 1fr 320px;
   gap: 14px;
-  padding: 14px 14px 120px;
+  padding: 14px 0 120px;
   flex: 1 1 auto;
   min-height: 0;
 }
 
 body.view-day .layout {
   display: block;
-  padding: 12px 14px 120px;
+  padding: 12px 0 120px;
 }
 
 .agendaView {
   display: none;
   flex-direction: column;
   gap: 16px;
-  padding: 0 14px 120px;
+  padding: 0 0 120px;
 }
 
 body.view-day .agendaView {
@@ -568,7 +528,7 @@ body.view-day .side {
 
 .event-card {
   display: grid;
-  grid-template-columns: 80px 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   grid-template-rows: auto auto;
   align-items: center;
   gap: 4px 10px;
@@ -586,11 +546,15 @@ body.view-day .side {
   font-weight: 700;
   color: #6a1b9a;
   grid-row: 1 / span 2;
+  justify-self: end;
+  text-align: right;
 }
 
 .event-title {
   font-size: 16px;
   font-weight: 700;
+  justify-self: start;
+  text-align: left;
 }
 
 .event-detail-panel {
@@ -634,33 +598,11 @@ body.view-day .side {
   background: transparent;
   border: 0;
   cursor: pointer;
+  justify-self: center;
 }
 
 .event-card.expanded .expand-icon {
   transform: rotate(90deg);
-}
-
-@media (min-width: 900px) {
-  .event-card.mirror-axis {
-    grid-template-columns: 1fr auto 1fr;
-  }
-
-  .event-card.mirror-axis .event-time {
-    grid-column: 1;
-    text-align: right;
-    justify-self: end;
-  }
-
-  .event-card.mirror-axis .expand-icon {
-    grid-column: 2;
-    justify-self: center;
-  }
-
-  .event-card.mirror-axis .event-title {
-    grid-column: 3;
-    justify-self: start;
-    text-align: left;
-  }
 }
 
 @media (min-width: 720px) {
