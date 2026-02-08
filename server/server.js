@@ -42,6 +42,15 @@ const logDebug = (...args) => {
 };
 const ASSISTANT_MODEL = process.env.ASSISTANT_MODEL || "gpt-4.1";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
+const AI_EXTRACT_MODEL = process.env.AI_EXTRACT_MODEL || "gpt-4o-mini";
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_FORM_BYTES = MAX_UPLOAD_BYTES + 512 * 1024;
+const ALLOWED_UPLOAD_MIME_TYPES = new Set([
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
 
 // ---- Paths ----
 const DB_PATH = path.join(__dirname, "db.json");
@@ -593,6 +602,112 @@ function getDateISOInTimeZone(timeZone, date = new Date()) {
     // fall through
   }
   return date.toISOString().slice(0, 10);
+}
+
+function parseMultipartFormData(req) {
+  const contentType = String(req.headers["content-type"] || "");
+  const match = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
+  if (!match) {
+    return { ok: false, status: 400, message: "missing multipart boundary" };
+  }
+  if (!Buffer.isBuffer(req.body)) {
+    return { ok: false, status: 400, message: "missing multipart body" };
+  }
+
+  const boundary = match[1] || match[2];
+  const boundaryBuffer = Buffer.from(`--${boundary}`);
+  const parts = [];
+  let offset = 0;
+
+  while (offset < req.body.length) {
+    const start = req.body.indexOf(boundaryBuffer, offset);
+    if (start === -1) break;
+    const partStart = start + boundaryBuffer.length;
+    if (req.body[partStart] === 45 && req.body[partStart + 1] === 45) {
+      break;
+    }
+    const headerStart = req.body[partStart] === 13 && req.body[partStart + 1] === 10
+      ? partStart + 2
+      : partStart;
+    const headerEnd = req.body.indexOf(Buffer.from("\r\n\r\n"), headerStart);
+    if (headerEnd === -1) break;
+    const headersText = req.body.slice(headerStart, headerEnd).toString("utf8");
+    const contentStart = headerEnd + 4;
+    const nextBoundary = req.body.indexOf(boundaryBuffer, contentStart);
+    if (nextBoundary === -1) break;
+    const contentEnd = nextBoundary - 2;
+    const content = req.body.slice(contentStart, contentEnd);
+    parts.push({ headersText, content });
+    offset = nextBoundary;
+  }
+
+  const fields = {};
+  let file = null;
+
+  for (const part of parts) {
+    const headers = part.headersText.split("\r\n");
+    const disposition = headers.find((line) => line.toLowerCase().startsWith("content-disposition"));
+    if (!disposition) continue;
+    const nameMatch = disposition.match(/name="([^"]+)"/i);
+    const filenameMatch = disposition.match(/filename="([^"]*)"/i);
+    const fieldName = nameMatch?.[1] || "";
+    const filename = filenameMatch?.[1] || "";
+    const contentTypeHeader = headers.find((line) => line.toLowerCase().startsWith("content-type"));
+    const mimeType = contentTypeHeader?.split(":")[1]?.trim() || "";
+
+    if (filename) {
+      file = {
+        originalName: filename,
+        mimeType,
+        buffer: part.content,
+      };
+    } else if (fieldName) {
+      fields[fieldName] = part.content.toString("utf8");
+    }
+  }
+
+  if (!file) {
+    return { ok: false, status: 400, message: "file missing" };
+  }
+  if (!ALLOWED_UPLOAD_MIME_TYPES.has(file.mimeType)) {
+    return { ok: false, status: 400, message: "invalid file type" };
+  }
+  if (file.buffer.length > MAX_UPLOAD_BYTES) {
+    return { ok: false, status: 413, message: "file too large" };
+  }
+
+  return { ok: true, fields, file };
+}
+
+function parseAIJson(rawText) {
+  if (!rawText || typeof rawText !== "string") return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(rawText);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  if (!Array.isArray(parsed.items)) return null;
+
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  const timeRegex = /^\d{2}:\d{2}$/;
+
+  for (const item of parsed.items) {
+    if (!item || typeof item !== "object") return null;
+    if (!["event", "task"].includes(item.type)) return null;
+    if (typeof item.title !== "string") return null;
+    if (typeof item.date !== "string" || !dateRegex.test(item.date)) return null;
+    if (item.start !== null && (typeof item.start !== "string" || !timeRegex.test(item.start))) return null;
+    if (item.end !== null && (typeof item.end !== "string" || !timeRegex.test(item.end))) return null;
+    if (item.durationMin !== null && !Number.isFinite(item.durationMin)) return null;
+    if (typeof item.description !== "string") return null;
+    if (typeof item.location !== "string") return null;
+    if (!Number.isFinite(item.confidence) || item.confidence < 0 || item.confidence > 1) return null;
+    if (typeof item.sourceSnippet !== "string") return null;
+  }
+
+  return parsed;
 }
 
 function normalizeAssistantProposal(raw) {
@@ -2284,6 +2399,166 @@ app.post("/api/assistant/parse", async (req, res) => {
   } catch (e) {
     res.status(500).json({ ok: false, message: "assistant parse failed", details: e?.message || "unknown" });
   }
+});
+
+// ---- AI Extract (PDF/Image -> Suggestions only) ----
+// Example:
+// curl -X POST "http://localhost:3000/api/ai/extract" \
+//   -F "file=@./schedule.pdf" \
+//   -F "timezone=Europe/Zurich" \
+//   -F "locale=de-CH" \
+//   -F "referenceDate=2025-01-15"
+app.post(
+  "/api/ai/extract",
+  express.raw({ type: "multipart/form-data", limit: MAX_FORM_BYTES }),
+  async (req, res) => {
+    try {
+      if (!OPENAI_API_KEY) {
+        return res.status(400).json({ ok: false, message: "OPENAI_API_KEY missing" });
+      }
+
+      const parsed = parseMultipartFormData(req);
+      if (!parsed.ok) {
+        return res.status(parsed.status || 400).json({ ok: false, message: parsed.message || "invalid upload" });
+      }
+
+      const { fields, file } = parsed;
+      const tz = String(fields.timezone || "Europe/Zurich").trim();
+      const loc = String(fields.locale || "de-CH").trim();
+      const referenceDate = String(fields.referenceDate || "").trim();
+      const refDate = referenceDate || getDateISOInTimeZone(tz);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(refDate)) {
+        return res.status(400).json({ ok: false, message: "referenceDate must be YYYY-MM-DD" });
+      }
+
+      const systemPrompt = [
+        "You extract calendar suggestions from documents.",
+        "Return JSON only with the schema provided.",
+        "Do not invent times or dates; use null when unknown and lower confidence.",
+        "Never auto-save; suggestions only.",
+      ].join(" ");
+
+      const userPrompt = [
+        "Extract events and tasks from the uploaded document.",
+        `Timezone: ${tz}`,
+        `Locale: ${loc}`,
+        `ReferenceDate: ${refDate}`,
+        "If locale is de-CH or de-DE and dates are ambiguous, prefer dd.mm.yyyy interpretation.",
+      ].join("\n");
+
+      const schema = {
+        type: "object",
+        additionalProperties: false,
+        required: ["items"],
+        properties: {
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: [
+                "type",
+                "title",
+                "date",
+                "start",
+                "end",
+                "durationMin",
+                "description",
+                "location",
+                "confidence",
+                "sourceSnippet",
+              ],
+              properties: {
+                type: { type: "string", enum: ["event", "task"] },
+                title: { type: "string" },
+                date: { type: "string", description: "YYYY-MM-DD" },
+                start: { type: ["string", "null"], description: "HH:MM 24h or null" },
+                end: { type: ["string", "null"], description: "HH:MM 24h or null" },
+                durationMin: { type: ["number", "null"] },
+                description: { type: "string" },
+                location: { type: "string" },
+                confidence: { type: "number", minimum: 0, maximum: 1 },
+                sourceSnippet: { type: "string" },
+              },
+            },
+          },
+        },
+      };
+
+      const isImage = file.mimeType.startsWith("image/");
+      const base64File = file.buffer.toString("base64");
+      const fileContent = isImage
+        ? {
+            type: "input_image",
+            image_url: `data:${file.mimeType};base64,${base64File}`,
+          }
+        : {
+            type: "input_file",
+            file_data: base64File,
+            filename: file.originalName || "upload.pdf",
+            mime_type: file.mimeType,
+          };
+
+      const payload = {
+        model: AI_EXTRACT_MODEL,
+        input: [
+          { role: "system", content: [{ type: "input_text", text: systemPrompt }] },
+          { role: "user", content: [{ type: "input_text", text: userPrompt }, fileContent] },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "calendar_extract",
+            strict: true,
+            schema,
+          },
+        },
+        max_output_tokens: 800,
+      };
+
+      let resp;
+      let body;
+      try {
+        resp = await fetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${OPENAI_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+        body = await resp.json();
+      } catch {
+        return res.status(500).json({ ok: false, message: "OpenAI request failed" });
+      }
+
+      if (!resp.ok) {
+        return res.status(500).json({ ok: false, message: "OpenAI request failed" });
+      }
+
+      const outputText =
+        body?.output_text ||
+        body?.output?.[0]?.content?.find((c) => c.type === "output_text")?.text ||
+        body?.output?.[0]?.content?.[0]?.text ||
+        "";
+
+      const aiParsed = parseAIJson(outputText || "");
+      if (!aiParsed) {
+        return res.status(502).json({ ok: false, error: "invalid_ai_output" });
+      }
+
+      return res.json({ ok: true, items: aiParsed.items });
+    } catch {
+      return res.status(500).json({ ok: false, message: "ai extract failed" });
+    }
+  },
+);
+
+app.use((err, req, res, next) => {
+  if (req.path === "/api/ai/extract" && err?.type === "entity.too.large") {
+    return res.status(413).json({ ok: false, message: "file too large" });
+  }
+  return next(err);
 });
 
 app.post("/api/assistant/commit", requireApiKey, async (req, res) => {
