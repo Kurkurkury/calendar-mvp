@@ -2702,15 +2702,6 @@ app.post(
               },
             },
             warnings: { type: "array", items: { type: "string" } },
-            usage: {
-              type: "object",
-              additionalProperties: false,
-              required: ["input_tokens", "output_tokens"],
-              properties: {
-                input_tokens: { type: "number" },
-                output_tokens: { type: "number" },
-              },
-            },
           },
         };
 
@@ -2831,16 +2822,11 @@ app.post(
         }
 
         const mergedWarnings = [...warnings, ...(aiParsed.warnings || [])];
-        const usage = body?.usage
-          ? { input_tokens: body.usage.input_tokens, output_tokens: body.usage.output_tokens }
-          : undefined;
-
         return res.json({
           ok: aiParsed.ok,
           source: { mime: file.mimeType, ...(pages ? { pages } : {}) },
           proposals: aiParsed.proposals,
           warnings: mergedWarnings,
-          ...(usage ? { usage } : {}),
         });
       }
 
