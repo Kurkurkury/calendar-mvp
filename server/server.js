@@ -390,6 +390,8 @@ function findBestBreakSlot(events, dayStart, windowStart = "08:00", windowEnd = 
 // ---- Config ----
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.API_KEY || "";
+// Dev override: ALLOW_GOOGLE_DISCONNECT=true erlaubt Token-Reset ohne API Key.
+const ALLOW_GOOGLE_DISCONNECT = process.env.ALLOW_GOOGLE_DISCONNECT === "true";
 
 // Setze z.B. GOOGLE_ALLOWED_EMAIL=noahsp@gmx.ch
 const GOOGLE_ALLOWED_EMAIL = (process.env.GOOGLE_ALLOWED_EMAIL || "").trim().toLowerCase();
@@ -1030,6 +1032,22 @@ async function loadEventsForRange(rangeStart, rangeEnd) {
   return { source: "local", events: filterEventsByRange(db.events, rangeStart, rangeEnd) };
 }
 
+function isLocalhostRequest(req) {
+  const host = String(req.hostname || req.headers?.host || "").toLowerCase();
+  const ip = String(req.ip || "").toLowerCase();
+  if (host === "localhost" || host.startsWith("localhost:")) return true;
+  if (host === "127.0.0.1" || host.startsWith("127.0.0.1:")) return true;
+  if (host === "[::1]" || host === "::1") return true;
+  if (ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1") return true;
+  return false;
+}
+
+function allowGoogleDisconnectOverride(req) {
+  if (!IS_PROD) return true;
+  if (ALLOW_GOOGLE_DISCONNECT) return true;
+  return isLocalhostRequest(req);
+}
+
 // ---- Auth (API Key) ----
 function requireApiKey(req, res, next) {
   if (!API_KEY) return next();
@@ -1043,6 +1061,11 @@ function requireApiKey(req, res, next) {
     return res.status(401).json({ ok: false, message: "Unauthorized" });
   }
   next();
+}
+
+function requireApiKeyUnlessDevDisconnect(req, res, next) {
+  if (allowGoogleDisconnectOverride(req)) return next();
+  return requireApiKey(req, res, next);
 }
 
 // ---- Static Web (www/ oder public/) ----
@@ -1146,6 +1169,7 @@ app.get("/api/google/status", async (req, res) => {
         expiry_date: tokens?.expiry_date || null,
         watchActive,
         reason: watchActive ? "" : watchReason,
+        allowDisconnect: allowGoogleDisconnectOverride(req),
         connectedEmail,
         allowedEmail: GOOGLE_ALLOWED_EMAIL || null,
         wrongAccount,
@@ -1270,10 +1294,12 @@ app.get("/api/google/auth-url", async (req, res) => {
 });
 
 // Disconnect (löscht Tokens)
-app.post("/api/google/disconnect", requireApiKey, async (req, res) => {
+app.post("/api/google/disconnect", requireApiKeyUnlessDevDisconnect, async (req, res) => {
   try {
+    const devOverride = allowGoogleDisconnectOverride(req);
     await clearTokens();
     if (fs.existsSync(TOKENS_PATH)) fs.unlinkSync(TOKENS_PATH);
+    console.log(`[google] disconnected (dev override=${devOverride})`);
     res.json({ ok: true, disconnected: true });
   } catch (e) {
     res.status(500).json({ ok: false, message: "disconnect failed", details: e?.message || String(e) });

@@ -1041,6 +1041,7 @@ function normalizeGoogleStatus(raw) {
     watchActive: typeof g.watchActive === "boolean" ? g.watchActive : false,
     reason: g.reason || "",
     scopes: g.scopes || "",
+    allowDisconnect: typeof g.allowDisconnect === "boolean" ? g.allowDisconnect : false,
     calendarId: g.calendarId,
     timezone: g.timezone,
     connectedEmail: g.connectedEmail,
@@ -1217,12 +1218,13 @@ async function onGoogleConnect() {
 
 async function onGoogleDisconnect() {
   try {
-    if (!API_KEY) {
+    if (!API_KEY && !state.google?.allowDisconnect) {
       uiNotify('error', 'Trennen ist gesperrt (API-Key fehlt). Für Normalnutzung nicht nötig.');
       return;
     }
 
     await apiPost('/api/google/disconnect', {});
+    markGoogleDisconnected("Manuell getrennt");
     await refreshFromApi();
     await render();
     uiNotify('success', 'Google getrennt ✅');
