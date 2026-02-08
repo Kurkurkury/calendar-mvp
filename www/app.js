@@ -1,4 +1,28 @@
-const API_BASE = "https://calendar-api-v2.onrender.com";
+const API_BASE = (() => {
+  const params = new URLSearchParams(window.location.search || "");
+  const override = (params.get("api") || "").toLowerCase();
+  if (override === "live") return "https://calendar-api-v2.onrender.com";
+  if (override === "local") return "http://localhost:3000";
+
+  const hostname = (window.location.hostname || "").toLowerCase();
+  if (hostname === "localhost" || hostname === "127.0.0.1") {
+    return "http://localhost:3000";
+  }
+
+  if (hostname.startsWith("192.168.") || hostname.startsWith("10.")) {
+    return "http://localhost:3000";
+  }
+
+  const octets = hostname.split(".");
+  if (octets.length === 4 && octets[0] === "172") {
+    const second = Number.parseInt(octets[1], 10);
+    if (!Number.isNaN(second) && second >= 16 && second <= 31) {
+      return "http://localhost:3000";
+    }
+  }
+
+  return "https://calendar-api-v2.onrender.com";
+})();
 const API_BASE_CLEAN = String(API_BASE || "").replace(/\/+$/, "");
 
 const IS_NATIVE =
