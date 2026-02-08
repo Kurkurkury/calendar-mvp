@@ -2115,6 +2115,7 @@ app.get("/api/google/watch/status", async (req, res) => {
 // ---- Assistant Parse + Commit (AI Quick-Add Preview) ----
 app.post("/api/assistant/parse", async (req, res) => {
   try {
+    console.log("[ai-quick-add] request start");
     const { text = "", timezone, locale, referenceDateISO } = req.body || {};
     const rawText = String(text || "").trim();
     if (!rawText) {
@@ -2130,10 +2131,10 @@ app.post("/api/assistant/parse", async (req, res) => {
     const refDate = referenceDateISO || getDateISOInTimeZone(tz);
 
     const systemPrompt = [
-      "You are a calendar parsing engine. Convert user text into a calendar action proposal in strict JSON only.",
-      "Do not invent missing fields. If any required field is missing or ambiguous, set intent='clarify' and ask short questions.",
-      "Never create random events.",
-      "Required for create_event: title, dateISO, startTime OR allDay=true, endTime OR durationMin.",
+      "You are a calendar parsing engine.",
+      "Return a strict JSON object with the required fields only.",
+      "If anything is missing or ambiguous, set needs_clarification=true and ask one short clarification_question.",
+      "Never invent details.",
     ].join(" ");
 
     const userPrompt = [
@@ -2146,43 +2147,28 @@ app.post("/api/assistant/parse", async (req, res) => {
     const schema = {
       type: "object",
       additionalProperties: false,
-      required: ["intent", "confidence", "event", "questions"],
+      required: [
+        "title",
+        "date",
+        "start",
+        "end",
+        "description",
+        "needs_clarification",
+        "clarification_question",
+      ],
       properties: {
-        intent: {
-          type: "string",
-          enum: ["create_event", "update_event", "delete_event", "clarify", "none"],
-        },
-        confidence: { type: "number" },
-        event: {
-          type: "object",
-          additionalProperties: false,
-          required: [
-            "title",
-            "dateISO",
-            "startTime",
-            "endTime",
-            "durationMin",
-            "allDay",
-            "location",
-            "description",
-          ],
-          properties: {
-            title: { type: ["string", "null"] },
-            dateISO: { type: ["string", "null"] },
-            startTime: { type: ["string", "null"] },
-            endTime: { type: ["string", "null"] },
-            durationMin: { type: ["number", "null"] },
-            allDay: { type: "boolean" },
-            location: { type: ["string", "null"] },
-            description: { type: ["string", "null"] },
-          },
-        },
-        questions: { type: "array", items: { type: "string" } },
+        title: { type: "string" },
+        date: { type: "string", description: "YYYY-MM-DD" },
+        start: { type: "string", description: "HH:MM 24h" },
+        end: { type: "string", description: "HH:MM 24h" },
+        description: { type: "string" },
+        needs_clarification: { type: "boolean" },
+        clarification_question: { type: "string" },
       },
     };
 
     const payload = {
-      model: ASSISTANT_MODEL,
+      model: "gpt-4o-mini",
       input: [
         { role: "system", content: [{ type: "input_text", text: systemPrompt }] },
         { role: "user", content: [{ type: "input_text", text: userPrompt }] },
@@ -2191,7 +2177,9 @@ app.post("/api/assistant/parse", async (req, res) => {
       text: {
         format: {
           type: "json_schema",
-          json_schema: { name: "calendar_proposal", schema, strict: true },
+          name: "ai_quick_add",
+          strict: true,
+          schema,
         },
       },
     };
@@ -2232,10 +2220,12 @@ app.post("/api/assistant/parse", async (req, res) => {
       });
       body = await resp.json();
     } catch (err) {
+      console.warn("[ai-quick-add] OpenAI request failed");
       return res.status(500).json(buildOpenAiDebugPayload({ err }));
     }
 
     if (!resp.ok) {
+      console.warn("[ai-quick-add] OpenAI request failed");
       return res.status(500).json(
         buildOpenAiDebugPayload({
           err: new Error(body?.error?.message || "OpenAI error"),
@@ -2251,11 +2241,35 @@ app.post("/api/assistant/parse", async (req, res) => {
       body?.output?.[0]?.content?.[0]?.text ||
       "";
 
-    const parsed = JSON.parse(outputText || "{}");
-    let proposal = normalizeAssistantProposal(parsed);
+    console.log("[ai-quick-add] OpenAI request success");
+    let parsed;
+    try {
+      parsed = JSON.parse(outputText || "{}");
+    } catch (err) {
+      console.warn("[ai-quick-add] Failed to parse OpenAI response JSON");
+      return res.status(500).json({ ok: false, message: "AI response parse failed" });
+    }
+
+    const proposal = normalizeAssistantProposal({
+      intent: parsed?.needs_clarification ? "clarify" : "create_event",
+      confidence: parsed?.needs_clarification ? 0.5 : 1,
+      event: {
+        title: parsed?.title ?? null,
+        dateISO: parsed?.date ?? null,
+        startTime: parsed?.start ?? null,
+        endTime: parsed?.end ?? null,
+        durationMin: null,
+        allDay: false,
+        location: null,
+        description: parsed?.description ?? null,
+      },
+      questions: parsed?.needs_clarification
+        ? [parsed?.clarification_question].filter(Boolean)
+        : [],
+    });
 
     if (proposal.intent === "create_event" && !hasRequiredAssistantFields(proposal)) {
-      proposal = {
+      const fallback = {
         ...proposal,
         intent: "clarify",
         confidence: Math.min(proposal.confidence || 0, 0.5),
@@ -2263,6 +2277,7 @@ app.post("/api/assistant/parse", async (req, res) => {
           ? proposal.questions
           : ["Was ist der Titel?", "Wann genau soll der Termin stattfinden?"],
       };
+      return res.json(fallback);
     }
 
     res.json(proposal);
