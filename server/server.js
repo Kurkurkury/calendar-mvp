@@ -45,6 +45,10 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const AI_EXTRACT_MODEL = process.env.AI_EXTRACT_MODEL || "gpt-4o-mini";
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_FORM_BYTES = MAX_UPLOAD_BYTES + 512 * 1024;
+const PDF_MAX_PAGES = toPositiveInt(process.env.PDF_MAX_PAGES, 8);
+const PDF_MAX_TEXT_CHARS = toPositiveInt(process.env.PDF_MAX_TEXT_CHARS, 12000);
+const PDF_VISION_MAX_PAGES = toPositiveInt(process.env.PDF_VISION_MAX_PAGES, 5);
+const PDF_VISION_ENABLED = String(process.env.AI_EXTRACT_PDF_VISION || "true").toLowerCase() !== "false";
 const ALLOWED_UPLOAD_MIME_TYPES = new Set([
   "application/pdf",
   "image/png",
@@ -266,6 +270,12 @@ async function ensureGoogleWatch({ reason = "ensure" } = {}) {
 function int(x) {
   const n = Number(x);
   return Number.isFinite(n) ? Math.trunc(n) : 0;
+}
+
+function toPositiveInt(value, fallback) {
+  const n = Number(value);
+  if (Number.isFinite(n) && n > 0) return Math.trunc(n);
+  return fallback;
 }
 
 function clamp(value, min, max) {
@@ -708,6 +718,93 @@ function parseAIJson(rawText) {
   }
 
   return parsed;
+}
+
+function normalizeExtractItems(items) {
+  if (!Array.isArray(items)) return [];
+  return items.map((item) => {
+    const normalized = {
+      type: item.type,
+      title: String(item.title || "").trim(),
+      date: item.date,
+      start: item.start ? String(item.start).trim() : null,
+      end: item.end ? String(item.end).trim() : null,
+      durationMin: Number.isFinite(item.durationMin) ? Number(item.durationMin) : null,
+      description: String(item.description || "").trim(),
+      location: String(item.location || "").trim(),
+      confidence: clamp(Number(item.confidence) || 0, 0, 1),
+      sourceSnippet: String(item.sourceSnippet || "").trim(),
+    };
+    if (!normalized.start) normalized.start = null;
+    if (!normalized.end) normalized.end = null;
+    return normalized;
+  });
+}
+
+async function extractPdfText(buffer, { maxPages, maxChars } = {}) {
+  const limits = {
+    maxPages: Number.isFinite(maxPages) && maxPages > 0 ? maxPages : PDF_MAX_PAGES,
+    maxChars: Number.isFinite(maxChars) && maxChars > 0 ? maxChars : PDF_MAX_TEXT_CHARS,
+  };
+  const raw = buffer.toString("latin1");
+  const pageMatches = raw.match(/\/Type\s*\/Page\b/g);
+  const totalPages = pageMatches ? pageMatches.length : 1;
+  const pageLimit = Math.min(totalPages, limits.maxPages);
+  const blocks = raw.match(/BT[\s\S]*?ET/g) || [];
+  const maxBlocks = Math.max(1, Math.ceil(blocks.length * (pageLimit / totalPages)));
+  const selectedBlocks = blocks.slice(0, maxBlocks);
+  let text = "";
+  let truncatedByChars = false;
+
+  const decodePdfString = (value) => {
+    return value
+      .replace(/\\n/g, "\n")
+      .replace(/\\r/g, "\r")
+      .replace(/\\t/g, "\t")
+      .replace(/\\b/g, "\b")
+      .replace(/\\f/g, "\f")
+      .replace(/\\\\/g, "\\")
+      .replace(/\\\(/g, "(")
+      .replace(/\\\)/g, ")");
+  };
+
+  const extractStrings = (block) => {
+    const parts = [];
+    const tjMatches = block.match(/\((?:\\.|[^\\])*?\)\s*Tj/g) || [];
+    for (const match of tjMatches) {
+      const contentMatch = match.match(/\(([\s\S]*?)\)\s*Tj/);
+      if (contentMatch?.[1]) parts.push(decodePdfString(contentMatch[1]));
+    }
+    const tjArrayMatches = block.match(/\[(?:.|\n|\r)*?\]\s*TJ/g) || [];
+    for (const arrayMatch of tjArrayMatches) {
+      const strings = arrayMatch.match(/\((?:\\.|[^\\])*?\)/g) || [];
+      for (const strMatch of strings) {
+        const inner = strMatch.slice(1, -1);
+        parts.push(decodePdfString(inner));
+      }
+    }
+    return parts.join(" ");
+  };
+
+  for (const block of selectedBlocks) {
+    const extracted = extractStrings(block);
+    if (extracted) {
+      text += `${extracted}\n`;
+    }
+    if (text.length >= limits.maxChars) {
+      text = text.slice(0, limits.maxChars);
+      truncatedByChars = true;
+      break;
+    }
+  }
+
+  return {
+    text: text.trim(),
+    totalPages,
+    pageLimit,
+    truncatedByPages: totalPages > pageLimit,
+    truncatedByChars,
+  };
 }
 
 function normalizeAssistantProposal(raw) {
@@ -2486,24 +2583,74 @@ app.post(
       };
 
       const isImage = file.mimeType.startsWith("image/");
+      const isPdf = file.mimeType === "application/pdf";
       const base64File = file.buffer.toString("base64");
-      const fileContent = isImage
-        ? {
+      let pdfText = "";
+      let pdfMeta = null;
+      let pdfParseError = null;
+
+      if (isPdf) {
+        try {
+          pdfMeta = await extractPdfText(file.buffer, {
+            maxPages: PDF_MAX_PAGES,
+            maxChars: PDF_MAX_TEXT_CHARS,
+          });
+          pdfText = pdfMeta.text;
+        } catch (err) {
+          pdfParseError = err?.message || String(err);
+        }
+      }
+
+      const buildFileContent = () => {
+        if (isImage) {
+          return {
             type: "input_image",
             image_url: `data:${file.mimeType};base64,${base64File}`,
-          }
-        : {
+          };
+        }
+        if (isPdf) {
+          return {
             type: "input_file",
             file_data: base64File,
             filename: file.originalName || "upload.pdf",
             mime_type: file.mimeType,
           };
+        }
+        return null;
+      };
 
-      const payload = {
+      const pdfVisionEligible =
+        isPdf &&
+        PDF_VISION_ENABLED &&
+        !pdfParseError &&
+        Number.isFinite(pdfMeta?.totalPages) &&
+        pdfMeta.totalPages <= PDF_VISION_MAX_PAGES;
+
+      const pdfTextNote = isPdf
+        ? [
+            pdfText ? "PDF text extracted." : "No PDF text extracted.",
+            pdfParseError ? "PDF text extraction failed." : null,
+            pdfMeta?.truncatedByPages ? `Limited to first ${pdfMeta.pageLimit} pages.` : null,
+            pdfMeta?.truncatedByChars ? "Text truncated for length." : null,
+          ]
+            .filter(Boolean)
+            .join(" ")
+        : "";
+
+      const baseContent = [
+        { type: "input_text", text: userPrompt },
+        pdfTextNote ? { type: "input_text", text: pdfTextNote } : null,
+        pdfText ? { type: "input_text", text: `PDF text:\n${pdfText}` } : null,
+      ].filter(Boolean);
+
+      const buildPayload = ({ includeFile }) => ({
         model: AI_EXTRACT_MODEL,
         input: [
           { role: "system", content: [{ type: "input_text", text: systemPrompt }] },
-          { role: "user", content: [{ type: "input_text", text: userPrompt }, fileContent] },
+          {
+            role: "user",
+            content: [...baseContent, ...(includeFile ? [buildFileContent()].filter(Boolean) : [])],
+          },
         ],
         text: {
           format: {
@@ -2514,7 +2661,10 @@ app.post(
           },
         },
         max_output_tokens: 800,
-      };
+      });
+
+      const primaryPayload = buildPayload({ includeFile: isImage || pdfVisionEligible });
+      const fallbackPayload = isPdf ? buildPayload({ includeFile: false }) : null;
 
       let resp;
       let body;
@@ -2525,11 +2675,27 @@ app.post(
             Authorization: `Bearer ${OPENAI_API_KEY}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(primaryPayload),
         });
         body = await resp.json();
       } catch {
         return res.status(500).json({ ok: false, message: "OpenAI request failed" });
+      }
+
+      if (!resp.ok && fallbackPayload) {
+        try {
+          resp = await fetch("https://api.openai.com/v1/responses", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${OPENAI_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(fallbackPayload),
+          });
+          body = await resp.json();
+        } catch {
+          return res.status(500).json({ ok: false, message: "OpenAI request failed" });
+        }
       }
 
       if (!resp.ok) {
@@ -2547,7 +2713,8 @@ app.post(
         return res.status(502).json({ ok: false, error: "invalid_ai_output" });
       }
 
-      return res.json({ ok: true, items: aiParsed.items });
+      const normalizedItems = normalizeExtractItems(aiParsed.items);
+      return res.json({ ok: true, items: normalizedItems });
     } catch {
       return res.status(500).json({ ok: false, message: "ai extract failed" });
     }
