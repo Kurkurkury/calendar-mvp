@@ -344,6 +344,7 @@ body.app-ready .app {
 }
 .btn:hover { filter: brightness(1.05); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.is-disabled { opacity: .6; }
 .btn.small {
   padding: 6px 10px;
   font-size: 12px;
@@ -577,6 +578,14 @@ body.view-day .side {
   border-radius: 8px;
   padding: 10px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  transition: transform 0.08s ease, box-shadow 0.08s ease, background-color 0.08s ease;
+}
+
+.event-card:active {
+  transform: translateY(1px);
+  background-color: #f4efff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.12);
 }
 
 .event-time {
@@ -1157,6 +1166,12 @@ body.view-day .side {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  cursor: pointer;
+  transition: transform 0.08s ease, box-shadow 0.08s ease, background-color 0.08s ease;
+}
+.eventListItem:active {
+  transform: translateY(1px);
+  background: rgba(255, 255, 255, 0.2);
 }
 .eventListItem .itemTitle {
   font-size: 16px;
@@ -1738,9 +1753,17 @@ code{
 
 .appbar-inner {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   padding: 12px 0 10px;
+}
+
+.appbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-start;
+  min-width: 0;
 }
 
 .appbar-center {
@@ -1748,6 +1771,7 @@ code{
   display: flex;
   flex-direction: column;
   gap: 4px;
+  justify-self: center;
 }
 
 .appbar-right {
@@ -1757,6 +1781,7 @@ code{
   gap: 6px;
   font-size: 12px;
   color: var(--muted);
+  justify-self: end;
 }
 
 .status-chips {
@@ -1885,20 +1910,7 @@ code{
 }
 
 @media (max-width: 640px) {
-  .appbar-inner {
-    grid-template-columns: auto;
-  }
-
-  .appbar-left {
-    display: none;
-  }
-
-  .appbar-right {
-    align-items: center;
-    text-align: center;
-  }
-
   .status-chips {
-    justify-content: center;
+    flex-wrap: wrap;
   }
 }

@@ -18,12 +18,15 @@
   <div class="app">
     <header class="appbar">
       <div class="container appbar-inner">
-        <div class="appbar-left"></div>
-        <div class="appbar-center">
-          <div class="month-header" aria-label="Monat wechseln">
+        <div class="appbar-left">
+          <div class="month-header month-nav" aria-label="Monat wechseln">
             <button id="prevMonthBtn" class="month-arrow" type="button" aria-label="Vorheriger Monat">‹</button>
-            <button id="monthNameBtn" class="month-name" type="button" aria-label="Monat wechseln">AUGUST 2013</button>
             <button id="nextMonthBtn" class="month-arrow" type="button" aria-label="Nächster Monat">›</button>
+          </div>
+        </div>
+        <div class="appbar-center">
+          <div class="month-header month-title" aria-label="Monat wechseln">
+            <button id="monthNameBtn" class="month-name" type="button" aria-label="Monat wechseln">AUGUST 2013</button>
           </div>
           <div id="weekLabel" class="subtitle"></div>
         </div>
