@@ -138,6 +138,17 @@ const AI_EXTRACT_ALLOWED_EXT = new Set(["png", "jpg", "jpeg", "webp", "pdf", "do
 const BACKEND_WARMUP_MAX_MS = 2 * 60 * 1000;
 const BACKEND_WARMUP_BASE_DELAY_MS = 1000;
 const BACKEND_WARMUP_MAX_DELAY_MS = 15000;
+const COLDSTART_DEBUG_ENABLED = (() => {
+  try {
+    const params = new URLSearchParams(window.location.search || "");
+    const hasDebugQuery = params.get("debug") === "1";
+    const host = String(window.location.hostname || "").toLowerCase();
+    const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0";
+    return hasDebugQuery || isLocalHost;
+  } catch {
+    return false;
+  }
+})();
 
 async function openExternal(url) {
   if (window.Capacitor?.Plugins?.Browser?.open) {
@@ -152,6 +163,62 @@ let nowIndicatorTimer = null;
 let currentRenderedDays = [];
 let backendWarmupInProgress = false;
 let backendWarmupToastShown = false;
+const coldStartDebugState = {
+  backendState: "idle",
+  lastHealthCheckAt: null,
+  retryCount: 0,
+  toastSuppressed: false,
+};
+
+function ensureColdStartDebugOverlay() {
+  if (!COLDSTART_DEBUG_ENABLED) return null;
+  let overlay = document.getElementById("coldStartDebugOverlay");
+  if (overlay) return overlay;
+  overlay = document.createElement("div");
+  overlay.id = "coldStartDebugOverlay";
+  overlay.setAttribute("aria-hidden", "true");
+  overlay.style.position = "fixed";
+  overlay.style.right = "12px";
+  overlay.style.bottom = "12px";
+  overlay.style.zIndex = "99998";
+  overlay.style.background = "rgba(0, 0, 0, 0.75)";
+  overlay.style.color = "#fff";
+  overlay.style.fontSize = "12px";
+  overlay.style.fontFamily = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace";
+  overlay.style.padding = "8px 10px";
+  overlay.style.borderRadius = "8px";
+  overlay.style.whiteSpace = "pre";
+  overlay.style.pointerEvents = "none";
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function formatColdStartTimestamp(timestamp) {
+  if (!timestamp) return "—";
+  try {
+    return new Date(timestamp).toLocaleTimeString();
+  } catch {
+    return String(timestamp);
+  }
+}
+
+function updateColdStartDebugOverlay() {
+  const overlay = ensureColdStartDebugOverlay();
+  if (!overlay) return;
+  const lines = [
+    "Cold-start debug",
+    `backendState: ${coldStartDebugState.backendState}`,
+    `lastHealthCheckAt: ${formatColdStartTimestamp(coldStartDebugState.lastHealthCheckAt)}`,
+    `retryCount: ${coldStartDebugState.retryCount}`,
+    `toastSuppressed: ${coldStartDebugState.toastSuppressed}`,
+  ];
+  overlay.textContent = lines.join("\n");
+}
+
+function setColdStartDebugState(nextState) {
+  Object.assign(coldStartDebugState, nextState);
+  updateColdStartDebugOverlay();
+}
 
 function saveLastKnownGoogleEvents(events) {
   try {
@@ -814,9 +881,11 @@ boot();
 
 // -------------------- Boot --------------------
 async function boot() {
+  console.log("[COLDSTART] app boot start");
   setAppReady(false);
   setBodyViewClass(state.view);
   setActiveDate(state.activeDate);
+  updateColdStartDebugOverlay();
 
   warnDuplicateIds([
     "prevDayBtn",
@@ -1014,6 +1083,7 @@ async function boot() {
     await warmupBackendAndRefresh();
   } finally {
     setAppReady(true);
+    console.log("[COLDSTART] app boot end");
   }
 }
 
@@ -1486,7 +1556,11 @@ function waitMs(ms) {
 }
 
 async function checkBackendWarmup() {
-  await apiGet("/api/health");
+  try {
+    await apiGet("/api/health");
+  } finally {
+    setColdStartDebugState({ lastHealthCheckAt: Date.now() });
+  }
   const g = await apiGet("/api/google/status");
   applyGoogleStatus(g.google || g);
 }
@@ -1494,6 +1568,12 @@ async function checkBackendWarmup() {
 async function warmupBackendAndRefresh({ manual = false } = {}) {
   if (backendWarmupInProgress) return;
   backendWarmupInProgress = true;
+  setColdStartDebugState({
+    backendState: "warming",
+    retryCount: 0,
+    toastSuppressed: false,
+  });
+  console.log("[COLDSTART] warmup start", { manual });
   showBackendBanner({ message: "Backend startet …", status: "loading", showRetry: false });
   setStatus(`Backend startet … (${API_BASE})`, true);
 
@@ -1502,12 +1582,15 @@ async function warmupBackendAndRefresh({ manual = false } = {}) {
   let warmupOk = false;
 
   while (Date.now() - startedAt < BACKEND_WARMUP_MAX_MS) {
+    console.log("[COLDSTART] warmup attempt", { attempt: attempt + 1 });
     try {
       await checkBackendWarmup();
       warmupOk = true;
       break;
     } catch (e) {
       attempt += 1;
+      setColdStartDebugState({ retryCount: attempt });
+      console.log("[COLDSTART] warmup attempt failed", { attempt, error: e });
       const delay = warmupDelayForAttempt(attempt);
       if (Date.now() - startedAt + delay > BACKEND_WARMUP_MAX_MS) break;
       await waitMs(delay);
@@ -1515,6 +1598,8 @@ async function warmupBackendAndRefresh({ manual = false } = {}) {
   }
 
   if (warmupOk) {
+    console.log("[COLDSTART] warmup success", { attempts: attempt + 1 });
+    setColdStartDebugState({ backendState: "ready", toastSuppressed: false });
     hideBackendBanner();
     backendWarmupToastShown = false;
     try {
@@ -1529,6 +1614,8 @@ async function warmupBackendAndRefresh({ manual = false } = {}) {
   }
 
   backendWarmupInProgress = false;
+  console.log("[COLDSTART] warmup failed", { attempts: attempt, manual });
+  setColdStartDebugState({ backendState: "failed" });
   showBackendBanner({
     message: "Backend nicht erreichbar. Bitte erneut versuchen.",
     status: "failed",
@@ -1536,11 +1623,19 @@ async function warmupBackendAndRefresh({ manual = false } = {}) {
   });
   setStatus(`Backend nicht erreichbar (${API_BASE})`, false);
 
-  if (!backendWarmupToastShown) {
-    toast("Backend nicht erreichbar. Bitte später erneut versuchen.", "error");
-    backendWarmupToastShown = true;
-  } else if (manual) {
-    toast("Backend weiterhin nicht erreichbar.", "error");
+  if (manual) {
+    const wasToastShown = backendWarmupToastShown;
+    if (!backendWarmupToastShown) {
+      toast("Backend nicht erreichbar. Bitte später erneut versuchen.", "error");
+      backendWarmupToastShown = true;
+    } else {
+      toast("Backend weiterhin nicht erreichbar.", "error");
+    }
+    setColdStartDebugState({ toastSuppressed: false });
+    console.log("[COLDSTART] toast shown", { manual, wasToastShown });
+  } else {
+    setColdStartDebugState({ toastSuppressed: true });
+    console.log("[COLDSTART] toast suppressed", { manual });
   }
 }
 
