@@ -5176,18 +5176,19 @@ function escapeHtml(str) {
     if (!el) {
       el = document.createElement("div");
       el.id = ID;
-      el.style.fontSize = "12px";
-      el.style.color = "#9aa0a6";
-      el.style.textAlign = "center";
-      el.style.marginTop = "4px";
+      el.className = "header-date";
       el.style.userSelect = "none";
 
       const header =
+        document.querySelector(".topbar-right") ||
         document.querySelector(".topbar") ||
         document.querySelector("header") ||
         document.body;
 
       header.appendChild(el);
+    } else {
+      el.classList.add("header-date");
+      el.style.userSelect = "none";
     }
     return el;
   }

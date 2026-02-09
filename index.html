@@ -9,28 +9,47 @@
 <body>
   <div class="calendar-container">
     <header class="topbar">
-      <div class="title">
-        <div class="month-header" aria-label="Monat wechseln">
-          <button id="prevMonthBtn" class="month-arrow" type="button" aria-label="Vorheriger Monat">‹</button>
-          <button id="monthNameBtn" class="month-name" type="button" aria-label="Monat wechseln">AUGUST 2013</button>
-          <button id="nextMonthBtn" class="month-arrow" type="button" aria-label="Nächster Monat">›</button>
+      <div class="app-container topbar-grid">
+        <div class="topbar-left">
+          <nav class="weekNav" aria-label="Kalender Navigation">
+            <button id="prevWeekBtn" class="btn ghost" title="Vorherige Woche" aria-label="Vorherige Woche">←</button>
+            <button id="todayBtn" class="btn ghost" aria-label="Heute anzeigen">Heute</button>
+            <button id="nextWeekBtn" class="btn ghost" title="Nächste Woche" aria-label="Nächste Woche">→</button>
+          </nav>
         </div>
-        <div id="weekLabel" class="sub"></div>
-        <div id="statusLine" class="sub"></div>
+        <div class="topbar-center">
+          <div class="title">
+            <div class="month-header" aria-label="Monat wechseln">
+              <button id="prevMonthBtn" class="month-arrow" type="button" aria-label="Vorheriger Monat">‹</button>
+              <button id="monthNameBtn" class="month-name" type="button" aria-label="Monat wechseln">AUGUST 2013</button>
+              <button id="nextMonthBtn" class="month-arrow" type="button" aria-label="Nächster Monat">›</button>
+            </div>
+            <div id="weekLabel" class="sub"></div>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <div class="statusBadges">
+            <span id="googleStatusBadge" class="statusBadge"></span>
+            <span id="syncStatusBadge" class="statusBadge"></span>
+          </div>
+          <div class="header-actions">
+            <button id="btnNew" class="btn primary fab" aria-label="Neu erstellen">+ Neu</button>
+          </div>
+          <div id="live-timestamp" class="header-date"></div>
+        </div>
       </div>
     </header>
 
-    <section class="agendaView">
-      <div id="dayScroller" class="day-scroller" aria-label="Tagesauswahl"></div>
-      <div class="event-list">
-        <div class="event-list-title">Events &amp; Tasks</div>
-        <div id="dayEventList" class="event-list-items"></div>
-      </div>
-    </section>
+    <div class="app-container">
+      <section class="agendaView">
+        <div id="dayScroller" class="day-scroller" aria-label="Tagesauswahl"></div>
+        <div class="event-list">
+          <div class="event-list-title">Events &amp; Tasks</div>
+          <div id="dayEventList" class="event-list-items"></div>
+        </div>
+      </section>
 
-    <button id="btnNew" class="btn primary fab" aria-label="Neu erstellen" onclick="openNewEventForm()">+ Neu</button>
-
-    <main class="layout">
+      <main class="layout">
       <section class="calendar">
         <div class="calHead">
           <div class="timeColHead"></div>
@@ -63,6 +82,20 @@
         </div>
       </aside>
     </main>
+    </div>
+
+    <footer class="appFooter" aria-label="Status">
+      <div class="app-container appFooter-inner">
+        <div class="footer-status">
+          <div id="statusLine" class="sub"></div>
+          <div id="googleConnectionState" class="connectionMain"></div>
+        </div>
+        <div class="googleActions">
+          <button id="googleConnectBtn" class="btn ghost" type="button" aria-label="Mit Google verbinden">Mit Google verbinden</button>
+          <button id="googleDisconnectBtn" class="btn ghost" type="button" aria-label="Google Verbindung trennen">Trennen</button>
+        </div>
+      </div>
+    </footer>
   </div>
 
   <!-- New menu -->
