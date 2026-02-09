@@ -1666,6 +1666,7 @@ code{
   }
 
   .bottom-nav {
+    display: grid;
     grid-template-columns: 1fr 1fr 1fr;
     align-items: center;
     gap: 8px;
@@ -1676,21 +1677,27 @@ code{
     min-height: 48px;
     display: flex;
     align-items: center;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  #prevDayBtn {
+  .bottom-nav #prevDayBtn {
     justify-content: flex-start;
+    justify-self: start;
     text-align: left;
   }
 
-  #todayBtn {
+  .bottom-nav #btn-today {
     justify-content: center;
     justify-self: center;
     text-align: center;
   }
 
-  #nextDayBtn {
+  .bottom-nav #nextDayBtn {
     justify-content: flex-end;
+    justify-self: end;
     text-align: right;
   }
 
@@ -1939,12 +1946,13 @@ code{
   bottom: 0;
   z-index: 9;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 8px;
   padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
   background: rgba(10, 2, 18, 0.65);
   border-top: 1px solid var(--line);
   backdrop-filter: blur(10px);
+  overflow: hidden;
 }
 
 .bottom-nav-btn {
@@ -1952,6 +1960,10 @@ code{
   justify-content: center;
   padding: 12px 10px;
   font-weight: 700;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .calendar-card {

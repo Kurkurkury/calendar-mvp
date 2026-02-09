@@ -837,6 +837,7 @@ async function boot() {
   warnDuplicateIds([
     "prevDayBtn",
     "todayBtn",
+    "btn-today",
     "nextDayBtn",
     "prevMonthBtn",
     "monthNameBtn",
@@ -869,6 +870,7 @@ async function boot() {
   bindButtonsById("nextMonthBtn", async () => { await changeMonth("next"); });
   bindButtonsById("monthNameBtn", async () => { await changeMonth("next"); });
   bindButtonsById("todayBtn", handleToday);
+  bindButtonsById("btn-today", handleToday);
 
   // New menu
   els.closeMenuBtn?.addEventListener("click", closeMenu);
