@@ -1102,7 +1102,7 @@ function ensureGoogleAuthPossible() {
 
 function updateGoogleButtons() {
   const g = state.google || {};
-  const connected = !!g.connected;
+  const connected = isGoogleConnected(g);
   const configured = getEffectiveGoogleConfigured();
   const wrong = !!g.wrongAccount;
 
@@ -1145,6 +1145,10 @@ function normalizeGoogleStatus(raw) {
   };
 }
 
+function isGoogleConnected(g = state.google) {
+  return !!g?.connected && !!g?.authenticated;
+}
+
 function applyGoogleStatus(raw) {
   state.google = normalizeGoogleStatus(raw);
   updateGoogleButtons();
@@ -1156,7 +1160,7 @@ function applyGoogleStatus(raw) {
 
 function updateConnectionStatus() {
   const g = state.google || {};
-  const connected = !!g.connected;
+  const connected = isGoogleConnected(g);
   const configured = getEffectiveGoogleConfigured();
 
   if (els.googleConnectionState) {
@@ -1197,10 +1201,7 @@ function updateConnectionStatus() {
   }
 
   if (els.syncStatusBadge) {
-    if (!configured || !connected) {
-      els.syncStatusBadge.textContent = "Live-Sync: inaktiv";
-      els.syncStatusBadge.className = "statusBadge live-sync-status inactive";
-    } else if (g.watchActive) {
+    if (g.watchActive) {
       els.syncStatusBadge.textContent = "Live-Sync: aktiv";
       els.syncStatusBadge.className = "statusBadge live-sync-status active";
     } else {
@@ -1213,7 +1214,7 @@ function updateConnectionStatus() {
 function googleUiStatusLine() {
   const g = state.google || {};
   if (!getEffectiveGoogleConfigured()) return 'Google: nicht konfiguriert ⚪';
-  if (!g.connected) return 'Google: nicht verbunden 🟡';
+  if (!isGoogleConnected(g)) return 'Google: nicht verbunden 🟡';
 
   const email = g.connectedEmail ? String(g.connectedEmail) : 'verbunden';
   if (g.wrongAccount) {
@@ -1235,7 +1236,7 @@ async function pollGoogleConnected({ timeoutMs = 90_000, intervalMs = 2000 } = {
         return { connected: false, wrongAccount: true };
       }
 
-      if (state.google?.connected) {
+      if (isGoogleConnected()) {
         return { connected: true, wrongAccount: false };
       }
     } catch {
@@ -1543,7 +1544,7 @@ async function refreshFromApi() {
   }
 
   // Phase 2 Sync: Anzeige basiert ausschließlich auf Google-Events (Single Source of Truth)
-  const shouldFetchGoogleEvents = state.google?.connected === true;
+  const shouldFetchGoogleEvents = isGoogleConnected();
   if (shouldFetchGoogleEvents) {
     setSyncLoading(true);
     try {
@@ -1587,7 +1588,7 @@ async function refreshFromApi() {
     usedCachedEvents = true;
   }
 
-  if (state.google?.connected === false && Array.isArray(cachedEvents)) {
+  if (!isGoogleConnected() && Array.isArray(cachedEvents)) {
     state.events = cachedEvents;
     usedCachedEvents = true;
     googleEventsNotice = "Nicht verbunden – zeige letzte Daten (Cache).";
@@ -4064,7 +4065,7 @@ async function createEventFromForm() {
     return;
   }
 
-  if (!state.google?.connected || state.google?.wrongAccount) {
+  if (!isGoogleConnected() || state.google?.wrongAccount) {
     if (state.google?.wrongAccount) {
       setStatus('Falscher Google-Account – bitte mit dem erlaubten Konto verbinden.', false);
       uiNotify('error', 'Falscher Google-Account');
@@ -4381,7 +4382,7 @@ function getTodayISOInTimeZone(timeZone) {
 }
 
 function determineAssistantProvider() {
-  if (state.google?.connected && !state.google?.wrongAccount) {
+  if (isGoogleConnected() && !state.google?.wrongAccount) {
     return "google";
   }
   return "local";
@@ -4744,7 +4745,7 @@ async function deleteEvent(ev) {
     return;
   }
 
-  if (!state.google?.connected) {
+  if (!isGoogleConnected()) {
     uiNotify("error", "Google nicht verbunden – bitte verbinden");
     return;
   }
@@ -4795,7 +4796,7 @@ async function deleteEvent(ev) {
 
 async function undoDeleteEvent(ev) {
   if (!ev) return;
-  if (!state.google?.connected) {
+  if (!isGoogleConnected()) {
     uiNotify("error", "Google nicht verbunden – bitte verbinden");
     return;
   }
@@ -4838,7 +4839,7 @@ async function persistEventMove(ev, newStart, newEnd) {
     return;
   }
 
-  if (!state.google?.connected) {
+  if (!isGoogleConnected()) {
     uiNotify("error", "Google nicht verbunden – bitte verbinden");
     return;
   }
