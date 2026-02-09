@@ -1,4 +1,5 @@
-const API_BASE = window.Capacitor
+const HAS_CAPACITOR = typeof window.Capacitor !== "undefined";
+const API_BASE = HAS_CAPACITOR
   ? "https://calendar-api-v2.onrender.com"
   : "http://localhost:3000";
 const API_BASE_CLEAN = String(API_BASE || "").replace(/\/+$/, "");
