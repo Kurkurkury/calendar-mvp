@@ -1159,7 +1159,7 @@ function updateConnectionStatus() {
 
   if (els.googleConnectionState) {
     let text = "Nicht verbunden";
-    let color = "var(--danger)";
+    let color = "var(--muted)";
 
     if (!configured) {
       text = "Google nicht konfiguriert";
@@ -1600,7 +1600,7 @@ async function refreshFromApi() {
   updateConnectionStatus();
 
   if (googleEventsNotice) {
-    setStatus(googleEventsNotice, false);
+    setStatus(googleEventsNotice, true);
   } else if (hadNetworkFailure) {
     setStatus(`Offline 📴 (${API_BASE}) • ${googleStatusText()}`, true);
   } else if (hadApiFailure) {
