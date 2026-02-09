@@ -135,6 +135,9 @@ const AI_EXTRACT_ALLOWED_MIME = new Set([
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ]);
 const AI_EXTRACT_ALLOWED_EXT = new Set(["png", "jpg", "jpeg", "webp", "pdf", "docx"]);
+const BACKEND_WARMUP_MAX_MS = 2 * 60 * 1000;
+const BACKEND_WARMUP_BASE_DELAY_MS = 1000;
+const BACKEND_WARMUP_MAX_DELAY_MS = 15000;
 
 async function openExternal(url) {
   if (window.Capacitor?.Plugins?.Browser?.open) {
@@ -147,6 +150,8 @@ async function openExternal(url) {
 let gcalPollTimer = null;
 let nowIndicatorTimer = null;
 let currentRenderedDays = [];
+let backendWarmupInProgress = false;
+let backendWarmupToastShown = false;
 
 function saveLastKnownGoogleEvents(events) {
   try {
@@ -1004,9 +1009,9 @@ async function boot() {
     requestAnimationFrame(updateCalendarScrollbarGutter);
   });
   try {
-    await refreshFromApi();
-    startGooglePollingOnce();
     await render();
+    setAppReady(true);
+    await warmupBackendAndRefresh();
   } finally {
     setAppReady(true);
   }
@@ -1414,6 +1419,51 @@ function googleStatusText() {
   return googleUiStatusLine();
 }
 
+function ensureBackendStatusBanner() {
+  if (els.backendStatusBanner) return els.backendStatusBanner;
+  const banner = document.createElement("div");
+  banner.id = "backendStatusBanner";
+  banner.className = "backend-status-banner hidden";
+  banner.setAttribute("role", "status");
+  banner.setAttribute("aria-live", "polite");
+  banner.innerHTML = `
+    <div class="backend-status-content">
+      <span class="backend-spinner" aria-hidden="true"></span>
+      <span class="backend-status-text"></span>
+    </div>
+    <button id="backendRetryBtn" class="btn ghost backend-retry-btn" type="button">Erneut versuchen</button>
+  `;
+  const container = document.querySelector(".calendar-container") || document.body;
+  container.insertBefore(banner, container.firstChild);
+  els.backendStatusBanner = banner;
+  els.backendStatusText = banner.querySelector(".backend-status-text");
+  els.backendRetryBtn = banner.querySelector("#backendRetryBtn");
+  els.backendSpinner = banner.querySelector(".backend-spinner");
+  els.backendRetryBtn?.addEventListener("click", () => {
+    void warmupBackendAndRefresh({ manual: true });
+  });
+  return banner;
+}
+
+function showBackendBanner({ message, status = "loading", showRetry = false } = {}) {
+  const banner = ensureBackendStatusBanner();
+  banner.classList.remove("hidden");
+  banner.dataset.status = status;
+  if (els.backendStatusText) {
+    els.backendStatusText.textContent = message || "";
+  }
+  if (els.backendRetryBtn) {
+    els.backendRetryBtn.classList.toggle("hidden", !showRetry);
+    els.backendRetryBtn.disabled = !showRetry;
+  }
+}
+
+function hideBackendBanner() {
+  const banner = ensureBackendStatusBanner();
+  banner.dataset.status = "ready";
+  banner.classList.add("hidden");
+}
+
 function isNetworkFetchFail(err) {
   const msg = String(err?.message || err || "").toLowerCase();
   return (
@@ -1422,6 +1472,76 @@ function isNetworkFetchFail(err) {
     msg.includes("load failed") ||
     msg.includes('fetch fail') || msg.includes('netzwerkfehler')
   );
+}
+
+function warmupDelayForAttempt(attempt) {
+  return Math.min(
+    BACKEND_WARMUP_BASE_DELAY_MS * Math.pow(2, attempt),
+    BACKEND_WARMUP_MAX_DELAY_MS
+  );
+}
+
+function waitMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function checkBackendWarmup() {
+  await apiGet("/api/health");
+  const g = await apiGet("/api/google/status");
+  applyGoogleStatus(g.google || g);
+}
+
+async function warmupBackendAndRefresh({ manual = false } = {}) {
+  if (backendWarmupInProgress) return;
+  backendWarmupInProgress = true;
+  showBackendBanner({ message: "Backend startet …", status: "loading", showRetry: false });
+  setStatus(`Backend startet … (${API_BASE})`, true);
+
+  const startedAt = Date.now();
+  let attempt = 0;
+  let warmupOk = false;
+
+  while (Date.now() - startedAt < BACKEND_WARMUP_MAX_MS) {
+    try {
+      await checkBackendWarmup();
+      warmupOk = true;
+      break;
+    } catch (e) {
+      attempt += 1;
+      const delay = warmupDelayForAttempt(attempt);
+      if (Date.now() - startedAt + delay > BACKEND_WARMUP_MAX_MS) break;
+      await waitMs(delay);
+    }
+  }
+
+  if (warmupOk) {
+    hideBackendBanner();
+    backendWarmupToastShown = false;
+    try {
+      await refreshFromApi();
+      startGooglePollingOnce();
+      await render();
+    } finally {
+      backendWarmupInProgress = false;
+      setAppReady(true);
+    }
+    return;
+  }
+
+  backendWarmupInProgress = false;
+  showBackendBanner({
+    message: "Backend nicht erreichbar. Bitte erneut versuchen.",
+    status: "failed",
+    showRetry: true,
+  });
+  setStatus(`Backend nicht erreichbar (${API_BASE})`, false);
+
+  if (!backendWarmupToastShown) {
+    toast("Backend nicht erreichbar. Bitte später erneut versuchen.", "error");
+    backendWarmupToastShown = true;
+  } else if (manual) {
+    toast("Backend weiterhin nicht erreichbar.", "error");
+  }
 }
 
 async function loadPreferences({ force = false } = {}) {
