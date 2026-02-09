@@ -142,9 +142,14 @@ const COLDSTART_DEBUG_ENABLED = (() => {
   try {
     const params = new URLSearchParams(window.location.search || "");
     const hasDebugQuery = params.get("debug") === "1";
-    const host = String(window.location.hostname || "").toLowerCase();
-    const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0";
-    return hasDebugQuery || isLocalHost;
+    const hasLocalDevFlag = (() => {
+      try {
+        return window.localStorage?.getItem("calendarLocalDev") === "1";
+      } catch {
+        return false;
+      }
+    })();
+    return hasDebugQuery || hasLocalDevFlag;
   } catch {
     return false;
   }
