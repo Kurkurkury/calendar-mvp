@@ -171,6 +171,60 @@ body.app-ready .app {
   color: var(--muted);
 }
 
+.backend-status-banner {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  margin: 12px auto 0;
+  width: min(100%, var(--app-max-width));
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 10px 24px rgba(20, 4, 36, 0.2);
+}
+
+.backend-status-banner.hidden {
+  display: none;
+}
+
+.backend-status-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.backend-spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+  animation: backend-spin 0.9s linear infinite;
+  flex: 0 0 auto;
+}
+
+.backend-status-banner[data-status="failed"] .backend-spinner {
+  display: none;
+}
+
+.backend-retry-btn.hidden {
+  display: none;
+}
+
+@keyframes backend-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .title {
   display: flex;
   flex-direction: column;
