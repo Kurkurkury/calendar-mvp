@@ -296,6 +296,7 @@ const state = {
     questions: [],
     provider: "local",
   },
+  eventModalOpen: false,
   selectedEventId: null,
   selectedEventData: null,
   detailEvent: null,
@@ -560,6 +561,7 @@ function bindButtonsById(id, handler) {
 function bindViewportResize() {
   let resizeTimer = null;
   const handleResize = () => {
+    syncQuickAddLayout();
     if (!isMobile() || state.view !== "day") return;
     if (state.dayMode === "fit") {
       state.slotPx = computeSlotPxToFitDay();
@@ -1017,6 +1019,7 @@ async function boot() {
     setView("day");
   }
 
+  syncQuickAddLayout();
   bindGoogleButtons();
   bindViewportResize();
   window.addEventListener("resize", () => {
@@ -1280,6 +1283,27 @@ async function onGoogleDisconnect() {
 // -------------------- Helpers --------------------
 function isMobile() {
   return window.matchMedia?.("(max-width: 768px)").matches ?? window.innerWidth <= 768;
+}
+
+function syncQuickAddLayout() {
+  if (!els.eventModal) return;
+  const inline = isMobile();
+  if (inline) {
+    els.eventModal.classList.remove("hidden");
+    els.eventModal.setAttribute("role", "region");
+    els.eventModal.setAttribute("aria-modal", "false");
+    els.eventModal.setAttribute("aria-label", "Quick-Add");
+    els.eventBackdrop?.classList.add("hidden");
+    state.eventModalOpen = false;
+  } else {
+    els.eventModal.setAttribute("role", "dialog");
+    els.eventModal.setAttribute("aria-modal", "true");
+    els.eventModal.setAttribute("aria-label", "Quick-Add");
+    if (!state.eventModalOpen) {
+      els.eventModal.classList.add("hidden");
+      els.eventBackdrop?.classList.add("hidden");
+    }
+  }
 }
 
 function setStatus(msg, ok = true) {
@@ -3096,6 +3120,16 @@ function closeTaskModal() {
 }
 
 function openEventModal() {
+  if (isMobile()) {
+    syncQuickAddLayout();
+    resetAssistantUi();
+    if (els.eventText) {
+      els.eventText.value = "";
+      setTimeout(() => els.eventText.focus(), 0);
+    }
+    return;
+  }
+  state.eventModalOpen = true;
   els.eventBackdrop?.classList.remove("hidden");
   els.eventModal?.classList.remove("hidden");
   els.eventText.value = "";
@@ -3110,6 +3144,12 @@ function openEventModal() {
   setTimeout(() => els.eventText.focus(), 0);
 }
 function closeEventModal() {
+  if (isMobile()) {
+    state.eventModalOpen = false;
+    resetAssistantUi();
+    return;
+  }
+  state.eventModalOpen = false;
   els.eventBackdrop?.classList.add("hidden");
   els.eventModal?.classList.add("hidden");
   resetAssistantUi();

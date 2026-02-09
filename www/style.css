@@ -500,6 +500,10 @@ body.view-day .side {
   display: none;
 }
 
+.event-list.collapsed .event-quick-add {
+  display: none;
+}
+
 .event-list-header {
   display: flex;
   align-items: center;
@@ -527,11 +531,13 @@ body.view-day .side {
 
 .event-quick-add {
   display: flex;
+  flex-direction: column;
   width: 100%;
   margin-top: 10px;
+  gap: 10px;
 }
 
-.event-quick-add input {
+.event-quick-add .quick-add-input {
   width: 100%;
   max-width: 520px;
   margin: 0 auto;
@@ -542,6 +548,11 @@ body.view-day .side {
   color: #3a2350;
   font-size: 14px;
   font-weight: 600;
+}
+
+.event-quick-add .quick-add-modal {
+  max-width: 520px;
+  margin: 0 auto;
 }
 
 .event-list-items {
@@ -1245,6 +1256,40 @@ body.view-day .side {
   box-shadow: var(--shadow);
   z-index: 30;
   overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  .event-quick-add .quick-add-input {
+    display: none;
+  }
+
+  #eventBackdrop {
+    display: none;
+  }
+
+  .event-quick-add .quick-add-modal {
+    position: static;
+    transform: none;
+    width: 100%;
+    max-width: none;
+    box-shadow: none;
+  }
+
+  .event-quick-add .quick-add-modal.hidden {
+    display: block;
+  }
+
+  .event-quick-add .quick-add-modal .modalHead {
+    display: none;
+  }
+
+  .event-quick-add .quick-add-modal .modalBody {
+    padding: 12px 0 0;
+  }
+
+  .event-quick-add .quick-add-modal .modalFoot {
+    justify-content: flex-start;
+  }
 }
 .modalHead {
   display:flex; align-items:center; justify-content: space-between;
