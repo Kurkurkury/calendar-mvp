@@ -1531,6 +1531,10 @@ code{
     font-size: 18px;
   }
 
+  .month-nav {
+    display: none;
+  }
+
   .btn {
     padding: 8px 12px;
   }
@@ -1659,6 +1663,52 @@ code{
 
   .footer-status {
     text-align: center;
+  }
+
+  .bottom-nav {
+    grid-template-columns: repeat(3, 1fr);
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .bottom-nav-btn {
+    min-height: 48px;
+  }
+
+  #prevDayBtn {
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  #todayBtn {
+    justify-content: center;
+    text-align: center;
+  }
+
+  #nextDayBtn {
+    justify-content: flex-end;
+    text-align: right;
+  }
+
+  .status-chips {
+    justify-content: center;
+    gap: 4px;
+  }
+
+  .statusBadge {
+    font-size: 10px;
+    padding: 3px 8px;
+  }
+
+  .statusBadge.warn,
+  .statusBadge.ok {
+    color: var(--muted);
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  #syncStatusBadge {
+    display: none;
   }
 
   .googleActions {
