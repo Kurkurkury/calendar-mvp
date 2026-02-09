@@ -1,5 +1,29 @@
 # Calendar MVP
 
+## Single Source of Truth
+
+`PROJECT_TRUTH_FILE_FINAL.md` is the authoritative source for the project plan, phase definitions, and status. This README is a summarized, human-readable mirror of that file and should never replace it. If anything here conflicts with the truth file, the truth file wins.
+
+## Project Plan (from PROJECT_TRUTH_FILE_FINAL.md)
+
+- **Phase 1** — Completed.
+- **Phase 2** — Completed.
+- **Phase 3** — Completed.
+- **Future phases** — Refer to `PROJECT_TRUTH_FILE_FINAL.md` for the exact phase names, ordering, and goals.
+
+## Current Status (Verified)
+
+- **Phase 1:** completed
+- **Phase 2:** completed
+- **Phase 3:** completed
+
+Verified outcomes:
+- Cold-start UX verified (no blank screen, no early error toasts).
+- Render Free backend handled via loading/retry UX.
+- Google OAuth & Calendar integration stable.
+- Mobile navigation stable.
+- Debug overlay disabled by default.
+
 ## Cold-start verification steps
 
 1. Open the app with `?debug=1` (or run on localhost) to enable the cold-start debug overlay.
