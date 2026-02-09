@@ -599,6 +599,10 @@ body.view-day .side {
 
 .hidden { display:none; }
 
+.bottom-nav {
+  display: none;
+}
+
 /* ✅ NEU: kleine Infocard im Modal */
 .cardMini{
   border: 1px solid var(--line);
@@ -623,6 +627,49 @@ code{
 
 /* === MOBILE: NUR 1 TAG === */
 @media (max-width: 768px) {
+  .bottom-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 9;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    background: rgba(10, 2, 18, 0.65);
+    border-top: 1px solid var(--line);
+    backdrop-filter: blur(10px);
+    overflow: hidden;
+  }
+
+  .bottom-nav-btn {
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .bottom-nav #prevDayBtn {
+    justify-content: flex-start;
+    justify-self: start;
+    text-align: left;
+  }
+
+  .bottom-nav #btn-today {
+    justify-content: center;
+    justify-self: center;
+    text-align: center;
+  }
+
+  .bottom-nav #nextDayBtn {
+    justify-content: flex-end;
+    justify-self: end;
+    text-align: right;
+  }
 
   /* Header: nur 1 Spalte */
   #dayHeaders {
