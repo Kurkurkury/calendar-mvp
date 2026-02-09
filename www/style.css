@@ -1666,13 +1666,16 @@ code{
   }
 
   .bottom-nav {
-    grid-template-columns: repeat(3, 1fr);
-    align-items: stretch;
+    grid-template-columns: 1fr 1fr 1fr;
+    align-items: center;
     gap: 8px;
+    overflow: hidden;
   }
 
   .bottom-nav-btn {
     min-height: 48px;
+    display: flex;
+    align-items: center;
   }
 
   #prevDayBtn {
@@ -1682,6 +1685,7 @@ code{
 
   #todayBtn {
     justify-content: center;
+    justify-self: center;
     text-align: center;
   }
 
