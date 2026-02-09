@@ -15,453 +15,430 @@
   </script>
 </head>
 <body>
-  <div class="app-shell">
-    <div class="calendar-container">
-      <header class="topbar">
-        <div class="app-container topbar-grid">
-          <div class="topbar-left">
-            <nav class="weekNav" aria-label="Kalender Navigation">
-              <button id="prevWeekBtn" class="btn ghost" title="Vorherige Woche" aria-label="Vorherige Woche">←</button>
-              <button id="todayBtn" class="btn ghost" aria-label="Heute anzeigen">Heute</button>
-              <button id="nextWeekBtn" class="btn ghost" title="Nächste Woche" aria-label="Nächste Woche">→</button>
-            </nav>
+  <div class="app">
+    <header class="appbar">
+      <div class="container appbar-inner">
+        <div class="appbar-left"></div>
+        <div class="appbar-center">
+          <div class="month-header" aria-label="Monat wechseln">
+            <button id="prevMonthBtn" class="month-arrow" type="button" aria-label="Vorheriger Monat">‹</button>
+            <button id="monthNameBtn" class="month-name" type="button" aria-label="Monat wechseln">AUGUST 2013</button>
+            <button id="nextMonthBtn" class="month-arrow" type="button" aria-label="Nächster Monat">›</button>
           </div>
-          <div class="topbar-center">
-            <div class="title">
-              <div class="month-header" aria-label="Monat wechseln">
-                <button id="prevMonthBtn" class="month-arrow" type="button" aria-label="Vorheriger Monat">‹</button>
-                <button id="monthNameBtn" class="month-name" type="button" aria-label="Monat wechseln">AUGUST 2013</button>
-                <button id="nextMonthBtn" class="month-arrow" type="button" aria-label="Nächster Monat">›</button>
-              </div>
-              <div id="weekLabel" class="sub"></div>
-            </div>
-          </div>
-          <div class="topbar-right">
-            <div class="statusBadges">
-              <span id="googleStatusBadge" class="statusBadge"></span>
-              <span id="syncStatusBadge" class="statusBadge"></span>
-            </div>
-            <div class="header-actions"></div>
-            <div id="live-timestamp" class="header-date"></div>
-          </div>
+          <div id="weekLabel" class="subtitle"></div>
         </div>
-      </header>
+        <div class="appbar-right">
+          <div class="status-chips">
+            <span id="googleStatusBadge" class="statusBadge chip"></span>
+            <span id="syncStatusBadge" class="statusBadge chip"></span>
+          </div>
+          <div id="live-timestamp" class="header-date"></div>
+        </div>
+      </div>
+    </header>
 
-      <div class="app-scroll">
-        <div class="app-container">
-        <section class="agendaView">
+    <main class="content">
+      <div class="container content-inner">
+        <section class="day-scroller-section">
           <div id="dayScroller" class="day-scroller" aria-label="Tagesauswahl"></div>
-          <div class="event-list" id="eventList">
-            <div class="event-list-header">
-              <div class="event-list-title">Events &amp; Tasks</div>
-              <button id="eventListToggle" class="event-list-toggle" type="button" aria-label="Events &amp; Tasks anzeigen" aria-expanded="false">▾</button>
-            </div>
-            <div class="event-quick-add">
-              <input id="quickAddInput" class="quick-add-input" type="text" autocomplete="off" placeholder="Neues Event oder Task eingeben…" aria-label="Neues Event oder Task eingeben" />
-              <div id="eventModal" class="modal quick-add-modal hidden" role="dialog" aria-modal="true" aria-label="Quick-Add">
-                <div class="modalHead">
-                  <div class="modalTitle">Neues Event (AI Quick-Add)</div>
-                  <button id="closeEventBtn" class="btn ghost" aria-label="Event-Dialog schließen">✕</button>
+        </section>
+
+        <section class="card event-list" id="eventList">
+          <div class="event-list-header">
+            <div class="event-list-title">Events &amp; Tasks</div>
+            <button id="eventListToggle" class="event-list-toggle" type="button" aria-label="Events &amp; Tasks anzeigen" aria-expanded="false">▾</button>
+          </div>
+          <div class="event-list-body">
+            <div id="eventModal" class="event-quick-add" role="region" aria-label="Quick-Add">
+              <label class="field">
+                <span>Neues Event oder Task</span>
+                <textarea id="eventText" rows="3" placeholder="Neues Event oder Task eingeben…"></textarea>
+              </label>
+
+              <div id="assistantClarify" class="cardMini hidden">
+                <div class="cardMiniTitle">Rückfrage</div>
+                <div id="assistantQuestionList" class="assistantQuestionList"></div>
+                <label class="field small">
+                  <span>Antwort</span>
+                  <input id="assistantAnswer" type="text" placeholder="Antwort…" />
+                </label>
+                <div class="modalFoot">
+                  <button id="assistantAnswerBtn" class="btn primary" type="button">Antwort senden</button>
                 </div>
+              </div>
 
-                <div class="modalBody">
-                  <label class="field">
-                    <span>Text</span>
-                    <textarea id="eventText" rows="3" placeholder="Neues Event oder Task eingeben…"></textarea>
-                  </label>
-
-                  <div id="assistantClarify" class="cardMini hidden">
-                    <div class="cardMiniTitle">Rückfrage</div>
-                    <div id="assistantQuestionList" class="assistantQuestionList"></div>
-                    <label class="field small">
-                      <span>Antwort</span>
-                      <input id="assistantAnswer" type="text" placeholder="Antwort…" />
-                    </label>
-                    <div class="modalFoot">
-                      <button id="assistantAnswerBtn" class="btn primary" type="button">Antwort senden</button>
-                    </div>
+              <div id="assistantPreview" class="cardMini hidden">
+                <div class="cardMiniTitle">Vorschlag</div>
+                <div class="assistantPreviewBody">
+                  <div><span class="assistantLabel">Titel</span><span id="assistantPreviewTitle" class="assistantValue"></span></div>
+                  <div><span class="assistantLabel">Zeit</span><span id="assistantPreviewTime" class="assistantValue"></span></div>
+                  <div id="assistantPreviewLocationRow" class="hidden">
+                    <span class="assistantLabel">Ort</span><span id="assistantPreviewLocation" class="assistantValue"></span>
                   </div>
-
-                  <div id="assistantPreview" class="cardMini hidden">
-                    <div class="cardMiniTitle">Vorschlag</div>
-                    <div class="assistantPreviewBody">
-                      <div><span class="assistantLabel">Titel</span><span id="assistantPreviewTitle" class="assistantValue"></span></div>
-                      <div><span class="assistantLabel">Zeit</span><span id="assistantPreviewTime" class="assistantValue"></span></div>
-                      <div id="assistantPreviewLocationRow" class="hidden">
-                        <span class="assistantLabel">Ort</span><span id="assistantPreviewLocation" class="assistantValue"></span>
-                      </div>
-                      <div id="assistantPreviewDescriptionRow" class="hidden">
-                        <span class="assistantLabel">Beschreibung</span><span id="assistantPreviewDescription" class="assistantValue"></span>
-                      </div>
-                    </div>
-                    <div class="assistantPreviewActions">
-                      <button id="assistantCreateBtn" class="btn primary" type="button" disabled>Erstellen</button>
-                      <button id="assistantEditBtn" class="btn ghost" type="button">Bearbeiten</button>
-                    </div>
-                    <div class="assistantPreviewNote">Bitte bestätigen</div>
-                  </div>
-
-                  <div id="assistantNone" class="cardMini hidden">
-                    <div class="cardMiniTitle">Hinweis</div>
-                    <div class="cardMiniSub">Ich konnte keinen Termin erkennen.</div>
-                  </div>
-
-                  <div class="cardMini">
-                    <div class="cardMiniTitle">Hinweis</div>
-                    <div class="cardMiniSub">
-                      Der Text wird als Vorschlag analysiert. Erst nach deiner Bestätigung wird gespeichert.
-                    </div>
-                  </div>
-
-                  <div class="modalFoot">
-                    <button id="createEventBtn" class="btn primary" aria-label="Vorschlag erstellen">Vorschlag holen</button>
+                  <div id="assistantPreviewDescriptionRow" class="hidden">
+                    <span class="assistantLabel">Beschreibung</span><span id="assistantPreviewDescription" class="assistantValue"></span>
                   </div>
                 </div>
+                <div class="assistantPreviewActions">
+                  <button id="assistantCreateBtn" class="btn primary" type="button" disabled>Erstellen</button>
+                  <button id="assistantEditBtn" class="btn ghost" type="button">Bearbeiten</button>
+                </div>
+                <div class="assistantPreviewNote">Bitte bestätigen</div>
+              </div>
+
+              <div id="assistantNone" class="cardMini hidden">
+                <div class="cardMiniTitle">Hinweis</div>
+                <div class="cardMiniSub">Ich konnte keinen Termin erkennen.</div>
+              </div>
+
+              <div class="cardMini">
+                <div class="cardMiniTitle">Hinweis</div>
+                <div class="cardMiniSub">
+                  Der Text wird als Vorschlag analysiert. Erst nach deiner Bestätigung wird gespeichert.
+                </div>
+              </div>
+
+              <div class="quick-add-actions">
+                <button id="createEventBtn" class="btn primary" aria-label="Vorschlag erstellen">Vorschlag holen</button>
               </div>
             </div>
             <div id="dayEventList" class="event-list-items"></div>
           </div>
         </section>
 
-        <main class="layout">
-      <section class="calendar">
-        <div class="calHead">
-          <div class="timeColHead"></div>
-          <div id="dayHeaders" class="dayHeaders"></div>
-        </div>
+        <section class="content-grid">
+          <section class="card calendar-card">
+            <div class="calHead">
+              <div class="timeColHead"></div>
+              <div id="dayHeaders" class="dayHeaders"></div>
+            </div>
 
-        <div class="calBody">
-          <div id="timeCol" class="timeCol"></div>
-          <div id="grid" class="grid"></div>
-        </div>
-      </section>
+            <div class="calBody">
+              <div id="timeCol" class="timeCol"></div>
+              <div id="grid" class="grid"></div>
+            </div>
+          </section>
 
-      <aside id="sidebar" class="side sidebar" aria-label="Seitenleiste">
-      <div id="selectedEventCard" class="card hidden">
-        <div class="cardTitle">Ausgewählter Termin</div>
-        <div id="selectedEventMeta" class="cardSub"></div>
-        <div class="list eventDetails">
-          <div class="detailRow">
-            <div class="detailLabel">Titel</div>
-            <div id="selectedEventTitle" class="detailValue"></div>
+          <aside id="sidebar" class="sidebar" aria-label="Seitenleiste">
+            <div id="selectedEventCard" class="card hidden">
+              <div class="cardTitle">Ausgewählter Termin</div>
+              <div id="selectedEventMeta" class="cardSub"></div>
+              <div class="list eventDetails">
+                <div class="detailRow">
+                  <div class="detailLabel">Titel</div>
+                  <div id="selectedEventTitle" class="detailValue"></div>
+                </div>
+                <div class="detailRow">
+                  <div class="detailLabel">Datum</div>
+                  <div id="selectedEventDate" class="detailValue"></div>
+                </div>
+                <div class="detailRow">
+                  <div class="detailLabel">Start</div>
+                  <div id="selectedEventTime" class="detailValue"></div>
+                </div>
+                <div class="detailRow">
+                  <div class="detailLabel">Dauer</div>
+                  <div id="selectedEventDuration" class="detailValue"></div>
+                </div>
+                <div id="selectedEventNotesRow" class="detailRow">
+                  <div class="detailLabel">Notiz</div>
+                  <div id="selectedEventNotes" class="detailValue detailNotes"></div>
+                </div>
+              </div>
+              <div class="modalFoot">
+                <button id="selectedEventDeleteBtn" class="btn delete" type="button">Löschen</button>
+              </div>
+            </div>
+
+            <div class="card" id="weeklyLoadCard">
+              <div class="cardTitle">Wochenbelastung</div>
+              <div class="cardSub">Stresslevel &amp; Termindichte</div>
+              <div id="weekLoadSummary" class="weekLoadSummary"></div>
+              <div id="weekLoadChart" class="weekLoadChart" role="img" aria-label="Wochenbelastung pro Tag"></div>
+              <div class="cardSub" style="margin-top:12px;">Pausen-Tipps</div>
+              <div id="weekLoadSuggestions" class="weekLoadSuggestions list small"></div>
+              <div class="cardSub" style="margin-top:12px;">Beste Pausenzeit</div>
+              <div id="weekLoadBreaks" class="weekLoadBreaks list small"></div>
+            </div>
+
+            <div class="card" id="smartSuggestionsCard">
+              <div class="cardTitle">Smarte Terminoptimierung</div>
+              <div class="cardSub">Vorschläge basieren auf freien Zeiten &amp; deinen Präferenzen – es wird nichts automatisch erstellt.</div>
+              <div id="smartPreferenceSummary" class="prefSummary"></div>
+
+              <div class="list">
+                <label class="field">
+                  <span>Titel für Vorschläge</span>
+                  <input id="smartTitle" type="text" placeholder="z.B. Fokuszeit" />
+                </label>
+
+                <div class="row">
+                  <label class="field">
+                    <span>Startdatum</span>
+                    <input id="smartDate" type="date" />
+                  </label>
+                  <label class="field">
+                    <span>Dauer (Min)</span>
+                    <input id="smartDuration" type="number" min="5" step="5" value="60" />
+                  </label>
+                </div>
+
+                <div class="row">
+                  <label class="field">
+                    <span>Zeitraum (Tage)</span>
+                    <input id="smartDaysForward" type="number" min="1" max="14" step="1" value="7" />
+                  </label>
+                  <label class="field">
+                    <span>Max. Vorschläge</span>
+                    <input id="smartMaxSuggestions" type="number" min="1" max="10" step="1" value="5" />
+                  </label>
+                </div>
+
+                <div class="row">
+                  <label class="field">
+                    <span>Fenster Start</span>
+                    <input id="smartWindowStart" type="time" value="08:00" />
+                  </label>
+                  <label class="field">
+                    <span>Fenster Ende</span>
+                    <input id="smartWindowEnd" type="time" value="18:00" />
+                  </label>
+                </div>
+
+                <div class="row">
+                  <label class="field">
+                    <span>Zeitpräferenz</span>
+                    <select id="smartPreference">
+                      <option value="none">Keine Präferenz</option>
+                      <option value="morning">Vormittag</option>
+                      <option value="afternoon">Nachmittag</option>
+                      <option value="evening">Abend</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>Puffer (Min)</span>
+                    <input id="smartBuffer" type="number" min="0" max="120" step="5" value="15" />
+                  </label>
+                </div>
+
+                <div class="modalFoot">
+                  <button id="smartSuggestBtn" class="btn ghost" type="button">Smarte Vorschläge laden</button>
+                </div>
+              </div>
+
+              <div class="cardSub" style="margin-top:12px;">Vorschläge</div>
+              <div id="smartSuggestionList" class="list"></div>
+
+              <div class="cardSub" style="margin-top:12px;">Terminoptimierungen</div>
+              <div id="smartOptimizationList" class="list small"></div>
+            </div>
+
+            <div class="card" id="aiExtractCard">
+              <div class="cardTitle">AI Datei-Extraktion</div>
+              <div class="cardSub">Lade Bilder oder Dokumente hoch, um Events &amp; Tasks zu extrahieren.</div>
+
+              <div class="list">
+                <label class="field">
+                  <span>Datei auswählen</span>
+                  <input id="aiExtractInput" type="file" accept=".png,.jpg,.jpeg,.webp,.pdf,.docx" />
+                </label>
+                <div id="aiExtractDrop" class="item" role="button" tabindex="0" aria-label="Datei hier ablegen">
+                  <div class="itemTitle">Datei hier ablegen</div>
+                  <div class="itemMeta">oder klicken, um eine Datei auszuwählen</div>
+                </div>
+              </div>
+              <div id="aiExtractStatus" class="cardSub"></div>
+              <div id="aiExtractError" class="cardSub"></div>
+
+              <div class="cardSub" style="margin-top:12px;">Ergebnisse</div>
+              <div id="aiExtractResults" class="list"></div>
+
+              <div class="cardSub" style="margin-top:12px;">Warnungen</div>
+              <div id="aiExtractWarnings" class="list small"></div>
+            </div>
+
+            <div class="card" id="preferencesCard">
+              <div class="cardTitle">Nutzerpräferenzen</div>
+              <div class="cardSub">Beeinflusst smarte Vorschläge &amp; Fokusfenster.</div>
+
+              <div class="list">
+                <div class="row">
+                  <label class="field">
+                    <span>Fenster Start</span>
+                    <input id="prefWindowStart" type="time" value="08:00" />
+                  </label>
+                  <label class="field">
+                    <span>Fenster Ende</span>
+                    <input id="prefWindowEnd" type="time" value="18:00" />
+                  </label>
+                </div>
+
+                <div class="row">
+                  <label class="field">
+                    <span>Puffer (Min)</span>
+                    <input id="prefBufferMinutes" type="number" min="0" max="120" step="5" value="15" />
+                  </label>
+                  <label class="field">
+                    <span>Bevorzugte Tageszeit</span>
+                    <select id="prefTimeOfDay">
+                      <option value="auto">Automatisch lernen</option>
+                      <option value="morning">Vormittag</option>
+                      <option value="afternoon">Nachmittag</option>
+                      <option value="evening">Abend</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div class="modalFoot">
+                  <button id="prefSaveBtn" class="btn ghost" type="button">Präferenzen speichern</button>
+                </div>
+                <div id="prefStatus" class="cardSub"></div>
+              </div>
+
+              <div class="cardSub" style="margin-top:12px;">Lernstatus</div>
+              <div id="prefLearningSummary" class="prefSummary"></div>
+              <div id="prefLearningDetails" class="list small"></div>
+            </div>
+
+            <div class="card" id="monitoringCard">
+              <div class="cardTitle">Monitoring &amp; Wartung</div>
+              <div class="cardSub">Produktions-Status, Latenzen und Auffälligkeiten.</div>
+
+              <div id="monitoringStatus" class="monitorStatus"></div>
+              <div id="monitoringList" class="list small"></div>
+
+              <div class="cardSub" style="margin-top:12px;">Letzte Auffälligkeiten</div>
+              <div id="monitoringIssues" class="list small"></div>
+            </div>
+
+            <div class="card">
+              <div class="cardTitle">Neuer Termin</div>
+              <div class="cardSub">Google muss verbunden sein, damit der Termin erstellt wird.</div>
+
+              <div class="list">
+                <label class="field">
+                  <span>Titel</span>
+                  <input id="eventTitle" type="text" placeholder="z.B. Projekt-Meeting" />
+                </label>
+
+                <div class="row">
+                  <label class="field">
+                    <span>Datum</span>
+                    <input id="eventDate" type="date" />
+                  </label>
+                  <label class="field">
+                    <span>Startzeit</span>
+                    <input id="eventStartTime" type="time" />
+                  </label>
+                </div>
+
+                <div class="row">
+                  <label class="field">
+                    <span>Dauer (Min)</span>
+                    <input id="eventDuration" type="number" min="5" step="5" value="60" />
+                  </label>
+                  <label class="field">
+                    <span>Ort (optional)</span>
+                    <input id="eventLocation" type="text" placeholder="z.B. Büro Zürich" />
+                  </label>
+                </div>
+
+                <label class="field">
+                  <span>Notizen (optional)</span>
+                  <textarea id="eventNotes" rows="3" placeholder="Agenda, Links, Vorbereitung..."></textarea>
+                </label>
+
+                <div class="modalFoot">
+                  <button id="createEventFormBtn" class="btn primary" type="button" aria-label="Termin erstellen">Termin erstellen</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="cardTitle">Freie Zeiten</div>
+              <div class="cardSub">Der Assistent erkennt freie Slots. Erst freigeben, dann Termin erstellen.</div>
+
+              <div class="list">
+                <label class="field">
+                  <span>Titel (für späteren Termin)</span>
+                  <input id="freeSlotTitle" type="text" placeholder="z.B. Fokuszeit" />
+                </label>
+
+                <div class="row">
+                  <label class="field">
+                    <span>Startdatum</span>
+                    <input id="freeSlotDate" type="date" />
+                  </label>
+                  <label class="field">
+                    <span>Dauer (Min)</span>
+                    <input id="freeSlotDuration" type="number" min="5" step="5" value="60" />
+                  </label>
+                </div>
+
+                <label class="field">
+                  <span>Zeitraum (Tage)</span>
+                  <input id="freeSlotDaysForward" type="number" min="1" max="14" step="1" value="5" />
+                </label>
+
+                <div class="modalFoot">
+                  <button id="freeSlotFindBtn" class="btn ghost" type="button">Freie Zeiten finden</button>
+                </div>
+              </div>
+
+              <div class="cardSub" style="margin-top:12px;">Vorschläge (frei)</div>
+              <div id="freeSlotList" class="list"></div>
+
+              <div class="cardSub" style="margin-top:12px;">Freigegebene Slots</div>
+              <div id="approvedSlotList" class="list"></div>
+            </div>
+
+            <div class="card">
+              <div class="cardTitle">Google Events</div>
+              <div class="cardSub">Termine aus deinem Kalender (löschen synchronisiert zu Google).</div>
+              <div id="eventsList" class="list"></div>
+            </div>
+
+            <div class="card">
+              <div class="cardTitle">Inbox</div>
+              <div class="cardSub">Tasks ohne Planung</div>
+              <div id="inboxList" class="list"></div>
+            </div>
+
+            <div class="card">
+              <div class="cardTitle">Geplant</div>
+              <div class="cardSub">Tasks mit Slot</div>
+              <div id="plannedList" class="list"></div>
+            </div>
+
+            <div class="card">
+              <div class="cardTitle">Time Windows</div>
+              <div class="cardSub">vordefinierte Arbeitszeiten (editierbar in app.js)</div>
+              <div id="windowsList" class="list small"></div>
+            </div>
+          </aside>
+        </section>
+
+        <section class="card status-card" aria-label="Status">
+          <div class="cardTitle">Status</div>
+          <div id="statusLine" class="cardSub"></div>
+          <div id="googleConnectionState" class="connectionMain"></div>
+          <div class="row status-actions">
+            <button id="googleConnectBtn" class="btn ghost" type="button" aria-label="Mit Google verbinden">Mit Google verbinden</button>
+            <button id="googleDisconnectBtn" class="btn ghost" type="button" aria-label="Google Verbindung trennen">Trennen</button>
           </div>
-          <div class="detailRow">
-            <div class="detailLabel">Datum</div>
-            <div id="selectedEventDate" class="detailValue"></div>
-          </div>
-          <div class="detailRow">
-            <div class="detailLabel">Start</div>
-            <div id="selectedEventTime" class="detailValue"></div>
-          </div>
-          <div class="detailRow">
-            <div class="detailLabel">Dauer</div>
-            <div id="selectedEventDuration" class="detailValue"></div>
-          </div>
-          <div id="selectedEventNotesRow" class="detailRow">
-            <div class="detailLabel">Notiz</div>
-            <div id="selectedEventNotes" class="detailValue detailNotes"></div>
-          </div>
-        </div>
-        <div class="modalFoot">
-          <button id="selectedEventDeleteBtn" class="btn delete" type="button">Löschen</button>
-        </div>
+        </section>
       </div>
-
-      <div class="card" id="weeklyLoadCard">
-        <div class="cardTitle">Wochenbelastung</div>
-        <div class="cardSub">Stresslevel &amp; Termindichte</div>
-        <div id="weekLoadSummary" class="weekLoadSummary"></div>
-        <div id="weekLoadChart" class="weekLoadChart" role="img" aria-label="Wochenbelastung pro Tag"></div>
-        <div class="cardSub" style="margin-top:12px;">Pausen-Tipps</div>
-        <div id="weekLoadSuggestions" class="weekLoadSuggestions list small"></div>
-        <div class="cardSub" style="margin-top:12px;">Beste Pausenzeit</div>
-        <div id="weekLoadBreaks" class="weekLoadBreaks list small"></div>
-      </div>
-
-      <div class="card" id="smartSuggestionsCard">
-        <div class="cardTitle">Smarte Terminoptimierung</div>
-        <div class="cardSub">Vorschläge basieren auf freien Zeiten &amp; deinen Präferenzen – es wird nichts automatisch erstellt.</div>
-        <div id="smartPreferenceSummary" class="prefSummary"></div>
-
-        <div class="list">
-          <label class="field">
-            <span>Titel für Vorschläge</span>
-            <input id="smartTitle" type="text" placeholder="z.B. Fokuszeit" />
-          </label>
-
-          <div class="row">
-            <label class="field">
-              <span>Startdatum</span>
-              <input id="smartDate" type="date" />
-            </label>
-            <label class="field">
-              <span>Dauer (Min)</span>
-              <input id="smartDuration" type="number" min="5" step="5" value="60" />
-            </label>
-          </div>
-
-          <div class="row">
-            <label class="field">
-              <span>Zeitraum (Tage)</span>
-              <input id="smartDaysForward" type="number" min="1" max="14" step="1" value="7" />
-            </label>
-            <label class="field">
-              <span>Max. Vorschläge</span>
-              <input id="smartMaxSuggestions" type="number" min="1" max="10" step="1" value="5" />
-            </label>
-          </div>
-
-          <div class="row">
-            <label class="field">
-              <span>Fenster Start</span>
-              <input id="smartWindowStart" type="time" value="08:00" />
-            </label>
-            <label class="field">
-              <span>Fenster Ende</span>
-              <input id="smartWindowEnd" type="time" value="18:00" />
-            </label>
-          </div>
-
-          <div class="row">
-            <label class="field">
-              <span>Zeitpräferenz</span>
-              <select id="smartPreference">
-                <option value="none">Keine Präferenz</option>
-                <option value="morning">Vormittag</option>
-                <option value="afternoon">Nachmittag</option>
-                <option value="evening">Abend</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Puffer (Min)</span>
-              <input id="smartBuffer" type="number" min="0" max="120" step="5" value="15" />
-            </label>
-          </div>
-
-          <div class="modalFoot">
-            <button id="smartSuggestBtn" class="btn ghost" type="button">Smarte Vorschläge laden</button>
-          </div>
-        </div>
-
-        <div class="cardSub" style="margin-top:12px;">Vorschläge</div>
-        <div id="smartSuggestionList" class="list"></div>
-
-        <div class="cardSub" style="margin-top:12px;">Terminoptimierungen</div>
-        <div id="smartOptimizationList" class="list small"></div>
-      </div>
-
-      <div class="card" id="aiExtractCard">
-        <div class="cardTitle">AI Datei-Extraktion</div>
-        <div class="cardSub">Lade Bilder oder Dokumente hoch, um Events &amp; Tasks zu extrahieren.</div>
-
-        <div class="list">
-          <label class="field">
-            <span>Datei auswählen</span>
-            <input id="aiExtractInput" type="file" accept=".png,.jpg,.jpeg,.webp,.pdf,.docx" />
-          </label>
-          <div id="aiExtractDrop" class="item" role="button" tabindex="0" aria-label="Datei hier ablegen">
-            <div class="itemTitle">Datei hier ablegen</div>
-            <div class="itemMeta">oder klicken, um eine Datei auszuwählen</div>
-          </div>
-        </div>
-        <div id="aiExtractStatus" class="cardSub"></div>
-        <div id="aiExtractError" class="cardSub"></div>
-
-        <div class="cardSub" style="margin-top:12px;">Ergebnisse</div>
-        <div id="aiExtractResults" class="list"></div>
-
-        <div class="cardSub" style="margin-top:12px;">Warnungen</div>
-        <div id="aiExtractWarnings" class="list small"></div>
-      </div>
-
-      <div class="card" id="preferencesCard">
-        <div class="cardTitle">Nutzerpräferenzen</div>
-        <div class="cardSub">Beeinflusst smarte Vorschläge &amp; Fokusfenster.</div>
-
-        <div class="list">
-          <div class="row">
-            <label class="field">
-              <span>Fenster Start</span>
-              <input id="prefWindowStart" type="time" value="08:00" />
-            </label>
-            <label class="field">
-              <span>Fenster Ende</span>
-              <input id="prefWindowEnd" type="time" value="18:00" />
-            </label>
-          </div>
-
-          <div class="row">
-            <label class="field">
-              <span>Puffer (Min)</span>
-              <input id="prefBufferMinutes" type="number" min="0" max="120" step="5" value="15" />
-            </label>
-            <label class="field">
-              <span>Bevorzugte Tageszeit</span>
-              <select id="prefTimeOfDay">
-                <option value="auto">Automatisch lernen</option>
-                <option value="morning">Vormittag</option>
-                <option value="afternoon">Nachmittag</option>
-                <option value="evening">Abend</option>
-              </select>
-            </label>
-          </div>
-
-          <div class="modalFoot">
-            <button id="prefSaveBtn" class="btn ghost" type="button">Präferenzen speichern</button>
-          </div>
-          <div id="prefStatus" class="cardSub"></div>
-        </div>
-
-        <div class="cardSub" style="margin-top:12px;">Lernstatus</div>
-        <div id="prefLearningSummary" class="prefSummary"></div>
-        <div id="prefLearningDetails" class="list small"></div>
-      </div>
-
-      <div class="card" id="monitoringCard">
-        <div class="cardTitle">Monitoring &amp; Wartung</div>
-        <div class="cardSub">Produktions-Status, Latenzen und Auffälligkeiten.</div>
-
-        <div id="monitoringStatus" class="monitorStatus"></div>
-        <div id="monitoringList" class="list small"></div>
-
-        <div class="cardSub" style="margin-top:12px;">Letzte Auffälligkeiten</div>
-        <div id="monitoringIssues" class="list small"></div>
-      </div>
-
-      <div class="card">
-        <div class="cardTitle">Neuer Termin</div>
-        <div class="cardSub">Google muss verbunden sein, damit der Termin erstellt wird.</div>
-
-        <div class="list">
-          <label class="field">
-            <span>Titel</span>
-            <input id="eventTitle" type="text" placeholder="z.B. Projekt-Meeting" />
-          </label>
-
-          <div class="row">
-            <label class="field">
-              <span>Datum</span>
-              <input id="eventDate" type="date" />
-            </label>
-            <label class="field">
-              <span>Startzeit</span>
-              <input id="eventStartTime" type="time" />
-            </label>
-          </div>
-
-          <div class="row">
-            <label class="field">
-              <span>Dauer (Min)</span>
-              <input id="eventDuration" type="number" min="5" step="5" value="60" />
-            </label>
-            <label class="field">
-              <span>Ort (optional)</span>
-              <input id="eventLocation" type="text" placeholder="z.B. Büro Zürich" />
-            </label>
-          </div>
-
-          <label class="field">
-            <span>Notizen (optional)</span>
-            <textarea id="eventNotes" rows="3" placeholder="Agenda, Links, Vorbereitung..."></textarea>
-          </label>
-
-          <div class="modalFoot">
-            <button id="createEventFormBtn" class="btn primary" type="button" aria-label="Termin erstellen">Termin erstellen</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="cardTitle">Freie Zeiten</div>
-        <div class="cardSub">Der Assistent erkennt freie Slots. Erst freigeben, dann Termin erstellen.</div>
-
-        <div class="list">
-          <label class="field">
-            <span>Titel (für späteren Termin)</span>
-            <input id="freeSlotTitle" type="text" placeholder="z.B. Fokuszeit" />
-          </label>
-
-          <div class="row">
-            <label class="field">
-              <span>Startdatum</span>
-              <input id="freeSlotDate" type="date" />
-            </label>
-            <label class="field">
-              <span>Dauer (Min)</span>
-              <input id="freeSlotDuration" type="number" min="5" step="5" value="60" />
-            </label>
-          </div>
-
-          <label class="field">
-            <span>Zeitraum (Tage)</span>
-            <input id="freeSlotDaysForward" type="number" min="1" max="14" step="1" value="5" />
-          </label>
-
-          <div class="modalFoot">
-            <button id="freeSlotFindBtn" class="btn ghost" type="button">Freie Zeiten finden</button>
-          </div>
-        </div>
-
-        <div class="cardSub" style="margin-top:12px;">Vorschläge (frei)</div>
-        <div id="freeSlotList" class="list"></div>
-
-        <div class="cardSub" style="margin-top:12px;">Freigegebene Slots</div>
-        <div id="approvedSlotList" class="list"></div>
-      </div>
-
-      <div class="card">
-        <div class="cardTitle">Google Events</div>
-        <div class="cardSub">Termine aus deinem Kalender (löschen synchronisiert zu Google).</div>
-        <div id="eventsList" class="list"></div>
-      </div>
-
-      <div class="card">
-        <div class="cardTitle">Inbox</div>
-        <div class="cardSub">Tasks ohne Planung</div>
-        <div id="inboxList" class="list"></div>
-      </div>
-
-      <div class="card">
-        <div class="cardTitle">Geplant</div>
-        <div class="cardSub">Tasks mit Slot</div>
-        <div id="plannedList" class="list"></div>
-      </div>
-
-      <div class="card">
-        <div class="cardTitle">Time Windows</div>
-        <div class="cardSub">vordefinierte Arbeitszeiten (editierbar in app.js)</div>
-        <div id="windowsList" class="list small"></div>
-      </div>
-
-      </aside>
     </main>
-        </div>
 
-        <footer class="appFooter" aria-label="Status">
-          <div class="app-container appFooter-inner">
-            <div class="footer-status">
-              <div id="statusLine" class="sub"></div>
-              <div id="googleConnectionState" class="connectionMain"></div>
-            </div>
-            <div class="googleActions">
-              <button id="googleConnectBtn" class="btn ghost" type="button" aria-label="Mit Google verbinden">Mit Google verbinden</button>
-              <button id="googleDisconnectBtn" class="btn ghost" type="button" aria-label="Google Verbindung trennen">Trennen</button>
-            </div>
-          </div>
-        </footer>
-      </div>
-      <nav class="mobile-bottom-bar" aria-label="Tagesnavigation">
-        <button id="prevDayBtnMobile" class="btn mobile-bottom-btn" type="button">Tag zurück</button>
-        <button id="todayBtnMobile" class="btn mobile-bottom-btn" type="button">Heute</button>
-        <button id="nextDayBtnMobile" class="btn mobile-bottom-btn" type="button">Tag vor</button>
-      </nav>
-      </div>
-    </div>
+    <nav class="bottom-nav" aria-label="Tagesnavigation">
+      <button id="prevDayBtn" class="btn bottom-nav-btn" type="button">Tag zurück</button>
+      <button id="todayBtn" class="btn bottom-nav-btn" type="button">Heute</button>
+      <button id="nextDayBtn" class="btn bottom-nav-btn" type="button">Tag vor</button>
+    </nav>
   </div>
 
   <div id="sidebarOverlay" class="sidebarOverlay hidden" aria-hidden="true"></div>
 
-  <!-- New menu -->
   <div id="menuBackdrop" class="backdrop hidden"></div>
   <div id="newMenu" class="menu hidden" role="dialog" aria-modal="true">
     <div class="menuTitle">Erstellen</div>
@@ -473,7 +450,6 @@
     </div>
   </div>
 
-  <!-- Task modal -->
   <div id="modalBackdrop" class="backdrop hidden"></div>
   <div id="taskModal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modalHead">
@@ -528,8 +504,6 @@
     </div>
   </div>
 
-  <div id="eventBackdrop" class="backdrop hidden"></div>
-  <!-- Suggestion modal -->
   <div id="suggestionBackdrop" class="backdrop hidden"></div>
   <div id="suggestionModal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modalHead">
@@ -554,7 +528,6 @@
     </div>
   </div>
 
-  <!-- Edit event modal -->
   <div id="editEventBackdrop" class="backdrop hidden"></div>
   <div id="editEventModal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modalHead">
@@ -602,7 +575,6 @@
     </div>
   </div>
 
-  <!-- Event detail modal -->
   <div id="eventDetailBackdrop" class="backdrop hidden"></div>
   <div id="eventDetailModal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modalHead">
@@ -647,7 +619,6 @@
     </div>
   </div>
 
-  <!-- Event detail popup -->
   <div id="dayEventDetailBackdrop" class="backdrop hidden"></div>
   <div id="dayEventDetailPopup" class="event-popup hidden" role="dialog" aria-modal="true">
     <h2 id="dayEventDetailTitle">Event</h2>
