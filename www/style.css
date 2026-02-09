@@ -16,7 +16,7 @@
   --timecol: 64px;
   --day-gutter: 1px;
   --event-inset: 6px;
-  --app-max-width: 1240px;
+  --app-max-width: 1200px;
 
   /* Highlight für "Heute" */
   --today: #ffffff;
@@ -59,7 +59,9 @@ body.app-ready .calendar-container {
 
 .content-container,
 .app-container {
-  width: 100%;
+  width: min(100%, var(--app-max-width));
+  margin: 0 auto;
+  padding-inline: clamp(16px, 2vw, 24px);
 }
 
 .mirror-axis {
@@ -90,8 +92,7 @@ body.app-ready .calendar-container {
   z-index: 5;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 20px 0 18px;
+  padding: 18px 0 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   background: linear-gradient(140deg, #6a1b9a 0%, #d81b60 100%);
   backdrop-filter: blur(6px);
@@ -99,39 +100,16 @@ body.app-ready .calendar-container {
 }
 
 .topbar-grid {
-  position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: center;
   gap: 12px;
   width: 100%;
 }
 
-.topbar-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-}
-
-.topbar-center {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  justify-content: center;
-  text-align: center;
-}
-
-.month-title-wrap {
-  width: 100%;
-  display: flex;
-  justify-content: center;
-}
-
-.left,
-.right {
+.topbar-left,
+.topbar-right {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -141,48 +119,75 @@ body.app-ready .calendar-container {
   justify-content: flex-start;
 }
 
-.right {
-  justify-content: flex-end;
-}
-
 .topbar-right {
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-end;
+  text-align: right;
+  gap: 6px;
+}
+
+.topbar-center {
+  text-align: center;
+  justify-self: center;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   justify-content: flex-end;
 }
 
-.month-title-wrap .title {
-  pointer-events: auto;
+.header-date {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+}
+
+.weekNav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.footer-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.footer-status .sub {
+  font-size: 12px;
+  color: var(--muted);
 }
 
 @media (max-width: 720px) {
   .topbar-grid {
-    flex-direction: column;
-    align-items: stretch;
+    grid-template-columns: 1fr;
+    justify-items: stretch;
   }
 
-  .topbar-row {
-    order: 1;
-    flex-direction: column;
-    align-items: stretch;
-  }
-
+  .topbar-left,
+  .topbar-right,
   .topbar-center {
-    position: static;
-    transform: none;
-    margin-bottom: 8px;
-    order: 0;
-  }
-
-  .topbar-left {
-    width: 100%;
+    justify-content: center;
+    text-align: center;
   }
 
   .topbar-right {
-    width: 100%;
+    flex-direction: column;
+    align-items: center;
   }
 
-  .right {
-    flex-wrap: wrap;
-    justify-content: flex-start;
+  .header-actions {
+    justify-content: center;
+  }
+
+  .header-date {
+    text-align: center;
   }
 }
 
@@ -779,15 +784,20 @@ body.view-day .side {
 }
 
 .appFooter {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 16px 20px;
+  border-top: 1px solid var(--line);
   font-size: 12px;
   color: var(--muted);
-  border-top: 1px solid var(--line);
   flex: 0 0 auto;
+}
+
+.appFooter-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 14px 0 20px;
+  text-align: center;
 }
 
 .appFooter a {
@@ -1267,23 +1277,6 @@ body.view-day .side {
 .toggle input { transform: scale(1.15); }
 .toggle.big { padding: 12px; }
 
-.appFooter {
-  padding: 10px 16px 16px;
-  border-top: 1px solid var(--line);
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.appFooter a {
-  color: var(--text);
-  text-decoration: none;
-  font-weight: 700;
-}
-
-.appFooter a:hover {
-  text-decoration: underline;
-}
-
 .modalFoot { display:flex; justify-content:flex-end; padding-top: 6px; }
 
 .hidden { display:none; }
@@ -1389,29 +1382,7 @@ code{
   .topbar {
     flex-direction: column;
     align-items: stretch;
-    gap: 10px;
     padding: 10px 12px;
-  }
-
-  .topbar-content {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-  }
-
-  .month-title-wrap {
-    position: static;
-    transform: none;
-    width: 100%;
-    pointer-events: auto;
-  }
-
-  .left,
-  .right {
-    width: 100%;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 8px;
   }
 
   .title {
