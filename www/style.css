@@ -57,6 +57,13 @@ body.app-ready .calendar-container {
   min-height: 0;
 }
 
+.app-scroll {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .content-container,
 .app-container {
   width: min(100%, var(--app-max-width));
@@ -763,6 +770,10 @@ body.view-day .side {
   flex: 0 0 auto;
 }
 
+.mobile-bottom-bar {
+  display: none;
+}
+
 .appFooter-inner {
   display: flex;
   align-items: center;
@@ -1350,6 +1361,7 @@ code{
 @media (max-width: 768px) {
   :root {
     --timecol: 54px;
+    --mobile-bottom-bar-height: 68px;
   }
 
   .topbar {
@@ -1510,6 +1522,46 @@ code{
     flex-direction: column;
     align-items: center;
     gap: 12px;
+  }
+
+  .calendar-container {
+    height: 100dvh;
+  }
+
+  .app-scroll {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding-bottom: calc(var(--mobile-bottom-bar-height) + env(safe-area-inset-bottom));
+  }
+
+  .calBody {
+    overflow: visible;
+  }
+
+  .appFooter {
+    display: none;
+  }
+
+  .mobile-bottom-bar {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 25;
+    gap: 10px;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    background: rgba(22, 6, 44, 0.92);
+    border-top: 1px solid var(--line);
+    backdrop-filter: blur(8px);
+  }
+
+  .mobile-bottom-btn {
+    flex: 1;
+    min-height: 44px;
+    border-radius: 14px;
+    font-size: 14px;
   }
 
   .footer-status {

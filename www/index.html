@@ -49,7 +49,8 @@
         </div>
       </header>
 
-      <div class="app-container">
+      <div class="app-scroll">
+        <div class="app-container">
         <section class="agendaView">
           <div id="dayScroller" class="day-scroller" aria-label="Tagesauswahl"></div>
           <div class="event-list">
@@ -370,6 +371,7 @@
 
       </aside>
     </main>
+        </div>
 
         <footer class="appFooter" aria-label="Status">
           <div class="app-container appFooter-inner">
@@ -383,6 +385,12 @@
             </div>
           </div>
         </footer>
+      </div>
+      <nav class="mobile-bottom-bar" aria-label="Tagesnavigation">
+        <button id="prevDayBtnMobile" class="btn mobile-bottom-btn" type="button">Tag zurück</button>
+        <button id="todayBtnMobile" class="btn mobile-bottom-btn" type="button">Heute</button>
+        <button id="nextDayBtnMobile" class="btn mobile-bottom-btn" type="button">Tag vor</button>
+      </nav>
       </div>
     </div>
   </div>
