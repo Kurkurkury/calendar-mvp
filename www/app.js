@@ -835,24 +835,31 @@ async function boot() {
   ]);
 
   // Nav (view-aware)
-  bindButtonsById("prevWeekBtn", async () => {
+  const handlePrevDay = async () => {
     if (state.view === "month") return;
     shiftView(-1);
     await render();
-  });
-  bindButtonsById("nextWeekBtn", async () => {
+  };
+  const handleNextDay = async () => {
     if (state.view === "month") return;
     shiftView(1);
     await render();
-  });
-  bindButtonsById("prevMonthBtn", async () => { await changeMonth("prev"); });
-  bindButtonsById("nextMonthBtn", async () => { await changeMonth("next"); });
-  bindButtonsById("monthNameBtn", async () => { await changeMonth("next"); });
-  bindButtonsById("todayBtn", async () => {
+  };
+  const handleToday = async () => {
     setActiveDate(new Date());
     saveDateLocal("calendarActiveDateV1", state.activeDate);
     await render();
-  });
+  };
+
+  bindButtonsById("prevWeekBtn", handlePrevDay);
+  bindButtonsById("nextWeekBtn", handleNextDay);
+  bindButtonsById("prevDayBtnMobile", handlePrevDay);
+  bindButtonsById("nextDayBtnMobile", handleNextDay);
+  bindButtonsById("prevMonthBtn", async () => { await changeMonth("prev"); });
+  bindButtonsById("nextMonthBtn", async () => { await changeMonth("next"); });
+  bindButtonsById("monthNameBtn", async () => { await changeMonth("next"); });
+  bindButtonsById("todayBtn", handleToday);
+  bindButtonsById("todayBtnMobile", handleToday);
 
   // New menu
   bindButtonsById("btnNew", handleNewButtonClick);
