@@ -37,13 +37,13 @@ body {
   overflow: hidden;
 }
 
-body:not(.app-ready) .calendar-container {
+body:not(.app-ready) .app {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
 }
 
-body.app-ready .calendar-container {
+body.app-ready .app {
   opacity: 1;
   visibility: visible;
 }
@@ -1717,3 +1717,188 @@ code{
 }
 /* Kommentar: Flex-Layout mit body+topbar verhindert Overflow/Double-Scroll; timecol-Variable hält Grid und Spaltenbreite synchron. */
 /* Scroll-Puffer verbessert Mobile Touch/Lesbarkeit am Tagesende */
+
+/* ===== V2 Layout overrides ===== */
+.app {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.appbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+  padding-top: env(safe-area-inset-top);
+}
+
+.appbar-inner {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 12px 0 10px;
+}
+
+.appbar-center {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.appbar-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.status-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.subtitle {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.container {
+  width: min(100%, var(--app-max-width));
+  margin: 0 auto;
+  padding-inline: clamp(16px, 2vw, 24px);
+}
+
+.content {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 16px 0 calc(84px + env(safe-area-inset-bottom));
+}
+
+.content-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.day-scroller-section {
+  width: 100%;
+}
+
+.event-list {
+  margin-top: 0;
+}
+
+.event-list-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.event-list.collapsed .event-list-body {
+  display: none;
+}
+
+.event-quick-add {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.quick-add-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.content-grid {
+  display: grid;
+  gap: 16px;
+}
+
+@media (min-width: 960px) {
+  .content-grid {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.status-card .status-actions {
+  margin-top: 12px;
+  gap: 10px;
+}
+
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  background: rgba(10, 2, 18, 0.65);
+  border-top: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+}
+
+.bottom-nav-btn {
+  width: 100%;
+  justify-content: center;
+  padding: 12px 10px;
+  font-weight: 700;
+}
+
+.calendar-card {
+  overflow: hidden;
+}
+
+.header-date {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+@media (max-width: 640px) {
+  .appbar-inner {
+    grid-template-columns: auto;
+  }
+
+  .appbar-left {
+    display: none;
+  }
+
+  .appbar-right {
+    align-items: center;
+    text-align: center;
+  }
+
+  .status-chips {
+    justify-content: center;
+  }
+}

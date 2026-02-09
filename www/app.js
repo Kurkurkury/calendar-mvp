@@ -408,7 +408,6 @@ const els = {
   dayEventList: byId("dayEventList"),
   eventList: byId("eventList"),
   eventListToggle: byId("eventListToggle"),
-  quickAddInput: byId("quickAddInput"),
   dayEventDetailBackdrop: byId("dayEventDetailBackdrop"),
   dayEventDetailPopup: byId("dayEventDetailPopup"),
   dayEventDetailTitle: byId("dayEventDetailTitle"),
@@ -418,9 +417,9 @@ const els = {
   dayEventDetailDescription: byId("dayEventDetailDescription"),
   closeDayEventDetailBtn: byId("closeDayEventDetailBtn"),
 
-  prevWeekBtn: byId("prevWeekBtn"),
   todayBtn: byId("todayBtn"),
-  nextWeekBtn: byId("nextWeekBtn"),
+  prevDayBtn: byId("prevDayBtn"),
+  nextDayBtn: byId("nextDayBtn"),
   prevMonthBtn: byId("prevMonthBtn"),
   monthNameBtn: byId("monthNameBtn"),
   nextMonthBtn: byId("nextMonthBtn"),
@@ -835,9 +834,9 @@ async function boot() {
   setActiveDate(state.activeDate);
 
   warnDuplicateIds([
-    "prevWeekBtn",
+    "prevDayBtn",
     "todayBtn",
-    "nextWeekBtn",
+    "nextDayBtn",
     "prevMonthBtn",
     "monthNameBtn",
     "nextMonthBtn",
@@ -863,15 +862,12 @@ async function boot() {
     await render();
   };
 
-  bindButtonsById("prevWeekBtn", handlePrevDay);
-  bindButtonsById("nextWeekBtn", handleNextDay);
-  bindButtonsById("prevDayBtnMobile", handlePrevDay);
-  bindButtonsById("nextDayBtnMobile", handleNextDay);
+  bindButtonsById("prevDayBtn", handlePrevDay);
+  bindButtonsById("nextDayBtn", handleNextDay);
   bindButtonsById("prevMonthBtn", async () => { await changeMonth("prev"); });
   bindButtonsById("nextMonthBtn", async () => { await changeMonth("next"); });
   bindButtonsById("monthNameBtn", async () => { await changeMonth("next"); });
   bindButtonsById("todayBtn", handleToday);
-  bindButtonsById("todayBtnMobile", handleToday);
 
   // New menu
   els.closeMenuBtn?.addEventListener("click", closeMenu);
@@ -880,10 +876,10 @@ async function boot() {
   els.eventListToggle?.addEventListener("click", () => {
     setDayEventListCollapsed(!state.dayEventListCollapsed);
   });
-  els.quickAddInput?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !event.isComposing) {
+  els.eventText?.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       event.preventDefault();
-      submitQuickAddInput();
+      els.createEventBtn?.click();
     }
   });
 
@@ -1287,23 +1283,11 @@ function isMobile() {
 
 function syncQuickAddLayout() {
   if (!els.eventModal) return;
-  const inline = isMobile();
-  if (inline) {
-    els.eventModal.classList.remove("hidden");
-    els.eventModal.setAttribute("role", "region");
-    els.eventModal.setAttribute("aria-modal", "false");
-    els.eventModal.setAttribute("aria-label", "Quick-Add");
-    els.eventBackdrop?.classList.add("hidden");
-    state.eventModalOpen = false;
-  } else {
-    els.eventModal.setAttribute("role", "dialog");
-    els.eventModal.setAttribute("aria-modal", "true");
-    els.eventModal.setAttribute("aria-label", "Quick-Add");
-    if (!state.eventModalOpen) {
-      els.eventModal.classList.add("hidden");
-      els.eventBackdrop?.classList.add("hidden");
-    }
-  }
+  els.eventModal.classList.remove("hidden");
+  els.eventModal.setAttribute("role", "region");
+  els.eventModal.setAttribute("aria-modal", "false");
+  els.eventModal.setAttribute("aria-label", "Quick-Add");
+  state.eventModalOpen = false;
 }
 
 function setStatus(msg, ok = true) {
@@ -3063,23 +3047,6 @@ function handleNewButtonClick() {
 
 window.openNewEventForm = openNewEventForm;
 
-function submitQuickAddInput() {
-  const text = (els.quickAddInput?.value || "").trim();
-  if (!text) {
-    uiNotify("error", "Bitte Event- oder Task-Text eingeben.");
-    els.quickAddInput?.focus?.();
-    return;
-  }
-  if (els.quickAddInput) {
-    els.quickAddInput.value = "";
-  }
-  openEventModal();
-  if (els.eventText) {
-    els.eventText.value = text;
-  }
-  void createEventFromText();
-}
-
 function openSidebarDrawer() {
   if (!isMobile()) return;
   els.sidebar?.classList.add("open");
@@ -3120,19 +3087,11 @@ function closeTaskModal() {
 }
 
 function openEventModal() {
-  if (isMobile()) {
-    syncQuickAddLayout();
-    resetAssistantUi();
-    if (els.eventText) {
-      els.eventText.value = "";
-      setTimeout(() => els.eventText.focus(), 0);
-    }
-    return;
+  syncQuickAddLayout();
+  resetAssistantUi();
+  if (els.eventText) {
+    els.eventText.value = "";
   }
-  state.eventModalOpen = true;
-  els.eventBackdrop?.classList.remove("hidden");
-  els.eventModal?.classList.remove("hidden");
-  els.eventText.value = "";
   state.assistant = {
     originalText: "",
     proposal: null,
@@ -3141,17 +3100,10 @@ function openEventModal() {
     provider: determineAssistantProvider(),
   };
   resetAssistantUi();
-  setTimeout(() => els.eventText.focus(), 0);
+  setTimeout(() => els.eventText?.focus(), 0);
 }
 function closeEventModal() {
-  if (isMobile()) {
-    state.eventModalOpen = false;
-    resetAssistantUi();
-    return;
-  }
   state.eventModalOpen = false;
-  els.eventBackdrop?.classList.add("hidden");
-  els.eventModal?.classList.add("hidden");
   resetAssistantUi();
 }
 
