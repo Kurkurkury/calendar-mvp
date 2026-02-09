@@ -1,28 +1,6 @@
-const API_BASE = (() => {
-  const params = new URLSearchParams(window.location.search || "");
-  const override = (params.get("api") || "").toLowerCase();
-  if (override === "live") return "https://calendar-api-v2.onrender.com";
-  if (override === "local") return "http://localhost:3000";
-
-  const hostname = (window.location.hostname || "").toLowerCase();
-  if (hostname === "localhost" || hostname === "127.0.0.1") {
-    return "http://localhost:3000";
-  }
-
-  if (hostname.startsWith("192.168.") || hostname.startsWith("10.")) {
-    return "http://localhost:3000";
-  }
-
-  const octets = hostname.split(".");
-  if (octets.length === 4 && octets[0] === "172") {
-    const second = Number.parseInt(octets[1], 10);
-    if (!Number.isNaN(second) && second >= 16 && second <= 31) {
-      return "http://localhost:3000";
-    }
-  }
-
-  return "https://calendar-api-v2.onrender.com";
-})();
+const API_BASE = window.Capacitor
+  ? "https://calendar-api-v2.onrender.com"
+  : "http://localhost:3000";
 const API_BASE_CLEAN = String(API_BASE || "").replace(/\/+$/, "");
 
 const IS_NATIVE =
@@ -1492,6 +1470,8 @@ async function refreshMonitoring({ force = false } = {}) {
 async function refreshFromApi() {
   let hadNetworkFailure = false;
   let hadApiFailure = false;
+  let healthCheckFailed = false;
+  let googleStatusLoaded = false;
   const cachedEvents = loadLastKnownGoogleEvents();
   const existingEvents = Array.isArray(state.events) ? state.events : [];
   let usedCachedEvents = false;
@@ -1500,6 +1480,7 @@ async function refreshFromApi() {
   try {
     await apiGet("/api/health");
   } catch (e) {
+    healthCheckFailed = true;
     if (isNetworkFetchFail(e)) {
       hadNetworkFailure = true;
     } else {
@@ -1510,6 +1491,7 @@ async function refreshFromApi() {
   try {
     const g = await apiGet("/api/google/status");
     applyGoogleStatus(g.google || g);
+    googleStatusLoaded = true;
   } catch (e) {
     if (isNetworkFetchFail(e)) {
       hadNetworkFailure = true;
@@ -1604,10 +1586,14 @@ async function refreshFromApi() {
 
   if (googleEventsNotice) {
     setStatus(googleEventsNotice, true);
+  } else if (healthCheckFailed) {
+    setStatus(`Backend nicht erreichbar (${API_BASE})`, true);
   } else if (hadNetworkFailure) {
-    setStatus(`Offline 📴 (${API_BASE}) • ${googleStatusText()}`, true);
+    const statusSuffix = googleStatusLoaded ? ` • ${googleStatusText()}` : "";
+    setStatus(`Offline 📴 (${API_BASE})${statusSuffix}`, true);
   } else if (hadApiFailure) {
-    setStatus(`API Problem ⚠️ (${API_BASE}) • ${googleStatusText()}`, true);
+    const statusSuffix = googleStatusLoaded ? ` • ${googleStatusText()}` : "";
+    setStatus(`API Problem ⚠️ (${API_BASE})${statusSuffix}`, true);
   } else {
     setStatus(`API: verbunden ✅ (${API_BASE}) • ${googleUiStatusLine()}`, !state.google?.wrongAccount);
   }
