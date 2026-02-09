@@ -162,7 +162,7 @@ async function openExternal(url) {
     await window.Capacitor.Plugins.Browser.open({ url });
     return;
   }
-  window.open(url, "_blank", "noopener,noreferrer");
+  window.location.href = url;
 }
 
 let gcalPollTimer = null;
@@ -288,6 +288,7 @@ const state = {
   tasks: [],
   events: [],
   google: { configured: false, connected: false, hasTokens: false, watchActive: false, reason: "", scopes: "" },
+  googleAuthPossible: null,
   editingEvent: null,
   assistant: {
     originalText: "",
@@ -1051,14 +1052,63 @@ function bindGoogleButtons() {
   updateGoogleButtons();
 }
 
+let googleAuthCheckPromise = null;
+
+async function resolveGoogleAuthUrl() {
+  const authPath = IS_NATIVE ? "/api/google/auth-url?platform=android" : "/api/google/auth-url";
+  console.log("[google] resolve auth url", authPath);
+  try {
+    const out = await apiGet(authPath);
+    const url = out?.url;
+    if (!url) {
+      return { ok: false, message: "auth-url missing" };
+    }
+    return { ok: true, url, raw: out };
+  } catch (e) {
+    const message =
+      e?._meta?.body?.json?.message ||
+      e?.message ||
+      "Google OAuth ist im Backend nicht konfiguriert.";
+    return { ok: false, message, error: e };
+  }
+}
+
+function getEffectiveGoogleConfigured() {
+  return !!state.google?.configured || state.googleAuthPossible === true;
+}
+
+function ensureGoogleAuthPossible() {
+  if (state.googleAuthPossible !== null || googleAuthCheckPromise) return;
+  googleAuthCheckPromise = resolveGoogleAuthUrl()
+    .then((result) => {
+      state.googleAuthPossible = !!result.ok;
+      if (result.ok) {
+        state.google = { ...state.google, configured: true };
+      }
+      updateGoogleButtons();
+      updateConnectionStatus();
+    })
+    .catch(() => {
+      state.googleAuthPossible = false;
+      updateGoogleButtons();
+      updateConnectionStatus();
+    })
+    .finally(() => {
+      googleAuthCheckPromise = null;
+    });
+}
+
 function updateGoogleButtons() {
   const g = state.google || {};
   const connected = !!g.connected;
-  const configured = !!g.configured;
+  const configured = getEffectiveGoogleConfigured();
   const wrong = !!g.wrongAccount;
 
   els.googleConnectBtns.forEach(btn => {
-    btn.disabled = !configured;
+    const connecting = !!state.isConnecting;
+    btn.disabled = connecting;
+    btn.classList.toggle("is-disabled", !configured || connecting);
+    btn.setAttribute("aria-disabled", configured ? "false" : "true");
     btn.title = configured ? '' : 'Backend: Google OAuth ist nicht konfiguriert (ENV Vars fehlen)';
     // If wrong account: keep connect visible so user can reconnect
     btn.style.display = connected && !wrong ? 'none' : '';
@@ -1097,12 +1147,15 @@ function applyGoogleStatus(raw) {
   state.google = normalizeGoogleStatus(raw);
   updateGoogleButtons();
   updateConnectionStatus();
+  if (!state.google?.configured) {
+    ensureGoogleAuthPossible();
+  }
 }
 
 function updateConnectionStatus() {
   const g = state.google || {};
   const connected = !!g.connected;
-  const configured = !!g.configured;
+  const configured = getEffectiveGoogleConfigured();
 
   if (els.googleConnectionState) {
     let text = "Nicht verbunden";
@@ -1157,7 +1210,7 @@ function updateConnectionStatus() {
 
 function googleUiStatusLine() {
   const g = state.google || {};
-  if (!g.configured) return 'Google: nicht konfiguriert ⚪';
+  if (!getEffectiveGoogleConfigured()) return 'Google: nicht konfiguriert ⚪';
   if (!g.connected) return 'Google: nicht verbunden 🟡';
 
   const email = g.connectedEmail ? String(g.connectedEmail) : 'verbunden';
@@ -1192,6 +1245,24 @@ async function pollGoogleConnected({ timeoutMs = 90_000, intervalMs = 2000 } = {
 }
 
 async function onGoogleConnect() {
+  console.log("[google] connect clicked");
+  const authResult = await resolveGoogleAuthUrl();
+  if (!authResult.ok || !authResult.url) {
+    const reason = authResult.message || "Google OAuth ist im Backend nicht konfiguriert.";
+    console.log("[google] auth url unavailable", reason);
+    state.googleAuthPossible = false;
+    setStatus(reason, false);
+    uiNotify("error", reason);
+    updateGoogleButtons();
+    updateConnectionStatus();
+    return;
+  }
+  console.log("[google] auth url resolved", authResult.url);
+  state.googleAuthPossible = true;
+  state.google = { ...state.google, configured: true };
+  updateGoogleButtons();
+  updateConnectionStatus();
+
   const disclosureText = "Die App greift auf deinen Google Kalender zu, um Termine anzuzeigen und zu erstellen.";
   const confirmed = window.confirm(`${disclosureText}\n\nMöchtest du fortfahren?`);
   if (!confirmed) {
@@ -1211,12 +1282,7 @@ async function onGoogleConnect() {
   uiNotify("info", "Lädt…");
   setStatus("Lädt… Verbindung zu Google wird aufgebaut.", true);
   try {
-    const authUrl = IS_NATIVE ? "/api/google/auth-url?platform=android" : "/api/google/auth-url";
-    const out = await apiGet(authUrl);
-    const url = out?.url;
-    if (!url) throw new Error('auth-url missing');
-
-    // Open OAuth in a new tab/window
+    const url = authResult.url;
     await openExternal(url);
 
     uiNotify('success', 'Google Login geöffnet – nach erfolgreichem Login verbindet die App automatisch…');
@@ -2077,14 +2143,23 @@ function renderDayEventList() {
     icon.setAttribute("aria-label", "Event-Details anzeigen");
     icon.setAttribute("aria-expanded", "false");
     icon.textContent = "›";
-    icon.addEventListener("click", (event) => {
-      event.stopPropagation();
+    const toggleDetails = () => {
       const isExpanded = card.classList.toggle("expanded");
       icon.setAttribute("aria-expanded", String(isExpanded));
       icon.setAttribute(
         "aria-label",
         isExpanded ? "Event-Details verbergen" : "Event-Details anzeigen",
       );
+    };
+
+    icon.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleDetails();
+    });
+
+    card.addEventListener("click", (event) => {
+      if (event.target.closest("button")) return;
+      toggleDetails();
     });
 
     const detailPanel = document.createElement("div");
