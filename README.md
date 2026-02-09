@@ -6,10 +6,25 @@
 
 ## Project Plan (from PROJECT_TRUTH_FILE_FINAL.md)
 
-- **Phase 1** — Completed.
-- **Phase 2** — Completed.
-- **Phase 3** — Completed.
-- **Future phases** — Refer to `PROJECT_TRUTH_FILE_FINAL.md` for the exact phase names, ordering, and goals.
+### Phase 1 [COMPLETED]
+- **Goal:** Refer to `PROJECT_TRUTH_FILE_FINAL.md`.
+- **Guiding question:** Refer to `PROJECT_TRUTH_FILE_FINAL.md`.
+- **Includes (short list):** Refer to `PROJECT_TRUTH_FILE_FINAL.md`.
+
+### Phase 2 [COMPLETED]
+- **Goal:** Refer to `PROJECT_TRUTH_FILE_FINAL.md`.
+- **Guiding question:** Refer to `PROJECT_TRUTH_FILE_FINAL.md`.
+- **Includes (short list):** Refer to `PROJECT_TRUTH_FILE_FINAL.md`.
+
+### Phase 3 [COMPLETED]
+- **Goal:** Refer to `PROJECT_TRUTH_FILE_FINAL.md`.
+- **Guiding question:** Refer to `PROJECT_TRUTH_FILE_FINAL.md`.
+- **Includes (short list):** Refer to `PROJECT_TRUTH_FILE_FINAL.md`.
+
+### Future phases [FUTURE]
+- **Goal:** Refer to `PROJECT_TRUTH_FILE_FINAL.md` for exact phase names, ordering, and goals.
+- **Guiding question:** Refer to `PROJECT_TRUTH_FILE_FINAL.md`.
+- **Includes (short list):** Refer to `PROJECT_TRUTH_FILE_FINAL.md`.
 
 ## Current Status (Verified)
 
