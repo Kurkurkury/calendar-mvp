@@ -74,7 +74,13 @@ function uiNotify(type, message) {
     toast.style.zIndex = "99999";
     toast.style.padding = "10px 12px";
     toast.style.borderRadius = "12px";
-    toast.style.background = type === "error" ? "rgba(180, 0, 0, 0.92)" : "rgba(0, 120, 0, 0.92)";
+    if (type === "error") {
+      toast.style.background = "rgba(180, 0, 0, 0.92)";
+    } else if (type === "warning") {
+      toast.style.background = "rgba(196, 120, 0, 0.92)";
+    } else {
+      toast.style.background = "rgba(0, 120, 0, 0.92)";
+    }
     toast.style.color = "white";
     toast.style.fontWeight = "700";
     toast.style.fontSize = "14px";
@@ -277,6 +283,7 @@ const state = {
   selectedDay: null,
   weekStart: startOfWeek(new Date()),
   dayMode: INITIAL_DAY_MODE,
+  dayEventListCollapsed: loadLocal("dayEventListCollapsedV1", true),
 
   tasks: [],
   events: [],
@@ -398,6 +405,9 @@ const els = {
 
   dayScroller: byId("dayScroller"),
   dayEventList: byId("dayEventList"),
+  eventList: byId("eventList"),
+  eventListToggle: byId("eventListToggle"),
+  quickAddInput: byId("quickAddInput"),
   dayEventDetailBackdrop: byId("dayEventDetailBackdrop"),
   dayEventDetailPopup: byId("dayEventDetailPopup"),
   dayEventDetailTitle: byId("dayEventDetailTitle"),
@@ -829,7 +839,7 @@ async function boot() {
     "prevMonthBtn",
     "monthNameBtn",
     "nextMonthBtn",
-    "btnNew",
+    "eventListToggle",
     "googleConnectBtn",
     "googleDisconnectBtn",
   ]);
@@ -862,9 +872,18 @@ async function boot() {
   bindButtonsById("todayBtnMobile", handleToday);
 
   // New menu
-  bindButtonsById("btnNew", handleNewButtonClick);
   els.closeMenuBtn?.addEventListener("click", closeMenu);
   els.menuBackdrop?.addEventListener("click", closeMenu);
+
+  els.eventListToggle?.addEventListener("click", () => {
+    setDayEventListCollapsed(!state.dayEventListCollapsed);
+  });
+  els.quickAddInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.isComposing) {
+      event.preventDefault();
+      submitQuickAddInput();
+    }
+  });
 
   els.sidebarOverlay?.addEventListener("click", closeSidebarDrawer);
   document.addEventListener("keydown", (event) => {
@@ -1448,42 +1467,48 @@ async function refreshFromApi() {
   }
 
   // Phase 2 Sync: Anzeige basiert ausschließlich auf Google-Events (Single Source of Truth)
-  setSyncLoading(true);
-  try {
-    let eventsRes = null;
+  const shouldFetchGoogleEvents = state.google?.connected === true;
+  if (shouldFetchGoogleEvents) {
+    setSyncLoading(true);
     try {
-      eventsRes = await apiGetGoogleEvents();
-    } catch (e) {
-      console.error("Fehler beim Laden von /api/google/events", e);
-      uiNotify("error", "Google-Events konnten nicht geladen werden – zeige letzte gespeicherte Daten (Cache).");
-      googleEventsNotice = "Google-Events konnten nicht geladen werden – zeige letzte gespeicherte Daten (Cache).";
-      if (Array.isArray(cachedEvents)) {
-        state.events = cachedEvents;
-        usedCachedEvents = true;
+      let eventsRes = null;
+      try {
+        eventsRes = await apiGetGoogleEvents();
+      } catch (e) {
+        console.error("Fehler beim Laden von /api/google/events", e);
+        uiNotify("warning", "Google-Events konnten nicht geladen werden – zeige letzte gespeicherte Daten (Cache).");
+        googleEventsNotice = "Google-Events konnten nicht geladen werden – zeige letzte gespeicherte Daten (Cache).";
+        if (Array.isArray(cachedEvents)) {
+          state.events = cachedEvents;
+          usedCachedEvents = true;
+        }
+        throw e;
       }
-      throw e;
-    }
 
-    if (eventsRes?.ok === true && Array.isArray(eventsRes.events)) {
-      state.events = eventsRes.events;
-      saveLastKnownGoogleEvents(state.events);
-    } else {
-      uiNotify("error", "Google-Events konnten nicht geladen werden – zeige letzte gespeicherte Daten (Cache).");
-      googleEventsNotice = "Google-Events konnten nicht geladen werden – zeige letzte gespeicherte Daten (Cache).";
-      if (Array.isArray(cachedEvents)) {
-        state.events = cachedEvents;
-        usedCachedEvents = true;
+      if (eventsRes?.ok === true && Array.isArray(eventsRes.events)) {
+        state.events = eventsRes.events;
+        saveLastKnownGoogleEvents(state.events);
+      } else {
+        uiNotify("warning", "Google-Events konnten nicht geladen werden – zeige letzte gespeicherte Daten (Cache).");
+        googleEventsNotice = "Google-Events konnten nicht geladen werden – zeige letzte gespeicherte Daten (Cache).";
+        if (Array.isArray(cachedEvents)) {
+          state.events = cachedEvents;
+          usedCachedEvents = true;
+        }
       }
+    } catch (e) {
+      if (!usedCachedEvents) {
+        state.events = existingEvents;
+      }
+    } finally {
+      if (!Array.isArray(state.events)) {
+        state.events = existingEvents;
+      }
+      setSyncLoading(false);
     }
-  } catch (e) {
-    if (!usedCachedEvents) {
-      state.events = existingEvents;
-    }
-  } finally {
-    if (!Array.isArray(state.events)) {
-      state.events = existingEvents;
-    }
-    setSyncLoading(false);
+  } else if (Array.isArray(cachedEvents)) {
+    state.events = cachedEvents;
+    usedCachedEvents = true;
   }
 
   if (state.google?.connected === false && Array.isArray(cachedEvents)) {
@@ -1794,6 +1819,7 @@ function renderDayView() {
 function renderDayAgenda() {
   renderDayScroller();
   renderDayEventList();
+  updateDayEventListCollapse();
 }
 
 function renderWeekView() {
@@ -2086,6 +2112,26 @@ function renderDayEventList() {
 
     els.dayEventList.appendChild(card);
   });
+}
+
+function updateDayEventListCollapse() {
+  if (!els.eventList) return;
+  const collapsed = !!state.dayEventListCollapsed;
+  els.eventList.classList.toggle("collapsed", collapsed);
+  if (els.eventListToggle) {
+    els.eventListToggle.setAttribute("aria-expanded", String(!collapsed));
+    els.eventListToggle.setAttribute(
+      "aria-label",
+      collapsed ? "Events & Tasks anzeigen" : "Events & Tasks verbergen",
+    );
+    els.eventListToggle.textContent = collapsed ? "▾" : "▴";
+  }
+}
+
+function setDayEventListCollapsed(collapsed) {
+  state.dayEventListCollapsed = collapsed;
+  saveLocal("dayEventListCollapsedV1", collapsed);
+  updateDayEventListCollapse();
 }
 
 // ---- the rest of your file is unchanged below ----
@@ -2992,6 +3038,23 @@ function handleNewButtonClick() {
 }
 
 window.openNewEventForm = openNewEventForm;
+
+function submitQuickAddInput() {
+  const text = (els.quickAddInput?.value || "").trim();
+  if (!text) {
+    uiNotify("error", "Bitte Event- oder Task-Text eingeben.");
+    els.quickAddInput?.focus?.();
+    return;
+  }
+  if (els.quickAddInput) {
+    els.quickAddInput.value = "";
+  }
+  openEventModal();
+  if (els.eventText) {
+    els.eventText.value = text;
+  }
+  void createEventFromText();
+}
 
 function openSidebarDrawer() {
   if (!isMobile()) return;

@@ -41,9 +41,7 @@
               <span id="googleStatusBadge" class="statusBadge"></span>
               <span id="syncStatusBadge" class="statusBadge"></span>
             </div>
-            <div class="header-actions">
-              <button id="btnNew" class="btn primary fab" aria-label="Neuen Eintrag erstellen">+ Neu</button>
-            </div>
+            <div class="header-actions"></div>
             <div id="live-timestamp" class="header-date"></div>
           </div>
         </div>
@@ -53,9 +51,15 @@
         <div class="app-container">
         <section class="agendaView">
           <div id="dayScroller" class="day-scroller" aria-label="Tagesauswahl"></div>
-          <div class="event-list">
-            <div class="event-list-title">Events &amp; Tasks</div>
+          <div class="event-list" id="eventList">
+            <div class="event-list-header">
+              <div class="event-list-title">Events &amp; Tasks</div>
+              <button id="eventListToggle" class="event-list-toggle" type="button" aria-label="Events &amp; Tasks anzeigen" aria-expanded="false">▾</button>
+            </div>
             <div id="dayEventList" class="event-list-items"></div>
+            <div class="event-quick-add">
+              <input id="quickAddInput" type="text" autocomplete="off" placeholder="Neues Event oder Task eingeben…" aria-label="Neues Event oder Task eingeben" />
+            </div>
           </div>
         </section>
 
