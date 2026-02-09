@@ -56,10 +56,70 @@
               <div class="event-list-title">Events &amp; Tasks</div>
               <button id="eventListToggle" class="event-list-toggle" type="button" aria-label="Events &amp; Tasks anzeigen" aria-expanded="false">▾</button>
             </div>
-            <div id="dayEventList" class="event-list-items"></div>
             <div class="event-quick-add">
-              <input id="quickAddInput" type="text" autocomplete="off" placeholder="Neues Event oder Task eingeben…" aria-label="Neues Event oder Task eingeben" />
+              <input id="quickAddInput" class="quick-add-input" type="text" autocomplete="off" placeholder="Neues Event oder Task eingeben…" aria-label="Neues Event oder Task eingeben" />
+              <div id="eventModal" class="modal quick-add-modal hidden" role="dialog" aria-modal="true" aria-label="Quick-Add">
+                <div class="modalHead">
+                  <div class="modalTitle">Neues Event (AI Quick-Add)</div>
+                  <button id="closeEventBtn" class="btn ghost" aria-label="Event-Dialog schließen">✕</button>
+                </div>
+
+                <div class="modalBody">
+                  <label class="field">
+                    <span>Text</span>
+                    <textarea id="eventText" rows="3" placeholder="Neues Event oder Task eingeben…"></textarea>
+                  </label>
+
+                  <div id="assistantClarify" class="cardMini hidden">
+                    <div class="cardMiniTitle">Rückfrage</div>
+                    <div id="assistantQuestionList" class="assistantQuestionList"></div>
+                    <label class="field small">
+                      <span>Antwort</span>
+                      <input id="assistantAnswer" type="text" placeholder="Antwort…" />
+                    </label>
+                    <div class="modalFoot">
+                      <button id="assistantAnswerBtn" class="btn primary" type="button">Antwort senden</button>
+                    </div>
+                  </div>
+
+                  <div id="assistantPreview" class="cardMini hidden">
+                    <div class="cardMiniTitle">Vorschlag</div>
+                    <div class="assistantPreviewBody">
+                      <div><span class="assistantLabel">Titel</span><span id="assistantPreviewTitle" class="assistantValue"></span></div>
+                      <div><span class="assistantLabel">Zeit</span><span id="assistantPreviewTime" class="assistantValue"></span></div>
+                      <div id="assistantPreviewLocationRow" class="hidden">
+                        <span class="assistantLabel">Ort</span><span id="assistantPreviewLocation" class="assistantValue"></span>
+                      </div>
+                      <div id="assistantPreviewDescriptionRow" class="hidden">
+                        <span class="assistantLabel">Beschreibung</span><span id="assistantPreviewDescription" class="assistantValue"></span>
+                      </div>
+                    </div>
+                    <div class="assistantPreviewActions">
+                      <button id="assistantCreateBtn" class="btn primary" type="button" disabled>Erstellen</button>
+                      <button id="assistantEditBtn" class="btn ghost" type="button">Bearbeiten</button>
+                    </div>
+                    <div class="assistantPreviewNote">Bitte bestätigen</div>
+                  </div>
+
+                  <div id="assistantNone" class="cardMini hidden">
+                    <div class="cardMiniTitle">Hinweis</div>
+                    <div class="cardMiniSub">Ich konnte keinen Termin erkennen.</div>
+                  </div>
+
+                  <div class="cardMini">
+                    <div class="cardMiniTitle">Hinweis</div>
+                    <div class="cardMiniSub">
+                      Der Text wird als Vorschlag analysiert. Erst nach deiner Bestätigung wird gespeichert.
+                    </div>
+                  </div>
+
+                  <div class="modalFoot">
+                    <button id="createEventBtn" class="btn primary" aria-label="Vorschlag erstellen">Vorschlag holen</button>
+                  </div>
+                </div>
+              </div>
             </div>
+            <div id="dayEventList" class="event-list-items"></div>
           </div>
         </section>
 
@@ -468,69 +528,7 @@
     </div>
   </div>
 
-  <!-- Event modal -->
   <div id="eventBackdrop" class="backdrop hidden"></div>
-  <div id="eventModal" class="modal hidden" role="dialog" aria-modal="true">
-    <div class="modalHead">
-      <div class="modalTitle">Neues Event (AI Quick-Add)</div>
-      <button id="closeEventBtn" class="btn ghost" aria-label="Event-Dialog schließen">✕</button>
-    </div>
-
-    <div class="modalBody">
-      <label class="field">
-        <span>Text</span>
-        <textarea id="eventText" rows="3" placeholder='z.B. "Coiffeur morgen 13:00 60min"'></textarea>
-      </label>
-
-      <div id="assistantClarify" class="cardMini hidden">
-        <div class="cardMiniTitle">Rückfrage</div>
-        <div id="assistantQuestionList" class="assistantQuestionList"></div>
-        <label class="field small">
-          <span>Antwort</span>
-          <input id="assistantAnswer" type="text" placeholder="Antwort…" />
-        </label>
-        <div class="modalFoot">
-          <button id="assistantAnswerBtn" class="btn primary" type="button">Antwort senden</button>
-        </div>
-      </div>
-
-      <div id="assistantPreview" class="cardMini hidden">
-        <div class="cardMiniTitle">Vorschlag</div>
-        <div class="assistantPreviewBody">
-          <div><span class="assistantLabel">Titel</span><span id="assistantPreviewTitle" class="assistantValue"></span></div>
-          <div><span class="assistantLabel">Zeit</span><span id="assistantPreviewTime" class="assistantValue"></span></div>
-          <div id="assistantPreviewLocationRow" class="hidden">
-            <span class="assistantLabel">Ort</span><span id="assistantPreviewLocation" class="assistantValue"></span>
-          </div>
-          <div id="assistantPreviewDescriptionRow" class="hidden">
-            <span class="assistantLabel">Beschreibung</span><span id="assistantPreviewDescription" class="assistantValue"></span>
-          </div>
-        </div>
-        <div class="assistantPreviewActions">
-          <button id="assistantCreateBtn" class="btn primary" type="button" disabled>Erstellen</button>
-          <button id="assistantEditBtn" class="btn ghost" type="button">Bearbeiten</button>
-        </div>
-        <div class="assistantPreviewNote">Bitte bestätigen</div>
-      </div>
-
-      <div id="assistantNone" class="cardMini hidden">
-        <div class="cardMiniTitle">Hinweis</div>
-        <div class="cardMiniSub">Ich konnte keinen Termin erkennen.</div>
-      </div>
-
-      <div class="cardMini">
-        <div class="cardMiniTitle">Hinweis</div>
-        <div class="cardMiniSub">
-          Der Text wird als Vorschlag analysiert. Erst nach deiner Bestätigung wird gespeichert.
-        </div>
-      </div>
-
-      <div class="modalFoot">
-        <button id="createEventBtn" class="btn primary" aria-label="Vorschlag erstellen">Vorschlag holen</button>
-      </div>
-    </div>
-  </div>
-
   <!-- Suggestion modal -->
   <div id="suggestionBackdrop" class="backdrop hidden"></div>
   <div id="suggestionModal" class="modal hidden" role="dialog" aria-modal="true">
