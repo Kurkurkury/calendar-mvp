@@ -99,6 +99,13 @@ State expectations:
 - Auth reconnect: no duplicate prompts, stable return path.
 - Calendar load: consistent success/error states with actionable feedback.
 
+### Phase 4 regression checks (implementation matrix addendum)
+- Mobile nav controls: no duplicate/conflicting day/month navigation controls visible at the same time on iOS Safari and Android Chrome.
+- Bottom bar + safe area: bottom navigation never overlaps interactive content, including device safe-area inset scenarios.
+- Header/day-row alignment: app header and month/day scroller stay aligned through rotate, resize, and view switches.
+- Resume behavior: returning from background triggers silent health re-check; toast appears only after manual retry action.
+- Warmup behavior: cold backend shows “Backend startet …” banner with retry/backoff and no blocking blank screen.
+
 ### Release checklist
 - Scope sign-off completed (product + engineering).
 - Acceptance criteria reviewed and test-case mapped.

@@ -594,7 +594,11 @@ const els = {
   selectedEventNotesRow: byId("selectedEventNotesRow"),
   selectedEventNotes: byId("selectedEventNotes"),
   selectedEventDeleteBtn: byId("selectedEventDeleteBtn"),
+  appbarMonthNav: document.querySelector(".month-nav"),
+  bottomNav: document.querySelector(".bottom-nav"),
 };
+
+let lastAppHiddenAt = Date.now();
 
 function warnDuplicateIds(ids) {
   ids.forEach((id) => {
@@ -617,6 +621,7 @@ function bindButtonsById(id, handler) {
 function bindViewportResize() {
   let resizeTimer = null;
   const handleResize = () => {
+    updateBottomNavOffset();
     syncQuickAddLayout();
     if (!isMobile() || state.view !== "day") return;
     if (state.dayMode === "fit") {
@@ -631,6 +636,59 @@ function bindViewportResize() {
   };
   window.addEventListener("resize", handleResize);
   window.addEventListener("orientationchange", handleResize);
+}
+
+function updateBottomNavOffset() {
+  const navHeight = Math.max(0, Math.round(els.bottomNav?.getBoundingClientRect?.().height || 0));
+  const reserved = navHeight || 84;
+  document.documentElement.style.setProperty("--bottom-nav-offset", `${reserved}px`);
+}
+
+function renderNavChrome() {
+  const isMonth = state.view === "month";
+  const showHeaderMonthArrows = !isMobile() || isMonth;
+  if (els.appbarMonthNav) {
+    els.appbarMonthNav.classList.toggle("hidden", !showHeaderMonthArrows);
+  }
+}
+
+function bindAppResumeChecks() {
+  const resumeThresholdMs = 2000;
+  const onHidden = () => {
+    lastAppHiddenAt = Date.now();
+  };
+  const maybeRecheck = () => {
+    if (Date.now() - lastAppHiddenAt < resumeThresholdMs) return;
+    void warmupBackendAndRefresh({ manual: false, showLoadingBanner: false });
+  };
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      onHidden();
+      return;
+    }
+    maybeRecheck();
+  });
+  window.addEventListener("pageshow", maybeRecheck);
+
+  if (IS_NATIVE) {
+    void (async () => {
+      try {
+        const mod = await import("@capacitor/app");
+        const App = mod?.App;
+        if (!App?.addListener) return;
+        App.addListener("appStateChange", ({ isActive }) => {
+          if (isActive) {
+            maybeRecheck();
+          } else {
+            onHidden();
+          }
+        });
+      } catch {
+        // ignore in web
+      }
+    })();
+  }
 }
 
 function initAiExtractUI() {
@@ -1079,6 +1137,8 @@ async function boot() {
   syncQuickAddLayout();
   bindGoogleButtons();
   bindViewportResize();
+  bindAppResumeChecks();
+  updateBottomNavOffset();
   window.addEventListener("resize", () => {
     requestAnimationFrame(updateCalendarScrollbarGutter);
   });
@@ -1570,7 +1630,7 @@ async function checkBackendWarmup() {
   applyGoogleStatus(g.google || g);
 }
 
-async function warmupBackendAndRefresh({ manual = false } = {}) {
+async function warmupBackendAndRefresh({ manual = false, showLoadingBanner = true } = {}) {
   if (backendWarmupInProgress) return;
   backendWarmupInProgress = true;
   setColdStartDebugState({
@@ -1578,9 +1638,11 @@ async function warmupBackendAndRefresh({ manual = false } = {}) {
     retryCount: 0,
     toastSuppressed: false,
   });
-  console.log("[COLDSTART] warmup start", { manual });
-  showBackendBanner({ message: "Backend startet …", status: "loading", showRetry: false });
-  setStatus(`Backend startet … (${API_BASE})`, true);
+  console.log("[COLDSTART] warmup start", { manual, showLoadingBanner });
+  if (showLoadingBanner) {
+    showBackendBanner({ message: "Backend startet …", status: "loading", showRetry: false });
+    setStatus(`Backend startet … (${API_BASE})`, true);
+  }
 
   const startedAt = Date.now();
   let attempt = 0;
@@ -1842,6 +1904,8 @@ async function render() {
   }
 
   renderTopBar();
+  renderNavChrome();
+  updateBottomNavOffset();
 
   if (state.view === "day") {
     renderDayView();
@@ -1981,6 +2045,7 @@ function handleDayScrollerScroll() {
 }
 
 function setView(nextView) {
+  if (!VALID_VIEWS.has(nextView)) return;
   state.view = nextView;
   setBodyViewClass(state.view);
   state.weekStart = startOfWeek(state.activeDate);
@@ -2220,7 +2285,7 @@ function renderMonthView() {
 
     cell.addEventListener("click", async () => {
       setActiveDate(day);
-      state.view = "day";
+      setView("day");
       await render();
     });
 

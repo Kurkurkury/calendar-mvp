@@ -2034,3 +2034,59 @@ code{
     flex-wrap: wrap;
   }
 }
+
+/* ===== Phase 4 mobile UX hardening ===== */
+:root {
+  --bottom-nav-offset: 84px;
+}
+
+.app {
+  overflow-x: clip;
+}
+
+.appbar-inner {
+  min-height: 72px;
+}
+
+.month-nav.hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.content {
+  padding-bottom: calc(var(--bottom-nav-offset) + env(safe-area-inset-bottom));
+}
+
+.calBody,
+.grid,
+.timeCol {
+  min-height: 0;
+}
+
+.bottom-nav {
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+  transform: translateZ(0);
+}
+
+.bottom-nav-btn {
+  min-height: 44px;
+}
+
+@media (max-width: 640px) {
+  .appbar-inner {
+    min-height: 78px;
+    padding: 10px 0 8px;
+  }
+
+  .appbar-right {
+    gap: 4px;
+  }
+
+  .content-inner {
+    gap: 12px;
+  }
+
+  .day-scroller {
+    scroll-padding-inline: 12px;
+  }
+}
