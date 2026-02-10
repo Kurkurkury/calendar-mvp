@@ -48,3 +48,65 @@ Verified outcomes:
    - `toastSuppressed: true` during the initial cold start failure state.
 4. Click “Erneut versuchen” and confirm a toast appears only after the manual retry.
 5. Check the browser console for `[COLDSTART]` logs for boot start/end and warmup attempts.
+
+## Phase 4 – Preparation (Not Started)
+
+### Goal
+- Define a concrete, release-ready Phase 4 execution plan with measurable acceptance criteria, explicit risk handling, and a pre-flight checklist before any implementation begins.
+
+### In-scope
+- Finalize Phase 4 feature scope boundaries and assumptions.
+- Define user-facing and technical acceptance criteria.
+- Document known risks, edge cases, and mitigation expectations.
+- Prepare a test matrix covering key devices and critical application states.
+- Prepare a release checklist (quality, operations, and rollback readiness).
+
+### Out-of-scope
+- Any code or configuration implementation for Phase 4.
+- Marking Phase 4 as active or in progress.
+- Changing phase status of completed phases.
+- Backfilling historical phase deliverables.
+
+### Acceptance criteria
+- A single agreed Phase 4 scope statement exists with clear boundaries.
+- Every planned Phase 4 outcome has testable, binary pass/fail acceptance criteria.
+- Risks and edge cases are listed with expected behavior and owner/mitigation notes.
+- The test matrix covers desktop and mobile form factors and includes happy-path + failure-path states.
+- The release checklist includes: pre-release checks, launch readiness checks, post-release verification, and rollback criteria.
+- Documentation explicitly states that Phase 4 is **Not Started**.
+
+### Risks & edge cases
+- Scope creep risk from undefined “nice-to-have” additions.
+- Ambiguous acceptance criteria causing inconsistent QA decisions.
+- Regression risk across OAuth/session/calendar sync flows while shipping Phase 4 changes.
+- Cold-start and backend unavailability masking real Phase 4 behavior during validation.
+- Mobile-only interaction issues (viewport, keyboard overlap, navigation state persistence).
+- Third-party dependency instability (Google APIs, Render backend wake behavior).
+- Release timing risk if checklist gates are skipped or compressed.
+
+### Test matrix (devices × states)
+
+| Device / Environment | Initial load (warm backend) | Initial load (cold backend) | Auth (sign-in / reconnect) | Calendar data load | Manual retry flow | Mobile navigation/state restore |
+| --- | --- | --- | --- | --- | --- | --- |
+| Desktop Chrome (latest) | Required | Required | Required | Required | Required | N/A |
+| Desktop Firefox (latest) | Required | Required | Required | Required | Required | N/A |
+| iOS Safari (latest) | Required | Required | Required | Required | Required | Required |
+| Android Chrome (latest) | Required | Required | Required | Required | Required | Required |
+
+State expectations:
+- Warm backend: app is interactive without blocking errors.
+- Cold backend: loading/retry UX is visible and user guidance is clear.
+- Auth reconnect: no duplicate prompts, stable return path.
+- Calendar load: consistent success/error states with actionable feedback.
+
+### Release checklist
+- Scope sign-off completed (product + engineering).
+- Acceptance criteria reviewed and test-case mapped.
+- Risk/edge-case review completed with explicit owners.
+- Manual QA run completed for all required test matrix cells.
+- Regression checks completed for existing completed phases.
+- Observability checks ready (logs/events needed for rollout monitoring).
+- Rollback plan validated (trigger conditions + execution owner).
+- Release notes drafted and stakeholder communication prepared.
+- Go/No-Go decision recorded.
+- Post-release verification checklist prepared (first-hour and first-day checks).
