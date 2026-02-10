@@ -127,6 +127,7 @@ const DEFAULT_PREFS_UI = {
   timeOfDay: "auto",
 };
 const AI_EXTRACT_ACCEPT = ".png,.jpg,.jpeg,.webp,.pdf,.docx";
+const DOC_EXTRACT_ACCEPT = "image/*,application/pdf";
 const AI_EXTRACT_ALLOWED_MIME = new Set([
   "image/png",
   "image/jpeg",
@@ -448,6 +449,13 @@ const els = {
   aiExtractResults: byId("aiExtractResults"),
   aiExtractWarnings: byId("aiExtractWarnings"),
 
+  docExtractFileInput: byId("docExtractFileInput"),
+  docExtractTextInput: byId("docExtractTextInput"),
+  docExtractRunBtn: byId("docExtractRunBtn"),
+  docExtractState: byId("docExtractState"),
+  docExtractError: byId("docExtractError"),
+  docExtractOutput: byId("docExtractOutput"),
+
   prefWindowStart: byId("prefWindowStart"),
   prefWindowEnd: byId("prefWindowEnd"),
   prefBufferMinutes: byId("prefBufferMinutes"),
@@ -689,6 +697,92 @@ function bindAppResumeChecks() {
       }
     })();
   }
+}
+
+
+function setDocExtractState(status) {
+  if (!els.docExtractState) return;
+  const map = {
+    idle: "Bereit.",
+    extracting: "Extrahiere Text…",
+    success: "Extraktion erfolgreich.",
+    error: "Extraktion fehlgeschlagen.",
+  };
+  els.docExtractState.textContent = map[status] || status || "Bereit.";
+}
+
+function setDocExtractError(message) {
+  if (!els.docExtractError) return;
+  els.docExtractError.textContent = message || "";
+}
+
+function setDocExtractLoading(isLoading) {
+  if (els.docExtractRunBtn) els.docExtractRunBtn.disabled = isLoading;
+  if (els.docExtractFileInput) els.docExtractFileInput.disabled = isLoading;
+  if (els.docExtractTextInput) els.docExtractTextInput.disabled = isLoading;
+}
+
+async function runDocExtract() {
+  if (!els.docExtractOutput) return;
+
+  const file = els.docExtractFileInput?.files?.[0] || null;
+  const pastedText = String(els.docExtractTextInput?.value || "").trim();
+
+  setDocExtractError("");
+
+  if (!file && !pastedText) {
+    setDocExtractState("error");
+    setDocExtractError("Bitte Datei hochladen oder Text einfügen.");
+    return;
+  }
+
+  if (pastedText && !file) {
+    els.docExtractOutput.value = pastedText;
+    setDocExtractState("success");
+    return;
+  }
+
+  setDocExtractLoading(true);
+  setDocExtractState("extracting");
+
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const res = await fetch(`${API_BASE_CLEAN}/api/doc/extract`, {
+      method: "POST",
+      body: formData,
+    });
+
+    const raw = await res.text();
+    const parsed = parseApiBody(raw);
+    const data = parsed.kind === "json" ? parsed.json : null;
+
+    if (!res.ok || !data?.text) {
+      const message = data?.message || "Extraktion nicht möglich.";
+      throw new Error(message);
+    }
+
+    els.docExtractOutput.value = String(data.text || "");
+    setDocExtractState("success");
+  } catch (error) {
+    setDocExtractState("error");
+    setDocExtractError(error?.message || "Extraktion fehlgeschlagen.");
+  } finally {
+    setDocExtractLoading(false);
+    if (els.docExtractFileInput) els.docExtractFileInput.value = "";
+  }
+}
+
+function initDocExtractUI() {
+  if (!els.docExtractRunBtn) return;
+  if (els.docExtractFileInput) els.docExtractFileInput.accept = DOC_EXTRACT_ACCEPT;
+  setDocExtractState("idle");
+  setDocExtractError("");
+  if (els.docExtractOutput) els.docExtractOutput.value = "";
+  els.docExtractRunBtn.addEventListener("click", () => {
+    void runDocExtract();
+  });
 }
 
 function initAiExtractUI() {
@@ -1042,6 +1136,7 @@ async function boot() {
 
   // AI Extract (Phase 3 Minimal UI)
   initAiExtractUI();
+  initDocExtractUI();
 
   // Smart suggestions (Phase 5)
   applySmartPrefsToInputs();

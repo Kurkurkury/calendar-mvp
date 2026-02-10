@@ -56,6 +56,12 @@ const ALLOWED_UPLOAD_MIME_TYPES = new Set([
   "image/jpeg",
   "image/webp",
 ]);
+const DOC_EXTRACT_ALLOWED_MIME_TYPES = new Set([
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
 
 // ---- Paths ----
 const DB_PATH = path.join(__dirname, "db.json");
@@ -641,7 +647,11 @@ function getDateISOInTimeZone(timeZone, date = new Date()) {
   return date.toISOString().slice(0, 10);
 }
 
-function parseMultipartFormData(req) {
+function parseMultipartFormData(req, options = {}) {
+  const allowedMimeTypes =
+    options.allowedMimeTypes instanceof Set && options.allowedMimeTypes.size
+      ? options.allowedMimeTypes
+      : ALLOWED_UPLOAD_MIME_TYPES;
   const contentType = String(req.headers["content-type"] || "");
   const match = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
   if (!match) {
@@ -706,7 +716,7 @@ function parseMultipartFormData(req) {
   if (!file) {
     return { ok: false, status: 400, message: "file missing" };
   }
-  if (!ALLOWED_UPLOAD_MIME_TYPES.has(file.mimeType)) {
+  if (!allowedMimeTypes.has(file.mimeType)) {
     return { ok: false, status: 400, message: "invalid file type" };
   }
   if (file.buffer.length > MAX_UPLOAD_BYTES) {
@@ -838,6 +848,76 @@ async function extractPdfText(buffer) {
 async function extractDocxText(buffer) {
   const result = await mammoth.extractRawText({ buffer });
   return { text: result.value || "" };
+}
+
+
+async function extractTextFromImageWithOpenAI(file) {
+  if (!OPENAI_API_KEY) {
+    return { ok: false, status: 500, message: "OCR service unavailable" };
+  }
+
+  const base64File = file.buffer.toString("base64");
+  const payload = {
+    model: AI_EXTRACT_MODEL,
+    input: [
+      {
+        role: "system",
+        content: [
+          {
+            type: "input_text",
+            text: "Extract all visible text from the image. Return plain text only.",
+          },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_image",
+            image_url: `data:${file.mimeType};base64,${base64File}`,
+          },
+          {
+            type: "input_text",
+            text: "Return only the extracted text content.",
+          },
+        ],
+      },
+    ],
+    max_output_tokens: 4000,
+  };
+
+  let resp;
+  let body;
+  try {
+    resp = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    body = await resp.json();
+  } catch {
+    return { ok: false, status: 502, message: "OCR request failed" };
+  }
+
+  if (!resp.ok) {
+    return { ok: false, status: 502, message: "OCR failed" };
+  }
+
+  const outputText =
+    body?.output_text ||
+    body?.output?.[0]?.content?.find((c) => c.type === "output_text")?.text ||
+    body?.output?.[0]?.content?.[0]?.text ||
+    "";
+
+  const text = String(outputText || "").trim();
+  if (!text) {
+    return { ok: false, status: 422, message: "No text could be extracted from the image" };
+  }
+
+  return { ok: true, text, method: "ocr_openai" };
 }
 
 function normalizeAssistantProposal(raw) {
@@ -2564,6 +2644,53 @@ app.post("/api/assistant/parse", async (req, res) => {
 //   -F "timezone=Europe/Zurich" \
 //   -F "locale=de-CH" \
 //   -F "referenceDate=2025-01-15"
+
+app.post(
+  "/api/doc/extract",
+  express.raw({ type: "multipart/form-data", limit: MAX_FORM_BYTES }),
+  async (req, res) => {
+    try {
+      const parsed = parseMultipartFormData(req, {
+        allowedMimeTypes: DOC_EXTRACT_ALLOWED_MIME_TYPES,
+      });
+      if (!parsed.ok) {
+        return res.status(parsed.status || 400).json({ message: parsed.message || "invalid upload" });
+      }
+
+      const { file } = parsed;
+      const isPdf = file.mimeType === "application/pdf";
+
+      if (isPdf) {
+        try {
+          const pdfResult = await extractPdfText(file.buffer);
+          const text = String(pdfResult.text || "").trim();
+          if (!text) {
+            return res.status(422).json({ message: "No text found in PDF" });
+          }
+          return res.json({
+            text,
+            meta: {
+              method: "pdf_text",
+              ...(Number.isFinite(pdfResult.totalPages) ? { pages: pdfResult.totalPages } : {}),
+            },
+          });
+        } catch {
+          return res.status(422).json({ message: "Could not extract text from PDF" });
+        }
+      }
+
+      const ocr = await extractTextFromImageWithOpenAI(file);
+      if (!ocr.ok) {
+        return res.status(ocr.status || 422).json({ message: ocr.message || "Could not extract text from image" });
+      }
+
+      return res.json({ text: ocr.text, meta: { method: ocr.method } });
+    } catch {
+      return res.status(500).json({ message: "Document extraction failed" });
+    }
+  },
+);
+
 app.post(
   "/api/ai/extract",
   express.raw({ type: "multipart/form-data", limit: MAX_FORM_BYTES }),
@@ -2961,7 +3088,7 @@ app.post(
 );
 
 app.use((err, req, res, next) => {
-  if (req.path === "/api/ai/extract" && err?.type === "entity.too.large") {
+  if ((req.path === "/api/ai/extract" || req.path === "/api/doc/extract") && err?.type === "entity.too.large") {
     return res.status(413).json({ ok: false, message: "file too large" });
   }
   return next(err);
