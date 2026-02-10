@@ -435,14 +435,21 @@
 
               <div class="modalFoot">
                 <button id="docExtractRunBtn" class="btn primary" type="button">Text extrahieren</button>
+                <button id="docParseRunBtn" class="btn ghost" type="button">Struktur erkennen</button>
               </div>
 
               <div id="docExtractState" class="cardSub" role="status">Bereit.</div>
+              <div id="docParseState" class="cardSub" role="status">Idle.</div>
               <div id="docExtractError" class="docExtractError" role="alert"></div>
 
               <label class="field">
                 <span>Extracted Text</span>
                 <textarea id="docExtractOutput" rows="8" readonly placeholder="Extrahierter Text erscheint hier..."></textarea>
+              </label>
+
+              <label class="field">
+                <span>Parsed Items (JSON)</span>
+                <pre id="docParseOutput" class="docParseOutput">[]</pre>
               </label>
             </div>
 
