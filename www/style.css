@@ -2114,3 +2114,66 @@ code{
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+
+.docSuggestionList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 60px;
+}
+
+.docSuggestionEmpty {
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  border-radius: 10px;
+  padding: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.docSuggestionItem {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(8, 10, 16, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.docSuggestionItem.accepted {
+  border-color: rgba(82, 180, 120, 0.6);
+  background: rgba(40, 120, 70, 0.12);
+}
+
+.docSuggestionStatus {
+  font-size: 12px;
+  font-weight: 700;
+  color: #bdd3ff;
+}
+
+.docSuggestionTitle {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.docSuggestionMeta {
+  font-size: 12px;
+  color: var(--muted);
+  display: grid;
+  gap: 3px;
+}
+
+.docSuggestionActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.docSuggestionEditor {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 8px;
+}

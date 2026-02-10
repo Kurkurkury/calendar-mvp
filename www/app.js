@@ -401,6 +401,9 @@ const state = {
   monitoringError: null,
   monitoringLoading: false,
   monitoringFetchedAt: 0,
+
+  docSuggestions: [],
+  docSuggestionCounter: 0,
 };
 
 let lastDayScrollerScrollLeft = 0;
@@ -458,6 +461,7 @@ const els = {
   docExtractError: byId("docExtractError"),
   docExtractOutput: byId("docExtractOutput"),
   docParseOutput: byId("docParseOutput"),
+  docSuggestionList: byId("docSuggestionList"),
 
   prefWindowStart: byId("prefWindowStart"),
   prefWindowEnd: byId("prefWindowEnd"),
@@ -742,6 +746,225 @@ function setDocParseOutput(value) {
   els.docParseOutput.textContent = JSON.stringify(safe, null, 2);
 }
 
+function clampDocConfidence(raw) {
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return 0;
+  return clamp(value, 0, 1);
+}
+
+function sanitizeDocSuggestionItem(item) {
+  const title = String(item?.title || "").trim() || "Ohne Titel";
+  const kind = item?.kind === "task" ? "task" : "event";
+  const dateISO = typeof item?.dateISO === "string" && /^\d{4}-\d{2}-\d{2}$/.test(item.dateISO) ? item.dateISO : "";
+  const startTime = typeof item?.startTime === "string" && /^\d{2}:\d{2}$/.test(item.startTime) ? item.startTime : "";
+  const durationMin = Number.isFinite(Number(item?.durationMin)) ? String(Math.max(0, Math.trunc(Number(item.durationMin)))) : "";
+  const location = String(item?.location || "").trim();
+  const description = String(item?.description || "").trim();
+  const sourceSnippet = String(item?.sourceSnippet || "").trim().slice(0, 180);
+  return {
+    kind,
+    title,
+    dateISO,
+    startTime,
+    durationMin,
+    location,
+    description,
+    confidence: clampDocConfidence(item?.confidence),
+    sourceSnippet,
+  };
+}
+
+function buildDocSuggestions(items) {
+  const safeItems = Array.isArray(items) ? items : [];
+  return safeItems.map((item) => {
+    state.docSuggestionCounter += 1;
+    return {
+      id: `doc-suggestion-${state.docSuggestionCounter}`,
+      status: "pending",
+      isEditing: false,
+      item: sanitizeDocSuggestionItem(item),
+      draft: null,
+      errors: [],
+    };
+  });
+}
+
+function truncateSnippet(text) {
+  const value = String(text || "").trim();
+  if (!value) return "";
+  return value.length > 140 ? `${value.slice(0, 140)}…` : value;
+}
+
+function validateDocDraft(draft) {
+  const errors = [];
+  if (draft.dateISO && !/^\d{4}-\d{2}-\d{2}$/.test(draft.dateISO)) {
+    errors.push("Datum muss YYYY-MM-DD sein oder leer bleiben.");
+  }
+  if (draft.startTime && !/^\d{2}:\d{2}$/.test(draft.startTime)) {
+    errors.push("Startzeit muss HH:MM sein oder leer bleiben.");
+  }
+  if (draft.durationMin && !/^\d+$/.test(String(draft.durationMin))) {
+    errors.push("Dauer muss numerisch sein oder leer bleiben.");
+  }
+  return errors;
+}
+
+function renderDocSuggestions() {
+  if (!els.docSuggestionList) return;
+  const list = Array.isArray(state.docSuggestions) ? state.docSuggestions : [];
+  els.docSuggestionList.innerHTML = "";
+
+  if (list.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "docSuggestionEmpty";
+    empty.textContent = "Noch keine Vorschläge vorhanden.";
+    els.docSuggestionList.appendChild(empty);
+    return;
+  }
+
+  list.forEach((entry) => {
+    if (entry.status === "rejected") return;
+    const row = document.createElement("article");
+    row.className = "docSuggestionItem";
+    if (entry.status === "accepted") row.classList.add("accepted");
+
+    const badge = document.createElement("div");
+    badge.className = "docSuggestionStatus";
+    badge.textContent = entry.status === "accepted" ? "Angenommen – noch nicht im Kalender" : "Ausstehend";
+
+    const title = document.createElement("div");
+    title.className = "docSuggestionTitle";
+    title.textContent = entry.item.title || "Ohne Titel";
+
+    const meta = document.createElement("div");
+    meta.className = "docSuggestionMeta";
+    const fields = [
+      `Typ: ${entry.item.kind}`,
+      entry.item.dateISO ? `Datum: ${entry.item.dateISO}` : null,
+      entry.item.startTime ? `Start: ${entry.item.startTime}` : null,
+      entry.item.durationMin ? `Dauer: ${entry.item.durationMin} min` : null,
+      entry.item.location ? `Ort: ${entry.item.location}` : null,
+      entry.item.description ? `Beschreibung: ${entry.item.description}` : null,
+      `Confidence: ${Math.round(entry.item.confidence * 100)}%`,
+      entry.item.sourceSnippet ? `Quelle: ${truncateSnippet(entry.item.sourceSnippet)}` : null,
+    ].filter(Boolean);
+    meta.innerHTML = fields.map((f) => `<div>${escapeHtml(f)}</div>`).join("");
+
+    const actions = document.createElement("div");
+    actions.className = "docSuggestionActions";
+    actions.innerHTML = `
+      <button type="button" class="btn ghost" data-action="accept">Annehmen</button>
+      <button type="button" class="btn ghost" data-action="reject">Ablehnen</button>
+      <button type="button" class="btn ghost" data-action="edit">Bearbeiten</button>
+    `;
+
+    actions.querySelector('[data-action="accept"]')?.addEventListener("click", () => {
+      entry.status = "accepted";
+      entry.isEditing = false;
+      renderDocSuggestions();
+    });
+    actions.querySelector('[data-action="reject"]')?.addEventListener("click", () => {
+      entry.status = "rejected";
+      entry.isEditing = false;
+      renderDocSuggestions();
+    });
+    actions.querySelector('[data-action="edit"]')?.addEventListener("click", () => {
+      entry.isEditing = !entry.isEditing;
+      entry.errors = [];
+      entry.draft = entry.isEditing ? { ...entry.item, durationMin: entry.item.durationMin || "", confidence: entry.item.confidence } : null;
+      renderDocSuggestions();
+    });
+
+    row.appendChild(badge);
+    row.appendChild(title);
+    row.appendChild(meta);
+    row.appendChild(actions);
+
+    if (entry.isEditing) {
+      const editor = document.createElement("div");
+      editor.className = "docSuggestionEditor";
+      const draft = entry.draft || { ...entry.item };
+      editor.innerHTML = `
+        <label class="field"><span>Typ</span>
+          <select data-field="kind"><option value="event">event</option><option value="task">task</option></select>
+        </label>
+        <label class="field"><span>Titel</span><input data-field="title" type="text" /></label>
+        <label class="field"><span>Datum (YYYY-MM-DD)</span><input data-field="dateISO" type="text" /></label>
+        <label class="field"><span>Startzeit (HH:MM)</span><input data-field="startTime" type="text" /></label>
+        <label class="field"><span>Dauer (Min)</span><input data-field="durationMin" type="text" /></label>
+        <label class="field"><span>Ort</span><input data-field="location" type="text" /></label>
+        <label class="field"><span>Beschreibung</span><textarea data-field="description" rows="3"></textarea></label>
+        <label class="field"><span>Confidence (0..1)</span><input data-field="confidence" type="number" min="0" max="1" step="0.01" /></label>
+        <label class="field"><span>Source Snippet</span><textarea data-field="sourceSnippet" rows="2"></textarea></label>
+        <div class="docSuggestionActions">
+          <button type="button" class="btn primary" data-action="save">Speichern</button>
+          <button type="button" class="btn ghost" data-action="cancel">Abbrechen</button>
+        </div>
+      `;
+      const setVal = (field, value) => {
+        const el = editor.querySelector(`[data-field="${field}"]`);
+        if (!el) return;
+        el.value = value == null ? "" : String(value);
+      };
+      setVal("kind", draft.kind);
+      setVal("title", draft.title);
+      setVal("dateISO", draft.dateISO || "");
+      setVal("startTime", draft.startTime || "");
+      setVal("durationMin", draft.durationMin || "");
+      setVal("location", draft.location || "");
+      setVal("description", draft.description || "");
+      setVal("confidence", clampDocConfidence(draft.confidence));
+      setVal("sourceSnippet", draft.sourceSnippet || "");
+
+      editor.querySelector('[data-action="cancel"]')?.addEventListener("click", () => {
+        entry.isEditing = false;
+        entry.draft = null;
+        entry.errors = [];
+        renderDocSuggestions();
+      });
+      editor.querySelector('[data-action="save"]')?.addEventListener("click", () => {
+        const read = (field) => String(editor.querySelector(`[data-field="${field}"]`)?.value || "").trim();
+        const nextDraft = {
+          kind: read("kind") === "task" ? "task" : "event",
+          title: read("title") || "Ohne Titel",
+          dateISO: read("dateISO"),
+          startTime: read("startTime"),
+          durationMin: read("durationMin"),
+          location: read("location"),
+          description: read("description"),
+          confidence: clampDocConfidence(read("confidence")),
+          sourceSnippet: read("sourceSnippet").slice(0, 180),
+        };
+        const errors = validateDocDraft(nextDraft);
+        if (errors.length) {
+          entry.errors = errors;
+          entry.draft = nextDraft;
+          renderDocSuggestions();
+          return;
+        }
+        entry.item = sanitizeDocSuggestionItem(nextDraft);
+        entry.item.dateISO = nextDraft.dateISO;
+        entry.item.startTime = nextDraft.startTime;
+        entry.item.durationMin = nextDraft.durationMin;
+        entry.isEditing = false;
+        entry.draft = null;
+        entry.errors = [];
+        renderDocSuggestions();
+      });
+
+      if (entry.errors?.length) {
+        const err = document.createElement("div");
+        err.className = "docExtractError";
+        err.textContent = entry.errors.join(" ");
+        editor.appendChild(err);
+      }
+      row.appendChild(editor);
+    }
+
+    els.docSuggestionList.appendChild(row);
+  });
+}
+
 async function runDocParse() {
   const extractedText = String(els.docExtractOutput?.value || "").trim();
   const fallbackText = String(els.docExtractTextInput?.value || "").trim();
@@ -777,6 +1000,8 @@ async function runDocParse() {
     }
 
     setDocParseOutput(data.items);
+    state.docSuggestions = buildDocSuggestions(data.items);
+    renderDocSuggestions();
     setDocParseState("success");
   } catch (error) {
     setDocParseState("error");
@@ -795,6 +1020,8 @@ async function runDocExtract() {
   setDocExtractError("");
   setDocParseState("idle");
   setDocParseOutput([]);
+  state.docSuggestions = [];
+  renderDocSuggestions();
 
   if (!file && !pastedText) {
     setDocExtractState("error");
@@ -848,6 +1075,8 @@ function initDocExtractUI() {
   setDocExtractError("");
   if (els.docExtractOutput) els.docExtractOutput.value = "";
   setDocParseOutput([]);
+  state.docSuggestions = [];
+  renderDocSuggestions();
   els.docExtractRunBtn.addEventListener("click", () => {
     void runDocExtract();
   });
