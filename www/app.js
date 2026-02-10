@@ -452,9 +452,12 @@ const els = {
   docExtractFileInput: byId("docExtractFileInput"),
   docExtractTextInput: byId("docExtractTextInput"),
   docExtractRunBtn: byId("docExtractRunBtn"),
+  docParseRunBtn: byId("docParseRunBtn"),
   docExtractState: byId("docExtractState"),
+  docParseState: byId("docParseState"),
   docExtractError: byId("docExtractError"),
   docExtractOutput: byId("docExtractOutput"),
+  docParseOutput: byId("docParseOutput"),
 
   prefWindowStart: byId("prefWindowStart"),
   prefWindowEnd: byId("prefWindowEnd"),
@@ -722,6 +725,67 @@ function setDocExtractLoading(isLoading) {
   if (els.docExtractTextInput) els.docExtractTextInput.disabled = isLoading;
 }
 
+function setDocParseState(status) {
+  if (!els.docParseState) return;
+  const map = {
+    idle: "Idle.",
+    parsing: "Parsing…",
+    success: "Success.",
+    error: "Error.",
+  };
+  els.docParseState.textContent = map[status] || status || "Idle.";
+}
+
+function setDocParseOutput(value) {
+  if (!els.docParseOutput) return;
+  const safe = Array.isArray(value) ? value : [];
+  els.docParseOutput.textContent = JSON.stringify(safe, null, 2);
+}
+
+async function runDocParse() {
+  const extractedText = String(els.docExtractOutput?.value || "").trim();
+  const fallbackText = String(els.docExtractTextInput?.value || "").trim();
+  const text = extractedText || fallbackText;
+
+  if (!text) {
+    setDocParseState("error");
+    setDocExtractError("Bitte zuerst Text extrahieren oder einfügen.");
+    return;
+  }
+
+  setDocParseState("parsing");
+  setDocExtractError("");
+  if (els.docParseRunBtn) els.docParseRunBtn.disabled = true;
+
+  try {
+    const timezone = getUserTimeZone();
+    const locale = navigator.language || "de-CH";
+    const referenceDate = getTodayISOInTimeZone(timezone);
+
+    const res = await fetch(`${API_BASE_CLEAN}/api/doc/parse`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, locale, timezone, referenceDate }),
+    });
+
+    const raw = await res.text();
+    const parsed = parseApiBody(raw);
+    const data = parsed.kind === "json" ? parsed.json : null;
+
+    if (!res.ok || !data || !Array.isArray(data.items)) {
+      throw new Error(data?.message || "Parsing fehlgeschlagen.");
+    }
+
+    setDocParseOutput(data.items);
+    setDocParseState("success");
+  } catch (error) {
+    setDocParseState("error");
+    setDocExtractError(error?.message || "Parsing fehlgeschlagen.");
+  } finally {
+    if (els.docParseRunBtn) els.docParseRunBtn.disabled = false;
+  }
+}
+
 async function runDocExtract() {
   if (!els.docExtractOutput) return;
 
@@ -729,6 +793,8 @@ async function runDocExtract() {
   const pastedText = String(els.docExtractTextInput?.value || "").trim();
 
   setDocExtractError("");
+  setDocParseState("idle");
+  setDocParseOutput([]);
 
   if (!file && !pastedText) {
     setDocExtractState("error");
@@ -778,10 +844,15 @@ function initDocExtractUI() {
   if (!els.docExtractRunBtn) return;
   if (els.docExtractFileInput) els.docExtractFileInput.accept = DOC_EXTRACT_ACCEPT;
   setDocExtractState("idle");
+  setDocParseState("idle");
   setDocExtractError("");
   if (els.docExtractOutput) els.docExtractOutput.value = "";
+  setDocParseOutput([]);
   els.docExtractRunBtn.addEventListener("click", () => {
     void runDocExtract();
+  });
+  els.docParseRunBtn?.addEventListener("click", () => {
+    void runDocParse();
   });
 }
 
