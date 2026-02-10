@@ -2090,3 +2090,11 @@ code{
     scroll-padding-inline: 12px;
   }
 }
+
+
+.docExtractError {
+  color: rgba(255, 120, 120, 0.95);
+  font-size: 12px;
+  margin-top: 6px;
+  min-height: 16px;
+}

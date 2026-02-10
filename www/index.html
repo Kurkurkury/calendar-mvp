@@ -418,6 +418,34 @@
               <div class="cardSub">vordefinierte Arbeitszeiten (editierbar in app.js)</div>
               <div id="windowsList" class="list small"></div>
             </div>
+
+            <div class="card" id="documentExtractCard">
+              <div class="cardTitle">Document</div>
+              <div class="cardSub">Bild oder PDF hochladen, alternativ Text einfügen</div>
+
+              <label class="field">
+                <span>Datei (Bild/PDF)</span>
+                <input id="docExtractFileInput" type="file" accept="image/*,application/pdf" />
+              </label>
+
+              <label class="field">
+                <span>Text einfügen (Fallback)</span>
+                <textarea id="docExtractTextInput" rows="4" placeholder="Text hier einfügen..."></textarea>
+              </label>
+
+              <div class="modalFoot">
+                <button id="docExtractRunBtn" class="btn primary" type="button">Text extrahieren</button>
+              </div>
+
+              <div id="docExtractState" class="cardSub" role="status">Bereit.</div>
+              <div id="docExtractError" class="docExtractError" role="alert"></div>
+
+              <label class="field">
+                <span>Extracted Text</span>
+                <textarea id="docExtractOutput" rows="8" readonly placeholder="Extrahierter Text erscheint hier..."></textarea>
+              </label>
+            </div>
+
           </aside>
         </section>
 
