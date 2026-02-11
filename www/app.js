@@ -1,3 +1,5 @@
+import { buildSuggestionGroups } from "./v3/engine/index.js";
+
 const HAS_CAPACITOR = typeof window.Capacitor !== "undefined";
 const API_BASE = HAS_CAPACITOR
   ? "https://calendar-api-v2.onrender.com"
@@ -787,14 +789,14 @@ function sanitizeDocGroups(groups) {
   const safe = Array.isArray(groups) ? groups : [];
   return safe
     .map((group) => {
-      const groupId = /^g\d+$/.test(String(group?.groupId || "").trim()) ? String(group.groupId).trim() : "";
+      const groupId = /^[a-z0-9-]+$/i.test(String(group?.groupId || "").trim()) ? String(group.groupId).trim() : "";
       if (!groupId) return null;
       const label = String(group?.groupTitle || group?.label || "").trim().slice(0, 40) || "Termin";
       const itemCount = Math.max(0, Math.trunc(Number(group?.itemCount) || 0));
       const confidenceAvg = clampDocConfidence(group?.confidenceAvg);
-      const groupType = new Set(["travel", "agenda", "series", "single"]).has(group?.groupType)
+      const groupType = new Set(["trip", "agenda", "series", "none"]).has(group?.groupType)
         ? group.groupType
-        : "single";
+        : "none";
       return { groupId, label, itemCount, confidenceAvg, groupType };
     })
     .filter(Boolean)
@@ -837,7 +839,7 @@ function sanitizeDocSuggestionItem(item) {
   const groupLabelRaw = String(item?.groupLabel || "").trim();
   const explanationTitleRaw = String(item?.explanation?.title || item?.explanationText || item?.explanation || "").trim();
   const explanationBulletsRaw = Array.isArray(item?.explanation?.bullets) ? item.explanation.bullets : [];
-  const groupId = /^g\d+$/.test(groupIdRaw) ? groupIdRaw : "";
+  const groupId = /^[a-z0-9-]+$/i.test(groupIdRaw) ? groupIdRaw : "";
   const groupLabel = groupLabelRaw.slice(0, 40);
   const explanation = explanationTitleRaw
     .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[redacted]")
@@ -854,9 +856,9 @@ function sanitizeDocSuggestionItem(item) {
         .slice(0, 140),
     );
   const suggestionConfidence = clampDocConfidence(item?.suggestionConfidence ?? item?.confidence);
-  const groupType = new Set(["travel", "agenda", "series", "single"]).has(item?.groupType)
+  const groupType = new Set(["trip", "agenda", "series", "none"]).has(item?.groupType)
     ? item.groupType
-    : "single";
+    : "none";
   const groupTitle = String(item?.groupTitle || groupLabel || "").trim().slice(0, 40);
 
   return {
@@ -1031,7 +1033,8 @@ function renderDocSuggestions() {
 
     const header = document.createElement("div");
     header.className = "docSuggestionGroupHeader";
-    header.textContent = `${label} (${count}) • Ø Conf: ${Math.round(avg * 100)}%`;
+    const groupType = meta?.groupType || entries[0]?.item?.groupType || "none";
+    header.textContent = `${label} [${groupType}] (${count}) • Ø Conf: ${Math.round(avg * 100)}%`;
     els.docSuggestionList.appendChild(header);
 
     entries
@@ -1054,8 +1057,8 @@ function avgConfidence(entries) {
 function sortDocSuggestionEntries(a, b) {
   const conf = clampDocConfidence(b?.item?.suggestionConfidence) - clampDocConfidence(a?.item?.suggestionConfidence);
   if (conf !== 0) return conf;
-  const aStructured = a?.item?.groupType && a.item.groupType !== "single" ? 1 : 0;
-  const bStructured = b?.item?.groupType && b.item.groupType !== "single" ? 1 : 0;
+  const aStructured = a?.item?.groupType && a.item.groupType !== "none" ? 1 : 0;
+  const bStructured = b?.item?.groupType && b.item.groupType !== "none" ? 1 : 0;
   if (aStructured !== bStructured) return bStructured - aStructured;
   const ad = String(a?.item?.dateISO || "9999-99-99");
   const bd = String(b?.item?.dateISO || "9999-99-99");
@@ -1418,9 +1421,50 @@ async function runDocParse() {
 
     setDocParseOutput(data.items);
     state.docParseContext = sanitizeDocContext(data?.meta?.context || null);
-    state.docParseGroups = sanitizeDocGroups(data?.meta?.groups || []);
     setDocContextLine(state.docParseContext);
-    state.docSuggestions = buildDocSuggestions(data.items);
+
+    try {
+      const v3 = buildSuggestionGroups(data, { referenceDate, devLog: true });
+      state.docParseGroups = sanitizeDocGroups(
+        (v3.groups || []).map((group) => ({
+          groupId: group.groupId,
+          groupTitle: group.groupTitle,
+          itemCount: Array.isArray(group.members) ? group.members.length : 0,
+          confidenceAvg: group.groupConfidence,
+          groupType: group.groupType,
+        })),
+      );
+
+      const v3Items = (v3.groups || []).flatMap((group) =>
+        (group.members || []).map((member) => ({
+          type: "event",
+          title: member.title,
+          dateISO: String(member.start || "").slice(0, 10),
+          startTime: String(member.start || "").slice(11, 16),
+          durationMin: "",
+          location: member.location || "",
+          description: "",
+          confidence: member.suggestionConfidence,
+          suggestionConfidence: member.suggestionConfidence,
+          sourceSnippet: Array.isArray(member.source?.lineHints) ? member.source.lineHints[0] || "" : "",
+          groupId: group.groupId,
+          groupType: group.groupType,
+          groupTitle: group.groupTitle,
+          groupLabel: group.groupTitle,
+          explanation: member.explanation,
+          explanationText: member.explanation?.title || "",
+          contextTags: [],
+        })),
+      );
+      state.docSuggestions = buildDocSuggestions(v3Items);
+    } catch (engineError) {
+      // Fail-safe path: any schema/engine error must not crash UI; show compact error + legacy suggestions.
+      console.error("[PHASE3] Suggestion Engine Error", engineError);
+      setDocExtractError("Suggestion Engine Error");
+      state.docParseGroups = sanitizeDocGroups(data?.meta?.groups || []);
+      state.docSuggestions = buildDocSuggestions(data.items);
+    }
+
     renderDocSuggestions();
     setDocParseState("success");
   } catch (error) {
