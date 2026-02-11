@@ -409,6 +409,7 @@ const state = {
   docCreateConfirmSuggestionId: null,
   docCreatePendingSuggestionId: null,
   docParseContext: null,
+  docParseGroups: [],
   shareImport: null,
 };
 
@@ -782,6 +783,21 @@ function sanitizeDocContext(context) {
   return { contextType, sourceHint, tags, confidence, explanation };
 }
 
+function sanitizeDocGroups(groups) {
+  const safe = Array.isArray(groups) ? groups : [];
+  return safe
+    .map((group) => {
+      const groupId = /^g\d+$/.test(String(group?.groupId || "").trim()) ? String(group.groupId).trim() : "";
+      if (!groupId) return null;
+      const label = String(group?.label || "").trim().slice(0, 40) || "Termin";
+      const itemCount = Math.max(0, Math.trunc(Number(group?.itemCount) || 0));
+      const confidenceAvg = clampDocConfidence(group?.confidenceAvg);
+      return { groupId, label, itemCount, confidenceAvg };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.confidenceAvg - a.confidenceAvg);
+}
+
 function setDocContextLine(context) {
   if (!els.docContextLine) return;
   if (!context) {
@@ -814,6 +830,16 @@ function sanitizeDocSuggestionItem(item) {
         .filter(Boolean)
         .slice(0, 10)
     : [];
+  const groupIdRaw = String(item?.groupId || "").trim();
+  const groupLabelRaw = String(item?.groupLabel || "").trim();
+  const explanationRaw = String(item?.explanation || "").trim();
+  const groupId = /^g\d+$/.test(groupIdRaw) ? groupIdRaw : "";
+  const groupLabel = groupLabelRaw.slice(0, 40);
+  const explanation = explanationRaw
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[redacted]")
+    .replace(/\+?\d[\d\s()./-]{6,}\d/g, "[redacted]")
+    .slice(0, 140);
+
   return {
     type,
     title,
@@ -825,6 +851,9 @@ function sanitizeDocSuggestionItem(item) {
     confidence: clampDocConfidence(item?.confidence),
     sourceSnippet,
     contextTags,
+    groupId,
+    groupLabel,
+    explanation,
   };
 }
 
@@ -944,6 +973,7 @@ async function confirmDocSuggestionCreate() {
 function renderDocSuggestions() {
   if (!els.docSuggestionList) return;
   const list = Array.isArray(state.docSuggestions) ? state.docSuggestions : [];
+  const groupMeta = sanitizeDocGroups(state.docParseGroups);
   els.docSuggestionList.innerHTML = "";
 
   if (list.length === 0) {
@@ -954,189 +984,247 @@ function renderDocSuggestions() {
     return;
   }
 
+  const groups = new Map();
   list.forEach((entry) => {
     if (entry.status === "rejected") return;
-    const row = document.createElement("article");
-    row.className = "docSuggestionItem";
-    if (entry.status === "accepted" || entry.status === "created") row.classList.add("accepted");
+    const groupId = entry?.item?.groupId || "ungrouped";
+    if (!groups.has(groupId)) groups.set(groupId, []);
+    groups.get(groupId).push(entry);
+  });
 
-    const badge = document.createElement("div");
-    badge.className = "docSuggestionStatus";
-    if (entry.status === "created") {
-      badge.textContent = "Erstellt";
-    } else {
-      badge.textContent = entry.status === "accepted" ? "Angenommen – noch nicht im Kalender" : "Ausstehend";
-    }
+  const ordered = Array.from(groups.entries()).sort((a, b) => {
+    const ga = groupMeta.find((m) => m.groupId === a[0]);
+    const gb = groupMeta.find((m) => m.groupId === b[0]);
+    const ca = ga ? ga.confidenceAvg : avgConfidence(a[1]);
+    const cb = gb ? gb.confidenceAvg : avgConfidence(b[1]);
+    return cb - ca;
+  });
 
-    const title = document.createElement("div");
-    title.className = "docSuggestionTitle";
-    title.textContent = entry.item.title || "Ohne Titel";
+  ordered.forEach(([groupId, entries]) => {
+    const meta = groupMeta.find((m) => m.groupId === groupId);
+    const label = meta?.label || entries[0]?.item?.groupLabel || "Termin";
+    const avg = meta?.confidenceAvg ?? avgConfidence(entries);
+    const count = meta?.itemCount || entries.length;
 
-    const meta = document.createElement("div");
-    meta.className = "docSuggestionMeta";
-    const fields = [
-      `Typ: ${entry.item.type}`,
-      entry.item.dateISO ? `Datum: ${entry.item.dateISO}` : null,
-      entry.item.startTime ? `Start: ${entry.item.startTime}` : null,
-      entry.item.durationMin ? `Dauer: ${entry.item.durationMin} min` : null,
-      entry.item.location ? `Ort: ${entry.item.location}` : null,
-      entry.item.description ? `Beschreibung: ${entry.item.description}` : null,
-      `Confidence: ${Math.round(entry.item.confidence * 100)}%`,
-      entry.item.sourceSnippet ? `Quelle: ${truncateSnippet(entry.item.sourceSnippet)}` : null,
-    ].filter(Boolean);
-    meta.innerHTML = fields.map((f) => `<div>${escapeHtml(f)}</div>`).join("");
+    const header = document.createElement("div");
+    header.className = "docSuggestionGroupHeader";
+    header.textContent = `${label} (${count}) • Ø Conf: ${Math.round(avg * 100)}%`;
+    els.docSuggestionList.appendChild(header);
 
-    const actions = document.createElement("div");
-    actions.className = "docSuggestionActions";
-    // V3 Phase 4 depends on suggestion lifecycle states (pending/accepted/rejected/created),
-    // so accept/reject/edit/create actions must stay available instead of read-only output.
-    actions.innerHTML = `
-      <button type="button" class="btn ghost" data-action="accept">Annehmen</button>
-      <button type="button" class="btn ghost" data-action="reject">Ablehnen</button>
-      <button type="button" class="btn ghost" data-action="edit">Bearbeiten</button>
+    entries
+      .slice()
+      .sort((a, b) => sortDocSuggestionEntries(a, b))
+      .forEach((entry) => {
+        const row = buildDocSuggestionRow(entry);
+        els.docSuggestionList.appendChild(row);
+      });
+  });
+}
+
+function avgConfidence(entries) {
+  const list = Array.isArray(entries) ? entries : [];
+  if (!list.length) return 0;
+  const sum = list.reduce((acc, e) => acc + clampDocConfidence(e?.item?.confidence), 0);
+  return sum / list.length;
+}
+
+function sortDocSuggestionEntries(a, b) {
+  const conf = clampDocConfidence(b?.item?.confidence) - clampDocConfidence(a?.item?.confidence);
+  if (conf !== 0) return conf;
+  const ad = String(a?.item?.dateISO || "9999-99-99");
+  const bd = String(b?.item?.dateISO || "9999-99-99");
+  const d = ad.localeCompare(bd);
+  if (d !== 0) return d;
+  const at = String(a?.item?.startTime || "99:99");
+  const bt = String(b?.item?.startTime || "99:99");
+  return at.localeCompare(bt);
+}
+
+function buildDocSuggestionRow(entry) {
+  const row = document.createElement("article");
+  row.className = "docSuggestionItem";
+  if (entry.status === "accepted" || entry.status === "created") row.classList.add("accepted");
+
+  const badge = document.createElement("div");
+  badge.className = "docSuggestionStatus";
+  badge.textContent = entry.status === "created"
+    ? "Erstellt"
+    : (entry.status === "accepted" ? "Angenommen – noch nicht im Kalender" : "Ausstehend");
+
+  const title = document.createElement("div");
+  title.className = "docSuggestionTitle";
+  title.textContent = entry.item.title || "Ohne Titel";
+
+  const meta = document.createElement("div");
+  meta.className = "docSuggestionMeta";
+  const fields = [
+    `Typ: ${entry.item.type}`,
+    entry.item.dateISO ? `Datum: ${entry.item.dateISO}` : null,
+    entry.item.startTime ? `Start: ${entry.item.startTime}` : null,
+    entry.item.durationMin ? `Dauer: ${entry.item.durationMin} min` : null,
+    entry.item.location ? `Ort: ${entry.item.location}` : null,
+    entry.item.description ? `Beschreibung: ${entry.item.description}` : null,
+    `Confidence: ${Math.round(entry.item.confidence * 100)}%`,
+    entry.item.sourceSnippet ? `Quelle: ${truncateSnippet(entry.item.sourceSnippet)}` : null,
+  ].filter(Boolean);
+  meta.innerHTML = fields.map((f) => `<div>${escapeHtml(f)}</div>`).join("");
+
+  const why = document.createElement("div");
+  why.className = "docSuggestionWhy";
+  why.textContent = `Warum: ${entry.item.explanation || "Kontext erkannt."}`;
+
+  const actions = document.createElement("div");
+  actions.className = "docSuggestionActions";
+  actions.innerHTML = `
+    <button type="button" class="btn ghost" data-action="accept">Annehmen</button>
+    <button type="button" class="btn ghost" data-action="reject">Ablehnen</button>
+    <button type="button" class="btn ghost" data-action="edit">Bearbeiten</button>
+  `;
+
+  actions.querySelector('[data-action="accept"]')?.addEventListener("click", () => {
+    entry.status = "accepted";
+    entry.isEditing = false;
+    entry.createError = "";
+    renderDocSuggestions();
+  });
+  actions.querySelector('[data-action="reject"]')?.addEventListener("click", () => {
+    entry.status = "rejected";
+    entry.isEditing = false;
+    renderDocSuggestions();
+  });
+  actions.querySelector('[data-action="edit"]')?.addEventListener("click", () => {
+    entry.isEditing = !entry.isEditing;
+    entry.errors = [];
+    entry.draft = entry.isEditing ? { ...entry.item, durationMin: entry.item.durationMin || "", confidence: entry.item.confidence } : null;
+    renderDocSuggestions();
+  });
+
+  if (entry.status === "accepted") {
+    const createBtn = document.createElement("button");
+    createBtn.type = "button";
+    createBtn.className = "btn primary";
+    createBtn.dataset.action = "create";
+    createBtn.textContent = "In Kalender erstellen";
+    createBtn.disabled = state.docCreatePendingSuggestionId === entry.id;
+    createBtn.addEventListener("click", () => openDocCreateConfirmModal(entry.id));
+    actions.appendChild(createBtn);
+  }
+
+  row.appendChild(badge);
+  row.appendChild(title);
+  row.appendChild(meta);
+  row.appendChild(why);
+  if (Array.isArray(entry.item.contextTags) && entry.item.contextTags.length) {
+    const contextTagsLine = document.createElement("div");
+    contextTagsLine.className = "docSuggestionMeta";
+    contextTagsLine.innerHTML = `<div>${escapeHtml(`Kontext-Tags: ${entry.item.contextTags.join(", ")}`)}</div>`;
+    row.appendChild(contextTagsLine);
+  }
+  row.appendChild(actions);
+
+  if (entry.status === "created") {
+    const createdInfo = document.createElement("div");
+    createdInfo.className = "docSuggestionMeta";
+    const idLine = `Event-ID: ${entry.createdEvent?.eventId || "n/a"}`;
+    const link = entry.createdEvent?.htmlLink ? `<a href="${escapeHtml(entry.createdEvent.htmlLink)}" target="_blank" rel="noopener noreferrer">Kalender öffnen</a>` : "";
+    createdInfo.innerHTML = `<div>${escapeHtml(idLine)}</div>${link ? `<div>${link}</div>` : ""}`;
+    row.appendChild(createdInfo);
+  }
+
+  if (entry.createError) {
+    const err = document.createElement("div");
+    err.className = "docExtractError";
+    err.textContent = entry.createError;
+    row.appendChild(err);
+  }
+
+  if (entry.isEditing) {
+    const editor = document.createElement("div");
+    editor.className = "docSuggestionEditor";
+    const draft = entry.draft || { ...entry.item };
+    editor.innerHTML = `
+      <label class="field"><span>Typ</span>
+        <select data-field="type"><option value="event">event</option><option value="task">task</option></select>
+      </label>
+      <label class="field"><span>Titel</span><input data-field="title" type="text" /></label>
+      <label class="field"><span>Datum (YYYY-MM-DD)</span><input data-field="dateISO" type="text" /></label>
+      <label class="field"><span>Startzeit (HH:MM)</span><input data-field="startTime" type="text" /></label>
+      <label class="field"><span>Dauer (Min)</span><input data-field="durationMin" type="text" /></label>
+      <label class="field"><span>Ort</span><input data-field="location" type="text" /></label>
+      <label class="field"><span>Beschreibung</span><textarea data-field="description" rows="3"></textarea></label>
+      <label class="field"><span>Confidence (0..1)</span><input data-field="confidence" type="number" min="0" max="1" step="0.01" /></label>
+      <label class="field"><span>Source Snippet</span><textarea data-field="sourceSnippet" rows="2"></textarea></label>
+      <div class="docSuggestionActions">
+        <button type="button" class="btn primary" data-action="save">Speichern</button>
+        <button type="button" class="btn ghost" data-action="cancel">Abbrechen</button>
+      </div>
     `;
+    const setVal = (field, value) => {
+      const el = editor.querySelector(`[data-field="${field}"]`);
+      if (!el) return;
+      el.value = value == null ? "" : String(value);
+    };
+    setVal("type", draft.type);
+    setVal("title", draft.title);
+    setVal("dateISO", draft.dateISO || "");
+    setVal("startTime", draft.startTime || "");
+    setVal("durationMin", draft.durationMin || "");
+    setVal("location", draft.location || "");
+    setVal("description", draft.description || "");
+    setVal("confidence", clampDocConfidence(draft.confidence));
+    setVal("sourceSnippet", draft.sourceSnippet || "");
 
-    actions.querySelector('[data-action="accept"]')?.addEventListener("click", () => {
-      entry.status = "accepted";
+    editor.querySelector('[data-action="cancel"]')?.addEventListener("click", () => {
       entry.isEditing = false;
-      entry.createError = "";
-      renderDocSuggestions();
-    });
-    actions.querySelector('[data-action="reject"]')?.addEventListener("click", () => {
-      entry.status = "rejected";
-      entry.isEditing = false;
-      renderDocSuggestions();
-    });
-    actions.querySelector('[data-action="edit"]')?.addEventListener("click", () => {
-      entry.isEditing = !entry.isEditing;
+      entry.draft = null;
       entry.errors = [];
-      entry.draft = entry.isEditing ? { ...entry.item, durationMin: entry.item.durationMin || "", confidence: entry.item.confidence } : null;
+      renderDocSuggestions();
+    });
+    editor.querySelector('[data-action="save"]')?.addEventListener("click", () => {
+      const read = (field) => String(editor.querySelector(`[data-field="${field}"]`)?.value || "").trim();
+      const nextDraft = {
+        type: read("type") === "task" ? "task" : "event",
+        title: read("title") || "Ohne Titel",
+        dateISO: read("dateISO"),
+        startTime: read("startTime"),
+        durationMin: read("durationMin"),
+        location: read("location"),
+        description: read("description"),
+        confidence: clampDocConfidence(read("confidence")),
+        sourceSnippet: read("sourceSnippet").slice(0, 180),
+        groupId: entry.item.groupId || "",
+        groupLabel: entry.item.groupLabel || "",
+        explanation: entry.item.explanation || "",
+      };
+      const errors = validateDocDraft(nextDraft);
+      if (errors.length) {
+        entry.errors = errors;
+        entry.draft = nextDraft;
+        renderDocSuggestions();
+        return;
+      }
+      entry.item = sanitizeDocSuggestionItem(nextDraft);
+      entry.item.dateISO = nextDraft.dateISO;
+      entry.item.startTime = nextDraft.startTime;
+      entry.item.durationMin = nextDraft.durationMin;
+      entry.isEditing = false;
+      entry.draft = null;
+      entry.errors = [];
+      entry.createError = "";
+      if (entry.status === "created") entry.status = "accepted";
       renderDocSuggestions();
     });
 
-    if (entry.status === "accepted") {
-      const createBtn = document.createElement("button");
-      createBtn.type = "button";
-      createBtn.className = "btn primary";
-      createBtn.dataset.action = "create";
-      createBtn.textContent = "In Kalender erstellen";
-      createBtn.disabled = state.docCreatePendingSuggestionId === entry.id;
-      createBtn.addEventListener("click", () => openDocCreateConfirmModal(entry.id));
-      actions.appendChild(createBtn);
-    }
-
-    row.appendChild(badge);
-    row.appendChild(title);
-    row.appendChild(meta);
-    if (Array.isArray(entry.item.contextTags) && entry.item.contextTags.length) {
-      const contextTagsLine = document.createElement("div");
-      contextTagsLine.className = "docSuggestionMeta";
-      contextTagsLine.innerHTML = `<div>${escapeHtml(`Kontext-Tags: ${entry.item.contextTags.join(", ")}`)}</div>`;
-      row.appendChild(contextTagsLine);
-    }
-    row.appendChild(actions);
-
-    if (entry.status === "created") {
-      const createdInfo = document.createElement("div");
-      createdInfo.className = "docSuggestionMeta";
-      const idLine = `Event-ID: ${entry.createdEvent?.eventId || "n/a"}`;
-      const link = entry.createdEvent?.htmlLink ? `<a href="${escapeHtml(entry.createdEvent.htmlLink)}" target="_blank" rel="noopener noreferrer">Kalender öffnen</a>` : "";
-      createdInfo.innerHTML = `<div>${escapeHtml(idLine)}</div>${link ? `<div>${link}</div>` : ""}`;
-      row.appendChild(createdInfo);
-    }
-
-    if (entry.createError) {
+    if (entry.errors?.length) {
       const err = document.createElement("div");
       err.className = "docExtractError";
-      err.textContent = entry.createError;
-      row.appendChild(err);
+      err.textContent = entry.errors.join(" ");
+      editor.appendChild(err);
     }
+    row.appendChild(editor);
+  }
 
-    if (entry.isEditing) {
-      const editor = document.createElement("div");
-      editor.className = "docSuggestionEditor";
-      const draft = entry.draft || { ...entry.item };
-      editor.innerHTML = `
-        <label class="field"><span>Typ</span>
-          <select data-field="type"><option value="event">event</option><option value="task">task</option></select>
-        </label>
-        <label class="field"><span>Titel</span><input data-field="title" type="text" /></label>
-        <label class="field"><span>Datum (YYYY-MM-DD)</span><input data-field="dateISO" type="text" /></label>
-        <label class="field"><span>Startzeit (HH:MM)</span><input data-field="startTime" type="text" /></label>
-        <label class="field"><span>Dauer (Min)</span><input data-field="durationMin" type="text" /></label>
-        <label class="field"><span>Ort</span><input data-field="location" type="text" /></label>
-        <label class="field"><span>Beschreibung</span><textarea data-field="description" rows="3"></textarea></label>
-        <label class="field"><span>Confidence (0..1)</span><input data-field="confidence" type="number" min="0" max="1" step="0.01" /></label>
-        <label class="field"><span>Source Snippet</span><textarea data-field="sourceSnippet" rows="2"></textarea></label>
-        <div class="docSuggestionActions">
-          <button type="button" class="btn primary" data-action="save">Speichern</button>
-          <button type="button" class="btn ghost" data-action="cancel">Abbrechen</button>
-        </div>
-      `;
-      const setVal = (field, value) => {
-        const el = editor.querySelector(`[data-field="${field}"]`);
-        if (!el) return;
-        el.value = value == null ? "" : String(value);
-      };
-      setVal("type", draft.type);
-      setVal("title", draft.title);
-      setVal("dateISO", draft.dateISO || "");
-      setVal("startTime", draft.startTime || "");
-      setVal("durationMin", draft.durationMin || "");
-      setVal("location", draft.location || "");
-      setVal("description", draft.description || "");
-      setVal("confidence", clampDocConfidence(draft.confidence));
-      setVal("sourceSnippet", draft.sourceSnippet || "");
-
-      editor.querySelector('[data-action="cancel"]')?.addEventListener("click", () => {
-        entry.isEditing = false;
-        entry.draft = null;
-        entry.errors = [];
-        renderDocSuggestions();
-      });
-      editor.querySelector('[data-action="save"]')?.addEventListener("click", () => {
-        const read = (field) => String(editor.querySelector(`[data-field="${field}"]`)?.value || "").trim();
-        const nextDraft = {
-          type: read("type") === "task" ? "task" : "event",
-          title: read("title") || "Ohne Titel",
-          dateISO: read("dateISO"),
-          startTime: read("startTime"),
-          durationMin: read("durationMin"),
-          location: read("location"),
-          description: read("description"),
-          confidence: clampDocConfidence(read("confidence")),
-          sourceSnippet: read("sourceSnippet").slice(0, 180),
-        };
-        const errors = validateDocDraft(nextDraft);
-        if (errors.length) {
-          entry.errors = errors;
-          entry.draft = nextDraft;
-          renderDocSuggestions();
-          return;
-        }
-        entry.item = sanitizeDocSuggestionItem(nextDraft);
-        entry.item.dateISO = nextDraft.dateISO;
-        entry.item.startTime = nextDraft.startTime;
-        entry.item.durationMin = nextDraft.durationMin;
-        entry.isEditing = false;
-        entry.draft = null;
-        entry.errors = [];
-        entry.createError = "";
-        if (entry.status === "created") entry.status = "accepted";
-        renderDocSuggestions();
-      });
-
-      if (entry.errors?.length) {
-        const err = document.createElement("div");
-        err.className = "docExtractError";
-        err.textContent = entry.errors.join(" ");
-        editor.appendChild(err);
-      }
-      row.appendChild(editor);
-    }
-
-    els.docSuggestionList.appendChild(row);
-  });
+  return row;
 }
 
 
@@ -1187,6 +1275,7 @@ async function applyShareImportPayload() {
     setDocParseState("idle");
     setDocParseOutput([]);
     state.docParseContext = null;
+    state.docParseGroups = [];
     setDocContextLine(null);
     state.docSuggestions = [];
     renderDocSuggestions();
@@ -1300,6 +1389,7 @@ async function runDocParse() {
 
     setDocParseOutput(data.items);
     state.docParseContext = sanitizeDocContext(data?.meta?.context || null);
+    state.docParseGroups = sanitizeDocGroups(data?.meta?.groups || []);
     setDocContextLine(state.docParseContext);
     state.docSuggestions = buildDocSuggestions(data.items);
     renderDocSuggestions();
@@ -1322,6 +1412,7 @@ async function runDocExtract() {
   setDocParseState("idle");
   setDocParseOutput([]);
   state.docParseContext = null;
+  state.docParseGroups = [];
   setDocContextLine(null);
   state.docSuggestions = [];
   renderDocSuggestions();
@@ -1379,6 +1470,7 @@ function initDocExtractUI() {
   if (els.docExtractOutput) els.docExtractOutput.value = "";
   setDocParseOutput([]);
   state.docParseContext = null;
+  state.docParseGroups = [];
   setDocContextLine(null);
   state.docSuggestions = [];
   renderDocSuggestions();
