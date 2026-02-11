@@ -408,6 +408,7 @@ const state = {
   docSuggestionCounter: 0,
   docCreateConfirmSuggestionId: null,
   docCreatePendingSuggestionId: null,
+  docParseContext: null,
   shareImport: null,
 };
 
@@ -463,6 +464,7 @@ const els = {
   docParseRunBtn: byId("docParseRunBtn"),
   docExtractState: byId("docExtractState"),
   docParseState: byId("docParseState"),
+  docContextLine: byId("docContextLine"),
   docExtractError: byId("docExtractError"),
   docExtractOutput: byId("docExtractOutput"),
   docParseOutput: byId("docParseOutput"),
@@ -764,6 +766,33 @@ function setDocParseOutput(value) {
   els.docParseOutput.textContent = JSON.stringify(safe, null, 2);
 }
 
+function sanitizeDocContext(context) {
+  const allowedTypes = new Set(["invitation", "booking", "invoice", "deadline", "travel", "reminder", "generic"]);
+  const allowedHints = new Set(["email-like", "chat-like", "document-like", "unknown"]);
+  const contextType = allowedTypes.has(context?.contextType) ? context.contextType : "generic";
+  const sourceHint = allowedHints.has(context?.sourceHint) ? context.sourceHint : "unknown";
+  const tags = Array.isArray(context?.tags)
+    ? context.tags
+        .map((tag) => String(tag || "").trim().toLowerCase())
+        .filter(Boolean)
+        .slice(0, 8)
+    : [];
+  const confidence = clampDocConfidence(context?.confidence);
+  const explanation = context?.explanation == null ? null : String(context.explanation || "").slice(0, 160);
+  return { contextType, sourceHint, tags, confidence, explanation };
+}
+
+function setDocContextLine(context) {
+  if (!els.docContextLine) return;
+  if (!context) {
+    els.docContextLine.textContent = "";
+    return;
+  }
+  const safe = sanitizeDocContext(context);
+  const tagsLabel = safe.tags.length ? safe.tags.join(",") : "-";
+  els.docContextLine.textContent = `Kontext: ${safe.contextType} (Tags: ${tagsLabel}, Conf: ${Math.round(safe.confidence * 100)}%)`;
+}
+
 function clampDocConfidence(raw) {
   const value = Number(raw);
   if (!Number.isFinite(value)) return 0;
@@ -779,6 +808,12 @@ function sanitizeDocSuggestionItem(item) {
   const location = String(item?.location || "").trim();
   const description = String(item?.description || "").trim();
   const sourceSnippet = String(item?.sourceSnippet || "").trim().slice(0, 180);
+  const contextTags = Array.isArray(item?.contextTags)
+    ? item.contextTags
+        .map((tag) => String(tag || "").trim().toLowerCase())
+        .filter(Boolean)
+        .slice(0, 10)
+    : [];
   return {
     type,
     title,
@@ -789,6 +824,7 @@ function sanitizeDocSuggestionItem(item) {
     description,
     confidence: clampDocConfidence(item?.confidence),
     sourceSnippet,
+    contextTags,
   };
 }
 
@@ -992,6 +1028,12 @@ function renderDocSuggestions() {
     row.appendChild(badge);
     row.appendChild(title);
     row.appendChild(meta);
+    if (Array.isArray(entry.item.contextTags) && entry.item.contextTags.length) {
+      const contextTagsLine = document.createElement("div");
+      contextTagsLine.className = "docSuggestionMeta";
+      contextTagsLine.innerHTML = `<div>${escapeHtml(`Kontext-Tags: ${entry.item.contextTags.join(", ")}`)}</div>`;
+      row.appendChild(contextTagsLine);
+    }
     row.appendChild(actions);
 
     if (entry.status === "created") {
@@ -1144,6 +1186,8 @@ async function applyShareImportPayload() {
     setDocExtractError("");
     setDocParseState("idle");
     setDocParseOutput([]);
+    state.docParseContext = null;
+    setDocContextLine(null);
     state.docSuggestions = [];
     renderDocSuggestions();
     uiNotify("success", "Geteilter Text wurde übernommen.");
@@ -1231,6 +1275,8 @@ async function runDocParse() {
 
   setDocParseState("parsing");
   setDocExtractError("");
+  state.docParseContext = null;
+  setDocContextLine(null);
   if (els.docParseRunBtn) els.docParseRunBtn.disabled = true;
 
   try {
@@ -1253,6 +1299,8 @@ async function runDocParse() {
     }
 
     setDocParseOutput(data.items);
+    state.docParseContext = sanitizeDocContext(data?.meta?.context || null);
+    setDocContextLine(state.docParseContext);
     state.docSuggestions = buildDocSuggestions(data.items);
     renderDocSuggestions();
     setDocParseState("success");
@@ -1273,6 +1321,8 @@ async function runDocExtract() {
   setDocExtractError("");
   setDocParseState("idle");
   setDocParseOutput([]);
+  state.docParseContext = null;
+  setDocContextLine(null);
   state.docSuggestions = [];
   renderDocSuggestions();
 
@@ -1328,6 +1378,8 @@ function initDocExtractUI() {
   setDocExtractError("");
   if (els.docExtractOutput) els.docExtractOutput.value = "";
   setDocParseOutput([]);
+  state.docParseContext = null;
+  setDocContextLine(null);
   state.docSuggestions = [];
   renderDocSuggestions();
   els.docExtractRunBtn.addEventListener("click", () => {
