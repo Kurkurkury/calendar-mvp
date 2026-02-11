@@ -5,6 +5,7 @@ import {
   setSuggestionStatus,
   shouldCommitSuggestion,
 } from "./v3/engine/suggestion-workflow.js";
+import { clipboardItemsToImageFile, dispatchAiExtractFile } from "./ai-extract-upload.mjs";
 
 const HAS_CAPACITOR = typeof window.Capacitor !== "undefined";
 const API_BASE_META = document
@@ -471,6 +472,7 @@ const els = {
   smartOptimizationList: byId("smartOptimizationList"),
 
   aiExtractInput: byId("aiExtractInput"),
+  aiExtractCard: byId("aiExtractCard"),
   aiExtractDrop: byId("aiExtractDrop"),
   aiExtractStatus: byId("aiExtractStatus"),
   aiExtractError: byId("aiExtractError"),
@@ -1594,7 +1596,7 @@ function initDocExtractUI() {
 }
 
 function initAiExtractUI() {
-  if (!els.aiExtractInput || !els.aiExtractDrop) return;
+  if (!els.aiExtractInput || !els.aiExtractDrop || !els.aiExtractCard) return;
 
   els.aiExtractInput.accept = AI_EXTRACT_ACCEPT;
   els.aiExtractDrop.style.borderStyle = "dashed";
@@ -1607,8 +1609,29 @@ function initAiExtractUI() {
   };
 
   const handleFiles = (files) => {
-    if (!files?.length) return;
-    void handleAiExtractFile(files[0]);
+    const firstFile = files?.[0] || null;
+    if (!firstFile) return;
+    dispatchAiExtractFile(firstFile, (file) => {
+      void handleAiExtractFile(file);
+    });
+  };
+
+  let aiExtractPasteArmed = false;
+
+  const activatePasteCapture = () => {
+    aiExtractPasteArmed = true;
+  };
+
+  const deactivatePasteCapture = () => {
+    aiExtractPasteArmed = false;
+  };
+
+  const onDocumentPaste = (event) => {
+    if (!aiExtractPasteArmed || isMobile()) return;
+    const file = clipboardItemsToImageFile(event.clipboardData?.items, Date.now());
+    if (!file) return;
+    event.preventDefault();
+    handleFiles([file]);
   };
 
   els.aiExtractInput.addEventListener("change", (event) => {
@@ -1641,6 +1664,14 @@ function initAiExtractUI() {
     setDropActive(false);
     handleFiles(event.dataTransfer?.files);
   });
+
+  els.aiExtractCard.addEventListener("focusin", activatePasteCapture);
+  els.aiExtractCard.addEventListener("click", activatePasteCapture);
+  document.addEventListener("pointerdown", (event) => {
+    if (els.aiExtractCard?.contains(event.target)) return;
+    deactivatePasteCapture();
+  });
+  document.addEventListener("paste", onDocumentPaste);
 
   clearAiExtractResults();
   clearAiExtractWarnings();

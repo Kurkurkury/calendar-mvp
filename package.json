@@ -7,7 +7,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "test:phase3": "node --test www/v3/__tests__/phase3.test.js",
     "test:phase4": "node --test www/v3/__tests__/phase4-workflow.test.js",
-    "test:all": "node --test www/v3/__tests__/phase3.test.js www/v3/__tests__/phase4-workflow.test.js"
+    "test:all": "node --test www/__tests__/ai-extract-upload.test.mjs www/v3/__tests__/phase3.test.js www/v3/__tests__/phase4-workflow.test.js",
+    "test:ai-extract": "node --test www/__tests__/ai-extract-upload.test.mjs"
   },
   "keywords": [],
   "author": "",
