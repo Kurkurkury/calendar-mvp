@@ -1,4 +1,10 @@
 import { buildSuggestionGroups } from "./v3/engine/index.js";
+import {
+  SUGGESTION_STATUS,
+  createSuggestionStatusMap,
+  setSuggestionStatus,
+  shouldCommitSuggestion,
+} from "./v3/engine/suggestion-workflow.js";
 
 const HAS_CAPACITOR = typeof window.Capacitor !== "undefined";
 const API_BASE = HAS_CAPACITOR
@@ -363,7 +369,9 @@ const state = {
   selectedEventData: null,
   detailEvent: null,
   eventSuggestions: [],
+  eventSuggestionStatuses: {},
   selectedSuggestionId: null,
+  reviewSuggestionId: null,
   eventSuggestionRequest: null,
   freeSlots: [],
   approvedFreeSlots: [],
@@ -584,6 +592,14 @@ const els = {
   suggestionList: byId("suggestionList"),
   suggestionCancelBtn: byId("suggestionCancelBtn"),
   suggestionConfirmBtn: byId("suggestionConfirmBtn"),
+
+  suggestionReviewBackdrop: byId("suggestionReviewBackdrop"),
+  suggestionReviewModal: byId("suggestionReviewModal"),
+  suggestionReviewCloseBtn: byId("suggestionReviewCloseBtn"),
+  suggestionReviewSummary: byId("suggestionReviewSummary"),
+  suggestionReviewError: byId("suggestionReviewError"),
+  suggestionReviewCancelBtn: byId("suggestionReviewCancelBtn"),
+  suggestionReviewCreateBtn: byId("suggestionReviewCreateBtn"),
 
   // Document suggestion create confirm modal
   docCreateConfirmBackdrop: byId("docCreateConfirmBackdrop"),
@@ -1991,7 +2007,10 @@ async function boot() {
   els.closeSuggestionBtn?.addEventListener("click", closeSuggestionModal);
   els.suggestionBackdrop?.addEventListener("click", closeSuggestionModal);
   els.suggestionCancelBtn?.addEventListener("click", closeSuggestionModal);
-  els.suggestionConfirmBtn?.addEventListener("click", confirmSuggestedEvent);
+  els.suggestionReviewCloseBtn?.addEventListener("click", closeSuggestionReviewModal);
+  els.suggestionReviewCancelBtn?.addEventListener("click", closeSuggestionReviewModal);
+  els.suggestionReviewBackdrop?.addEventListener("click", closeSuggestionReviewModal);
+  els.suggestionReviewCreateBtn?.addEventListener("click", confirmSuggestedEvent);
 
   // Edit event modal
   els.closeEditEventBtn?.addEventListener("click", closeEditEventModal);
@@ -4350,7 +4369,9 @@ function closeEventModal() {
 
 function openSuggestionModal(suggestions, requestPayload) {
   state.eventSuggestions = Array.isArray(suggestions) ? suggestions : [];
+  state.eventSuggestionStatuses = createSuggestionStatusMap(state.eventSuggestions);
   state.selectedSuggestionId = null;
+  state.reviewSuggestionId = null;
   state.eventSuggestionRequest = requestPayload || null;
   renderSuggestionList();
   els.suggestionBackdrop?.classList.remove("hidden");
@@ -4359,7 +4380,9 @@ function openSuggestionModal(suggestions, requestPayload) {
 
 function openSuggestionModalWithPreselect(suggestions, requestPayload, preselectedId) {
   state.eventSuggestions = Array.isArray(suggestions) ? suggestions : [];
+  state.eventSuggestionStatuses = createSuggestionStatusMap(state.eventSuggestions);
   state.selectedSuggestionId = preselectedId || null;
+  state.reviewSuggestionId = null;
   state.eventSuggestionRequest = requestPayload || null;
   renderSuggestionList();
   els.suggestionBackdrop?.classList.remove("hidden");
@@ -4367,11 +4390,91 @@ function openSuggestionModalWithPreselect(suggestions, requestPayload, preselect
 }
 
 function closeSuggestionModal() {
+  closeSuggestionReviewModal();
   state.eventSuggestions = [];
+  state.eventSuggestionStatuses = {};
   state.selectedSuggestionId = null;
+  state.reviewSuggestionId = null;
   state.eventSuggestionRequest = null;
   els.suggestionBackdrop?.classList.add("hidden");
   els.suggestionModal?.classList.add("hidden");
+}
+
+function getSuggestionStatus(suggestionId) {
+  return state.eventSuggestionStatuses?.[suggestionId] || SUGGESTION_STATUS.PENDING;
+}
+
+function updateSuggestionStatus(suggestionId, nextStatus) {
+  state.eventSuggestionStatuses = setSuggestionStatus(state.eventSuggestionStatuses, suggestionId, nextStatus);
+}
+
+function getSuggestionById(suggestionId) {
+  return (state.eventSuggestions || []).find((entry) => entry?.id === suggestionId) || null;
+}
+
+function acceptSuggestion(suggestionId) {
+  if (!suggestionId) return;
+  updateSuggestionStatus(suggestionId, SUGGESTION_STATUS.ACCEPTED);
+  state.selectedSuggestionId = suggestionId;
+  renderSuggestionList();
+}
+
+function dismissSuggestion(suggestionId) {
+  if (!suggestionId) return;
+  updateSuggestionStatus(suggestionId, SUGGESTION_STATUS.DISMISSED);
+  if (state.selectedSuggestionId === suggestionId) {
+    state.selectedSuggestionId = null;
+  }
+  if (state.reviewSuggestionId === suggestionId) {
+    closeSuggestionReviewModal();
+  }
+  renderSuggestionList();
+}
+
+function openSuggestionReviewModal(suggestionId) {
+  const suggestion = getSuggestionById(suggestionId);
+  const status = getSuggestionStatus(suggestionId);
+  if (!suggestion || status !== SUGGESTION_STATUS.ACCEPTED) {
+    uiNotify("error", "Nur akzeptierte Vorschläge können überprüft werden.");
+    return;
+  }
+
+  state.reviewSuggestionId = suggestionId;
+  renderSuggestionReview();
+  els.suggestionReviewError && (els.suggestionReviewError.textContent = "");
+  els.suggestionReviewBackdrop?.classList.remove("hidden");
+  els.suggestionReviewModal?.classList.remove("hidden");
+}
+
+function closeSuggestionReviewModal() {
+  state.reviewSuggestionId = null;
+  if (els.suggestionReviewError) els.suggestionReviewError.textContent = "";
+  els.suggestionReviewBackdrop?.classList.add("hidden");
+  els.suggestionReviewModal?.classList.add("hidden");
+}
+
+function renderSuggestionReview() {
+  if (!els.suggestionReviewSummary) return;
+  const suggestion = getSuggestionById(state.reviewSuggestionId);
+  if (!suggestion) {
+    els.suggestionReviewSummary.innerHTML = "<div class=\"itemMeta\">Kein Vorschlag ausgewählt.</div>";
+    return;
+  }
+  const start = suggestion?.start ? new Date(suggestion.start) : null;
+  const end = suggestion?.end ? new Date(suggestion.end) : null;
+  const hasStart = start && !Number.isNaN(start.getTime());
+  const hasEnd = end && !Number.isNaN(end.getTime());
+
+  const rows = [
+    ["Titel", state.eventSuggestionRequest?.title || "Termin"],
+    ["Datum", hasStart ? fmtDate(start) : "-"],
+    ["Start", hasStart ? fmtTime(start) : "-"],
+    ["Ende", hasEnd ? fmtTime(end) : "-"],
+    ["Ort", state.eventSuggestionRequest?.location || "-"],
+  ];
+  els.suggestionReviewSummary.innerHTML = rows
+    .map(([label, value]) => `<div class=\"item\"><div class=\"itemTitle\">${label}</div><div class=\"itemMeta\">${escapeHtml(String(value || "-"))}</div></div>`)
+    .join("");
 }
 
 function renderSuggestionList() {
@@ -4397,10 +4500,10 @@ function renderSuggestionList() {
     const hasEnd = end && !Number.isNaN(end.getTime());
     const duration = hasStart && hasEnd ? Math.round((end - start) / 60000) : null;
 
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "suggestionItem";
-    if (state.selectedSuggestionId === suggestion.id) button.classList.add("active");
+    const item = document.createElement("div");
+    item.className = "suggestionItem";
+    if (state.selectedSuggestionId === suggestion.id) item.classList.add("active");
+    const suggestionStatus = getSuggestionStatus(suggestion.id);
 
     const title = document.createElement("div");
     title.className = "suggestionTitle";
@@ -4417,18 +4520,48 @@ function renderSuggestionList() {
       meta.appendChild(reasonLine);
     }
 
-    button.appendChild(title);
-    button.appendChild(meta);
-    button.addEventListener("click", () => {
-      state.selectedSuggestionId = suggestion.id;
-      renderSuggestionList();
-    });
+    const statusLine = document.createElement("div");
+    statusLine.className = "suggestionMeta";
+    statusLine.textContent = `Status: ${suggestionStatus}`;
 
-    els.suggestionList.appendChild(button);
+    const actions = document.createElement("div");
+    actions.className = "suggestionActions";
+
+    const acceptBtn = document.createElement("button");
+    acceptBtn.type = "button";
+    acceptBtn.className = "btn ghost";
+    acceptBtn.textContent = "Accept";
+    acceptBtn.disabled = suggestionStatus === SUGGESTION_STATUS.COMMITTED;
+    acceptBtn.addEventListener("click", () => acceptSuggestion(suggestion.id));
+
+    const dismissBtn = document.createElement("button");
+    dismissBtn.type = "button";
+    dismissBtn.className = "btn ghost";
+    dismissBtn.textContent = "Dismiss";
+    dismissBtn.disabled = suggestionStatus === SUGGESTION_STATUS.COMMITTED;
+    dismissBtn.addEventListener("click", () => dismissSuggestion(suggestion.id));
+
+    actions.appendChild(acceptBtn);
+    actions.appendChild(dismissBtn);
+
+    if (suggestionStatus === SUGGESTION_STATUS.ACCEPTED) {
+      const reviewBtn = document.createElement("button");
+      reviewBtn.type = "button";
+      reviewBtn.className = "btn primary";
+      reviewBtn.textContent = "Review & Create";
+      reviewBtn.addEventListener("click", () => openSuggestionReviewModal(suggestion.id));
+      actions.appendChild(reviewBtn);
+    }
+
+    item.appendChild(title);
+    item.appendChild(meta);
+    item.appendChild(statusLine);
+    item.appendChild(actions);
+    els.suggestionList.appendChild(item);
   });
 
   if (els.suggestionConfirmBtn) {
-    els.suggestionConfirmBtn.disabled = !state.selectedSuggestionId;
+    els.suggestionConfirmBtn.disabled = true;
   }
 }
 
@@ -5317,13 +5450,19 @@ async function createEventFromForm() {
 }
 
 async function confirmSuggestedEvent() {
-  if (!state.selectedSuggestionId) {
-    uiNotify('error', 'Bitte einen Vorschlag auswählen.');
+  const suggestionId = state.reviewSuggestionId;
+  const explicitlyConfirmed = true;
+  if (!shouldCommitSuggestion(getSuggestionStatus(suggestionId), explicitlyConfirmed)) {
+    const message = 'Commit nur nach Accept + Review-Bestätigung möglich.';
+    if (els.suggestionReviewError) {
+      els.suggestionReviewError.textContent = message;
+    }
+    uiNotify('error', message);
     return;
   }
 
-  const btn = els.suggestionConfirmBtn;
-  const oldText = btn?.textContent || "Termin erstellen";
+  const btn = els.suggestionReviewCreateBtn;
+  const oldText = btn?.textContent || "Create in Google Calendar";
   if (btn) {
     btn.disabled = true;
     btn.textContent = "Erstelle…";
@@ -5334,13 +5473,15 @@ async function confirmSuggestedEvent() {
 
   try {
     const createdRes = await apiPost('/api/event-suggestions/confirm', {
-      suggestionId: state.selectedSuggestionId,
+      suggestionId,
     });
 
     await applyCreatedEvent(createdRes, state.eventSuggestionRequest?.title || "Termin");
+    updateSuggestionStatus(suggestionId, SUGGESTION_STATUS.COMMITTED);
+    renderSuggestionList();
     uiNotify('success', 'Termin erstellt');
     resetCreateEventForm();
-    closeSuggestionModal();
+    closeSuggestionReviewModal();
     if (isMobile()) {
       closeSidebarDrawer();
     }
@@ -5359,6 +5500,9 @@ async function confirmSuggestedEvent() {
       const short = msg.split("\n")[0].slice(0, 160);
       setStatus(`Fehler beim Erstellen: ${short}`, false);
       uiNotify('error', `Fehler beim Erstellen: ${short}`);
+      if (els.suggestionReviewError) {
+        els.suggestionReviewError.textContent = `Fehler beim Erstellen: ${short}`;
+      }
     }
   } finally {
     setSyncLoading(false);

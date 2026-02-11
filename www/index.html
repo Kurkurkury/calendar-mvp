@@ -577,7 +577,23 @@
 
     <div class="modalFoot">
       <button id="suggestionCancelBtn" class="btn ghost" type="button">Abbrechen</button>
-      <button id="suggestionConfirmBtn" class="btn primary" type="button" disabled>Termin erstellen</button>
+      <button id="suggestionConfirmBtn" class="btn primary hidden" type="button" disabled>Termin erstellen</button>
+    </div>
+  </div>
+
+  <div id="suggestionReviewBackdrop" class="backdrop hidden"></div>
+  <div id="suggestionReviewModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="suggestionReviewTitle">
+    <div class="modalHead">
+      <div id="suggestionReviewTitle" class="modalTitle">Review suggestion</div>
+      <button id="suggestionReviewCloseBtn" class="btn ghost" aria-label="Review schließen">✕</button>
+    </div>
+    <div class="modalBody">
+      <div id="suggestionReviewSummary" class="docCreateConfirmSummary"></div>
+      <div id="suggestionReviewError" class="docExtractError" role="alert"></div>
+    </div>
+    <div class="modalFoot">
+      <button id="suggestionReviewCancelBtn" class="btn ghost" type="button">Cancel</button>
+      <button id="suggestionReviewCreateBtn" class="btn primary" type="button">Create in Google Calendar</button>
     </div>
   </div>
 
