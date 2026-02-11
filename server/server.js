@@ -1177,124 +1177,313 @@ function timeSortValue(startTime) {
   return startTime;
 }
 
+function normalizeSuggestionTitle(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function timeToMinutes(value) {
+  if (!/^\d{2}:\d{2}$/.test(String(value || ""))) return null;
+  const [h, m] = String(value).split(":").map((n) => Number(n));
+  return h * 60 + m;
+}
+
+function detectMultiEventStructures({ items, text }) {
+  const safeItems = Array.isArray(items) ? items : [];
+  const fullText = String(text || "");
+  const lower = fullText.toLowerCase();
+  const structures = [];
+  const assigned = new Set();
+  let nextGroup = 1;
+
+  const travelCue = /\b(hinflug|rückflug|hinreise|rückreise|outbound|return|depart|arrive|abflug|ankunft|flight|trip|travel)\b/i.test(
+    lower,
+  );
+  const travelMembers = safeItems.filter((item) => {
+    const hay = `${item?.title || ""} ${item?.sourceSnippet || ""}`.toLowerCase();
+    return /\b(hinflug|rückflug|hinreise|rückreise|outbound|return|depart|arrive|abflug|ankunft|flight|trip|travel|hotel|check-?in|check-?out)\b/.test(
+      hay,
+    );
+  });
+  if ((travelCue || travelMembers.length >= 2) && travelMembers.length >= 2) {
+    const groupId = `g${nextGroup++}`;
+    const orderedMembers = travelMembers
+      .slice()
+      .sort((a, b) => `${dateSortValue(a.dateISO)} ${timeSortValue(a.startTime)}`.localeCompare(`${dateSortValue(b.dateISO)} ${timeSortValue(b.startTime)}`));
+    orderedMembers.forEach((item) => assigned.add(item._suggestionId));
+    structures.push({
+      type: "travel",
+      groupId,
+      groupTitle: "Reise",
+      members: orderedMembers.map((item) => item._suggestionId),
+      rationale: "Abreise-/Rückreise-Hinweise und mehrere Reisesegmente erkannt.",
+      strength: 0.9,
+    });
+  }
+
+  const byDate = new Map();
+  for (const item of safeItems) {
+    if (!item?.dateISO || !item?.startTime) continue;
+    if (!byDate.has(item.dateISO)) byDate.set(item.dateISO, []);
+    byDate.get(item.dateISO).push(item);
+  }
+  for (const [dateISO, entries] of byDate.entries()) {
+    if (entries.length < 2) continue;
+    const normalizedTitles = entries.map((item) => normalizeSuggestionTitle(item.title));
+    const prefix = normalizedTitles[0]?.split(" ")[0] || "";
+    const sharedPrefix = prefix && normalizedTitles.filter((title) => title.startsWith(prefix)).length >= 2;
+    if (sharedPrefix || entries.length >= 3) {
+      const free = entries.filter((item) => !assigned.has(item._suggestionId));
+      if (free.length < 2) continue;
+      const groupId = `g${nextGroup++}`;
+      free.forEach((item) => assigned.add(item._suggestionId));
+      structures.push({
+        type: "agenda",
+        groupId,
+        groupTitle: `Agenda (${dateISO})`,
+        members: free
+          .slice()
+          .sort((a, b) => timeSortValue(a.startTime).localeCompare(timeSortValue(b.startTime)))
+          .map((item) => item._suggestionId),
+        rationale: "Mehrere Zeitfenster am selben Tag mit gemeinsamem Agenda-Kontext erkannt.",
+        strength: 0.82,
+      });
+    }
+  }
+
+  const seriesCue = /\b(jeden|jede\s+woche|weekly|wöchentlich|every\s+week|montag|dienstag|mittwoch|donnerstag|freitag)\b/i.test(
+    lower,
+  );
+  const byTitle = new Map();
+  for (const item of safeItems) {
+    const key = normalizeSuggestionTitle(item?.title || "");
+    if (!key) continue;
+    if (!byTitle.has(key)) byTitle.set(key, []);
+    byTitle.get(key).push(item);
+  }
+  for (const [titleKey, entries] of byTitle.entries()) {
+    const dateSet = new Set(entries.map((item) => item?.dateISO).filter(Boolean));
+    if (entries.length < 2 || dateSet.size < 2) continue;
+    const free = entries.filter((item) => !assigned.has(item._suggestionId));
+    if (free.length < 2) continue;
+    const groupId = `g${nextGroup++}`;
+    free.forEach((item) => assigned.add(item._suggestionId));
+    structures.push({
+      type: "series",
+      groupId,
+      groupTitle: `Serie: ${sanitizeExplanationText(titleKey).slice(0, 24) || "Termin"}`,
+      members: free
+        .slice()
+        .sort((a, b) => `${dateSortValue(a.dateISO)} ${timeSortValue(a.startTime)}`.localeCompare(`${dateSortValue(b.dateISO)} ${timeSortValue(b.startTime)}`))
+        .map((item) => item._suggestionId),
+      rationale: seriesCue
+        ? "Wiederholungsmuster (wöchentlich/Wochentag) erkannt."
+        : "Gleicher Titel mit mehreren unterschiedlichen Daten erkannt.",
+      strength: seriesCue ? 0.86 : 0.78,
+    });
+  }
+
+  for (const item of safeItems) {
+    if (assigned.has(item._suggestionId)) continue;
+    structures.push({
+      type: "single",
+      groupId: `g${nextGroup++}`,
+      groupTitle: "Einzeltermin",
+      members: [item._suggestionId],
+      rationale: "Kein Mehrfachmuster erkannt.",
+      strength: 0.55,
+    });
+  }
+
+  const structureByItemId = new Map();
+  for (const structure of structures) {
+    for (const id of structure.members) {
+      structureByItemId.set(id, structure);
+    }
+  }
+
+  const multiCount = structures.filter((s) => s.type !== "single").length;
+  const groupingConfidence = multiCount ? clamp(Math.max(...structures.map((s) => s.strength || 0)), 0, 1) : 0.4;
+  return { structures, structureByItemId, groupingConfidence };
+}
+
+function computeSuggestionConfidence({ item, context, structure }) {
+  const base = clamp(Number(item?.confidence) || 0, 0, 1) * 0.55;
+  const fieldScore =
+    (item?.dateISO ? 0.18 : -0.1) +
+    (item?.startTime ? 0.16 : -0.06) +
+    (item?.durationMin ? 0.05 : 0) +
+    (item?.title ? 0.05 : 0) +
+    (item?.location ? 0.03 : 0);
+  const contextBonus =
+    (context?.contextType && context.contextType !== "generic" ? 0.05 : 0) +
+    (Array.isArray(item?.contextTags) && item.contextTags.length >= 2 ? 0.03 : 0);
+  const structureBonus = structure && structure.type !== "single" ? clamp(Number(structure.strength) || 0, 0, 1) * 0.12 : 0;
+  return clamp(base + fieldScore + contextBonus + structureBonus, 0, 1);
+}
+
+function buildSuggestionExplanation({ item, context, structure, suggestionConfidence }) {
+  const contextType = structure?.type && structure.type !== "single" ? structure.type : context?.contextType || "generic";
+  const cueParts = [];
+  if (item?.dateISO) cueParts.push(`Datum ${item.dateISO}`);
+  if (item?.startTime) cueParts.push(`Uhrzeit ${item.startTime}`);
+  if (item?.location) cueParts.push(`Ort ${sanitizeExplanationText(item.location).slice(0, 30)}`);
+  if (!cueParts.length && item?.sourceSnippet) cueParts.push(`Textmuster "${sanitizeExplanationText(item.sourceSnippet).slice(0, 36)}"`);
+  const bullets = [
+    cueParts.length ? `Auslöser: ${cueParts.slice(0, 2).join(", ")}.` : "Auslöser: Schlüsselwörter im Dokument erkannt.",
+    `Feldqualität: ${item?.dateISO && item?.startTime ? "Datum/Uhrzeit sicher" : "Teile wurden ergänzt oder fehlen"}.`,
+  ];
+  if (structure && structure.type !== "single") bullets.push(`Gruppierung: ${structure.rationale}`);
+  bullets.push(`Sicherheit: ${Math.round(clamp(suggestionConfidence, 0, 1) * 100)}%.`);
+  return {
+    title: `Erkannt als ${contextType} mit deterministischen Hinweisen.`,
+    bullets: bullets.slice(0, 4).map((b) => sanitizeExplanationText(b)),
+  };
+}
+
+function dedupeSuggestions(entries) {
+  const kept = [];
+  const byKey = new Map();
+
+  for (const entry of entries) {
+    const normalizedTitle = normalizeSuggestionTitle(entry?.title || "");
+    const dateISO = entry?.dateISO || "";
+    const minuteBucket = timeToMinutes(entry?.startTime);
+    const dedupeKey = `${normalizedTitle}|${dateISO}`;
+    if (!normalizedTitle || !dateISO || minuteBucket == null) {
+      kept.push(entry);
+      continue;
+    }
+
+    const existing = byKey.get(dedupeKey);
+    if (!existing) {
+      byKey.set(dedupeKey, entry);
+      kept.push(entry);
+      continue;
+    }
+    const existingMinute = timeToMinutes(existing.startTime);
+    if (existingMinute != null && Math.abs(existingMinute - minuteBucket) <= 5) {
+      if ((entry.suggestionConfidence || 0) > (existing.suggestionConfidence || 0)) {
+        const idx = kept.indexOf(existing);
+        if (idx >= 0) kept[idx] = entry;
+        byKey.set(dedupeKey, entry);
+      }
+    } else {
+      kept.push(entry);
+    }
+  }
+
+  const filtered = kept.filter((entry) => {
+    const isUmbrella = /\b(reise|trip|travel)\b/i.test(entry?.title || "") && !entry?.startTime;
+    if (!isUmbrella) return true;
+    return !kept.some((other) =>
+      other !== entry &&
+      other.groupId === entry.groupId &&
+      !!other.startTime &&
+      /\b(hin|rück|abflug|arrival|depart|flight)\b/i.test(`${other.title || ""} ${other.sourceSnippet || ""}`),
+    );
+  });
+
+  return filtered;
+}
+
 // Inline test sample (travel outbound+return):
 // "Hinreise 12.05 08:00 Zürich nach Berlin\nRückreise 15.05 18:30 Berlin nach Zürich" -> groupLabel "Reise" with same groupId.
 // Inline test sample (invoice+deadline):
 // "Rechnung 2025-09-12 erhalten, Zahlung fällig bis 2025-09-30" -> groupLabel "Rechnung" with due-date explanation.
 
 function enrichAndGroupDocItems({ items, context, text }) {
-  const safeItems = Array.isArray(items) ? items : [];
-  const fullText = String(text || "").toLowerCase();
-
-  const outboundCue = /\b(hinreise|abflug|departure|outbound|hin\b)\b/.test(fullText);
-  const returnCue = /\b(rückreise|rückflug|return|inbound|rück\b)\b/.test(fullText);
-  const travelRoundTripDetected = outboundCue && returnCue;
-  const invoiceCue = /\b(invoice|rechnung|iban|vat|payment|betrag)\b/.test(fullText);
-  const dueCue = /\b(fällig|due date|due|deadline|zahlbar bis|payment due)\b/.test(fullText);
-  const invoiceDueDetected = invoiceCue && dueCue;
-
-  const working = safeItems.map((item, idx) => {
-    const topicLabel = getItemTopicLabel(item, context);
-    const titleTokens = normalizeTopicTokens(item?.title || "");
-    const forcedGroupKey =
-      travelRoundTripDetected && topicLabel === "Reise"
-        ? "forced-travel"
-        : invoiceDueDetected && topicLabel === "Rechnung"
-          ? "forced-invoice"
-          : null;
+  const safeItems = (Array.isArray(items) ? items : []).map((item, idx) => ({ ...item, _suggestionId: `s${idx + 1}` }));
+  const detection = detectMultiEventStructures({ items: safeItems, text });
+  const withScores = safeItems.map((item) => {
+    const structure = detection.structureByItemId.get(item._suggestionId);
+    const suggestionConfidence = computeSuggestionConfidence({ item, context, structure });
+    const explanation = buildSuggestionExplanation({ item, context, structure, suggestionConfidence });
     return {
-      idx,
-      item,
-      topicLabel,
-      titleTokens,
-      forcedGroupKey,
+      ...item,
+      groupId: structure?.groupId || "",
+      groupType: structure?.type || "single",
+      groupTitle: structure?.groupTitle || "Termin",
+      groupLabel: structure?.groupTitle || getItemTopicLabel(item, context),
+      suggestionConfidence,
+      explanation,
     };
   });
 
-  const groups = [];
-  for (const entry of working.sort((a, b) => (b.item.confidence || 0) - (a.item.confidence || 0))) {
-    if (entry.forcedGroupKey) {
-      let forced = groups.find((g) => g.key === entry.forcedGroupKey);
-      if (!forced) {
-        forced = { key: entry.forcedGroupKey, label: entry.topicLabel, items: [] };
-        groups.push(forced);
-      }
-      forced.items.push(entry);
-      continue;
-    }
+  const deduped = dedupeSuggestions(withScores);
+  const sorted = deduped.slice().sort((a, b) => {
+    const confDiff = (b.suggestionConfidence || 0) - (a.suggestionConfidence || 0);
+    if (confDiff !== 0) return confDiff;
+    const aStructured = a.groupType && a.groupType !== "single" ? 1 : 0;
+    const bStructured = b.groupType && b.groupType !== "single" ? 1 : 0;
+    if (aStructured !== bStructured) return bStructured - aStructured;
+    const dateDiff = dateSortValue(a.dateISO).localeCompare(dateSortValue(b.dateISO));
+    if (dateDiff !== 0) return dateDiff;
+    return timeSortValue(a.startTime).localeCompare(timeSortValue(b.startTime));
+  });
 
-    let best = null;
-    let bestScore = -1;
-    for (const g of groups) {
-      const any = g.items[0];
-      const sameLabel = g.label === entry.topicLabel;
-      const sameDay = Boolean(entry.item?.dateISO) && g.items.some((e) => e.item?.dateISO && e.item.dateISO === entry.item.dateISO);
-      const overlap = Math.max(...g.items.map((e) => tokenOverlapScore(e.titleTokens, entry.titleTokens)), 0);
-      const score = (sameLabel ? 3 : 0) + (sameDay ? 2 : 0) + (overlap >= 0.34 ? 2 : 0);
-      if (score > bestScore) {
-        best = g;
-        bestScore = score;
-      }
-      if (!any) continue;
+  const groupsMap = new Map();
+  for (const item of sorted) {
+    const key = item.groupId || `single-${item._suggestionId}`;
+    if (!groupsMap.has(key)) {
+      groupsMap.set(key, {
+        groupId: item.groupId || key,
+        groupType: item.groupType || "single",
+        groupTitle: sanitizeExplanationText(item.groupTitle || item.groupLabel || "Termin") || "Termin",
+        members: [],
+      });
     }
-
-    if (best && bestScore >= 3) {
-      best.items.push(entry);
-    } else {
-      groups.push({ key: `group-${groups.length + 1}`, label: entry.topicLabel, items: [entry] });
-    }
+    groupsMap.get(key).members.push(item);
   }
 
-  const sortedGroups = groups
-    .map((group, i) => {
+  const groups = Array.from(groupsMap.values())
+    .map((group) => {
       const confidenceAvg =
-        group.items.reduce((sum, e) => sum + clamp(Number(e.item?.confidence) || 0, 0, 1), 0) /
-        Math.max(1, group.items.length);
-      const groupId = `g${i + 1}`;
+        group.members.reduce((sum, item) => sum + clamp(item.suggestionConfidence || 0, 0, 1), 0) /
+        Math.max(1, group.members.length);
       return {
-        groupId,
-        label: sanitizeExplanationText(group.label) || "Termin",
-        itemCount: group.items.length,
-        confidenceAvg,
-        items: group.items
-          .slice()
-          .sort((a, b) => {
-            const confDiff = (b.item?.confidence || 0) - (a.item?.confidence || 0);
-            if (confDiff !== 0) return confDiff;
-            const dateDiff = dateSortValue(a.item?.dateISO).localeCompare(dateSortValue(b.item?.dateISO));
-            if (dateDiff !== 0) return dateDiff;
-            return timeSortValue(a.item?.startTime).localeCompare(timeSortValue(b.item?.startTime));
-          }),
+        groupId: group.groupId,
+        groupType: group.groupType,
+        groupTitle: group.groupTitle,
+        label: group.groupTitle,
+        itemCount: group.members.length,
+        confidenceAvg: clamp(confidenceAvg, 0, 1),
       };
     })
     .sort((a, b) => b.confidenceAvg - a.confidenceAvg);
 
-  const flattened = [];
-  for (const group of sortedGroups) {
-    for (const entry of group.items) {
-      const explanation = buildDeterministicExplanation({
-        item: entry.item,
-        groupLabel: group.label,
-        travelRoundTripDetected,
-        invoiceDueDetected,
-      });
-      flattened.push({
-        ...entry.item,
-        groupId: group.groupId,
-        groupLabel: group.label,
-        explanation: sanitizeExplanationText(explanation) || "Kontext erkannt.",
-      });
-    }
+  const noStructureDetected = !detection.structures.some((s) => s.type !== "single");
+  const shouldUseAiGroupingFallback =
+    noStructureDetected && safeItems.length > 1 && detection.groupingConfidence < 0.55;
+  if (shouldUseAiGroupingFallback) {
+    console.log("[doc-parse] ai grouping fallback eligible", {
+      candidateCount: safeItems.length,
+      groupingConfidence: detection.groupingConfidence,
+    });
   }
 
   return {
-    items: flattened,
-    groups: sortedGroups.map((group) => ({
-      groupId: group.groupId,
-      label: group.label,
-      itemCount: group.itemCount,
-      confidenceAvg: clamp(group.confidenceAvg, 0, 1),
+    items: sorted.map((item) => ({
+      ...item,
+      explanationText: item.explanation?.title || "Kontext erkannt.",
+      confidence: clamp(item.confidence, 0, 1),
     })),
+    groups,
+    structures: detection.structures.map((s) => ({
+      type: s.type,
+      groupId: s.groupId,
+      members: s.members,
+      rationale: sanitizeExplanationText(s.rationale),
+    })),
+    groupingMeta: {
+      noStructureDetected,
+      deterministicGroupingConfidence: detection.groupingConfidence,
+      aiFallbackUsed: false,
+      aiFallbackEligible: shouldUseAiGroupingFallback,
+    },
   };
 }
 
@@ -3428,6 +3617,8 @@ app.post("/api/doc/parse", async (req, res) => {
         context,
         contextFallbackUsed,
         groups: grouped.groups,
+        structures: grouped.structures,
+        grouping: grouped.groupingMeta,
       },
     });
   } catch {
