@@ -1945,36 +1945,13 @@ function requireApiKeyUnlessDevDisconnect(req, res, next) {
   return requireApiKey(req, res, next);
 }
 
-// ---- Static Web (www/ oder public/) ----
-function pickWebDir() {
-  const candidates = [
-    path.join(__dirname, "..", "www"),
-    path.join(__dirname, "..", "public"),
-    path.join(__dirname, "www"),
-    path.join(__dirname, "public"),
-  ];
-  for (const p of candidates) {
-    try {
-      if (
-        fs.existsSync(p) &&
-        fs.statSync(p).isDirectory() &&
-        fs.existsSync(path.join(p, "index.html"))
-      ) {
-        return p;
-      }
-    } catch {
-      // ignore
-    }
-  }
-  return null;
-}
-
-const WEB_DIR = pickWebDir();
-if (WEB_DIR) {
+// ---- Static Web (repo-root www/) ----
+const WEB_DIR = path.join(__dirname, "..", "www");
+if (fs.existsSync(path.join(WEB_DIR, "index.html"))) {
   app.use(express.static(WEB_DIR));
   logDebug(`Serving static from: ${WEB_DIR}`);
 } else {
-  console.warn("⚠️  No static web dir found (expected ../www or ../public with index.html)");
+  console.warn("⚠️  No static web dir found (expected ../www with index.html)");
 }
 
 // ---- Health ----
@@ -4306,18 +4283,6 @@ app.post("/api/tasks", requireApiKey, (req, res) => {
   res.json({ ok: true, task });
 });
 
-// ---- Fallback: SPA / Root (damit "Cannot GET /" nicht passiert) ----
-app.get("/", (req, res) => {
-  if (!WEB_DIR) return res.status(404).send("Web UI not configured");
-  res.sendFile(path.join(WEB_DIR, "index.html"));
-});
-
-app.get("/*", (req, res) => {
-  if (req.path.startsWith("/api/")) return res.status(404).json({ ok: false, message: "Not found" });
-  if (!WEB_DIR) return res.status(404).send("Web UI not configured");
-  res.sendFile(path.join(WEB_DIR, "index.html"));
-});
-
 /**
  * ✅ WICHTIG: auf 0.0.0.0 binden, damit Android Emulator (10.0.2.2) / Handy zugreifen kann
  */
@@ -4465,6 +4430,12 @@ app.delete("/api/google/events/:id", requireApiKey, async (req, res) => {
     logDebug(`google delete failed: ${eventId}`);
     return res.status(500).json({ ok: false, message: "delete failed", details: msg });
   }
+});
+
+// ---- Fallback: SPA / Root (nur fuer Nicht-API GET-Routen) ----
+app.get(/^\/(?!api(?:\/|$)).*/, (req, res) => {
+  if (!WEB_DIR) return res.status(404).send("Web UI not configured");
+  return res.sendFile(path.join(WEB_DIR, "index.html"));
 });
 
 app.listen(PORT, "0.0.0.0", () => {
