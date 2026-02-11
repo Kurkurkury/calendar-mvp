@@ -571,6 +571,22 @@
     </div>
   </div>
 
+  <div id="docCreateConfirmBackdrop" class="backdrop hidden"></div>
+  <div id="docCreateConfirmModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="docCreateConfirmTitle">
+    <div class="modalHead">
+      <div id="docCreateConfirmTitle" class="modalTitle">In Kalender erstellen?</div>
+      <button id="docCreateConfirmCloseBtn" class="btn ghost" aria-label="Bestätigungsdialog schließen">✕</button>
+    </div>
+    <div class="modalBody">
+      <div id="docCreateConfirmSummary" class="docCreateConfirmSummary"></div>
+      <div id="docCreateConfirmError" class="docExtractError" role="alert"></div>
+    </div>
+    <div class="modalFoot">
+      <button id="docCreateConfirmCancelBtn" class="btn ghost" type="button">Abbrechen</button>
+      <button id="docCreateConfirmBtn" class="btn primary" type="button">Bestätigen</button>
+    </div>
+  </div>
+
   <div id="editEventBackdrop" class="backdrop hidden"></div>
   <div id="editEventModal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modalHead">

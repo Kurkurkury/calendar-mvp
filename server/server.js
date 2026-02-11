@@ -2427,8 +2427,97 @@ async function handleFreeSlotConfirm(req, res) {
 }
 
 // ---- Create event in Google Calendar (insert) + Spiegelung in db.json ----
+
+
+function normalizeSuggestionKind(kind) {
+  return String(kind || "").trim().toLowerCase() === "task" ? "task" : "event";
+}
+
+function parseSuggestionDuration(raw) {
+  if (raw == null || raw === "") return null;
+  const n = Math.trunc(Number(raw));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.max(5, Math.min(n, 24 * 60));
+}
+
+async function handleCreateFromSuggestion(req, res) {
+  try {
+    await assertCorrectGoogleAccount();
+
+    const item = req.body?.item && typeof req.body.item === "object" ? req.body.item : {};
+    const kind = normalizeSuggestionKind(item.kind);
+    const titleRaw = String(item.title || "").trim();
+    const dateISO = String(item.dateISO || "").trim();
+    const startTime = String(item.startTime || "").trim();
+    const duration = parseSuggestionDuration(item.durationMin);
+    const location = String(item.location || "").trim();
+    const notes = String(item.description || "").trim();
+
+    if (!titleRaw) {
+      return res.status(400).json({ ok: false, message: "title required" });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) {
+      return res.status(400).json({ ok: false, message: "dateISO required" });
+    }
+
+    const title = kind === "task" ? `Task: ${titleRaw}` : titleRaw;
+
+    let start;
+    let end;
+
+    if (startTime) {
+      if (!/^\d{2}:\d{2}$/.test(startTime)) {
+        return res.status(400).json({ ok: false, message: "startTime must be HH:MM" });
+      }
+      const startDt = buildLocalDateTime(dateISO, startTime);
+      if (!startDt) {
+        return res.status(400).json({ ok: false, message: "invalid date/time" });
+      }
+      const durationMin = duration || 60;
+      start = toLocalIsoWithOffset(startDt);
+      end = toLocalIsoWithOffset(addMinutes(startDt, durationMin));
+    } else {
+      const startDate = parseDateInput(dateISO);
+      if (!startDate) {
+        return res.status(400).json({ ok: false, message: "invalid dateISO" });
+      }
+      const endDate = addDays(startDate, 1);
+      start = dateISO;
+      end = `${endDate.getFullYear()}-${pad2(endDate.getMonth() + 1)}-${pad2(endDate.getDate())}`;
+    }
+
+    const created = await createAndMirrorEvent({ title, start, end, location, notes });
+    if (!created.ok) return res.status(created.status || 400).json(created.payload || { ok: false });
+
+    return res.json({
+      ok: true,
+      eventId: created.googleEvent?.id || created.normalizedEvent?.googleEventId || created.normalizedEvent?.id || null,
+      htmlLink: created.googleEvent?.htmlLink || null,
+      event: created.normalizedEvent,
+    });
+  } catch (e) {
+    const msg = String(e?.message || "");
+    const isNotConnected =
+      msg.includes("Nicht verbunden") ||
+      msg.includes("keine Tokens") ||
+      msg.includes("Google nicht verbunden") ||
+      msg.includes("Access Token") ||
+      msg.includes("Tokens");
+
+    if (isNotConnected) {
+      return res.status(401).json({
+        ok: false,
+        error: "GOOGLE_NOT_CONNECTED",
+        message: "Google nicht verbunden",
+      });
+    }
+
+    return res.status(500).json({ ok: false, message: "createFromSuggestion failed" });
+  }
+}
 app.post("/api/google/events", requireApiKey, handleGoogleEventCreate);
 app.post("/api/create-event", requireApiKey, handleGoogleEventCreate);
+app.post("/api/calendar/createFromSuggestion", requireApiKey, handleCreateFromSuggestion);
 app.post("/api/event-suggestions", requireApiKey, handleEventSuggestions);
 app.post("/api/event-suggestions/confirm", requireApiKey, handleEventSuggestionConfirm);
 app.post("/api/smart-suggestions", requireApiKey, handleSmartSuggestions);
