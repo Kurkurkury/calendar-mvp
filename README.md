@@ -124,6 +124,7 @@ The Render API service also serves the frontend from `www/`, so one base URL wor
 
 - Browser UI URL: same as API base URL (for example `https://calendar-api-v2.onrender.com/`)
 - API routes remain under `/api/*` on the same host.
+- Frontend API base defaults to same-origin (`""`), so single-URL deploys on Render work without extra config.
 
 ### Quick smoke checks
 
