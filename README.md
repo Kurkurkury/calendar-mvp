@@ -117,3 +117,34 @@ State expectations:
 - Release notes drafted and stakeholder communication prepared.
 - Go/No-Go decision recorded.
 - Post-release verification checklist prepared (first-hour and first-day checks).
+
+## V3 Phase 2 – Document Parsing (Read-only)
+
+Phase 2 adds explicit, user-triggered semantic parsing for extracted/pasted document text.
+
+### Usage
+- Open the **Document** card.
+- Add text by either:
+  - uploading an image/PDF and clicking **Text extrahieren**, or
+  - pasting text into the fallback textarea.
+- Click **Struktur erkennen**.
+- Review the read-only parsed output under **Parsed Items (Read-only JSON)** and in the minimal suggestions list.
+
+### API
+- Endpoint: `POST /api/doc/parse`
+- Input JSON: `{ text, locale, timezone, referenceDate }`
+- Output JSON: `{ items, meta }`
+- `items[]` normalized schema:
+  - `type`: `"event" | "task"`
+  - `title`: `string`
+  - `dateISO`: `"YYYY-MM-DD" | null`
+  - `startTime`: `"HH:MM" | null`
+  - `durationMin`: `number | null`
+  - `location`: `string` (empty when unknown)
+  - `confidence`: `number` (`0..1`)
+  - `sourceSnippet`: `string` (short, privacy-safe)
+
+### Notes
+- Parsing runs only on explicit button click (no auto-parse/background parse).
+- Deterministic heuristics run first; optional AI fallback is used only when deterministic output is empty or text is highly ambiguous.
+- This phase is read-only: no calendar write is performed by parse actions.

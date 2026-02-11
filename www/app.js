@@ -750,12 +750,12 @@ function setDocExtractLoading(isLoading) {
 function setDocParseState(status) {
   if (!els.docParseState) return;
   const map = {
-    idle: "Idle.",
-    parsing: "Parsing…",
-    success: "Success.",
-    error: "Error.",
+    idle: "Bereit zum Parsen.",
+    parsing: "Struktur wird erkannt…",
+    success: "Parsing erfolgreich.",
+    error: "Parsing fehlgeschlagen.",
   };
-  els.docParseState.textContent = map[status] || status || "Idle.";
+  els.docParseState.textContent = map[status] || status || "Bereit zum Parsen.";
 }
 
 function setDocParseOutput(value) {
@@ -772,21 +772,19 @@ function clampDocConfidence(raw) {
 
 function sanitizeDocSuggestionItem(item) {
   const title = String(item?.title || "").trim() || "Ohne Titel";
-  const kind = item?.kind === "task" ? "task" : "event";
+  const type = item?.type === "task" ? "task" : "event";
   const dateISO = typeof item?.dateISO === "string" && /^\d{4}-\d{2}-\d{2}$/.test(item.dateISO) ? item.dateISO : "";
   const startTime = typeof item?.startTime === "string" && /^\d{2}:\d{2}$/.test(item.startTime) ? item.startTime : "";
   const durationMin = Number.isFinite(Number(item?.durationMin)) ? String(Math.max(0, Math.trunc(Number(item.durationMin)))) : "";
   const location = String(item?.location || "").trim();
-  const description = String(item?.description || "").trim();
   const sourceSnippet = String(item?.sourceSnippet || "").trim().slice(0, 180);
   return {
-    kind,
+    type,
     title,
     dateISO,
     startTime,
     durationMin,
     location,
-    description,
     confidence: clampDocConfidence(item?.confidence),
     sourceSnippet,
   };
@@ -798,13 +796,7 @@ function buildDocSuggestions(items) {
     state.docSuggestionCounter += 1;
     return {
       id: `doc-suggestion-${state.docSuggestionCounter}`,
-      status: "pending",
-      isEditing: false,
       item: sanitizeDocSuggestionItem(item),
-      draft: null,
-      errors: [],
-      createError: "",
-      createdEvent: null,
     };
   });
 }
@@ -813,96 +805,6 @@ function truncateSnippet(text) {
   const value = String(text || "").trim();
   if (!value) return "";
   return value.length > 140 ? `${value.slice(0, 140)}…` : value;
-}
-
-function validateDocDraft(draft) {
-  const errors = [];
-  if (draft.dateISO && !/^\d{4}-\d{2}-\d{2}$/.test(draft.dateISO)) {
-    errors.push("Datum muss YYYY-MM-DD sein oder leer bleiben.");
-  }
-  if (draft.startTime && !/^\d{2}:\d{2}$/.test(draft.startTime)) {
-    errors.push("Startzeit muss HH:MM sein oder leer bleiben.");
-  }
-  if (draft.durationMin && !/^\d+$/.test(String(draft.durationMin))) {
-    errors.push("Dauer muss numerisch sein oder leer bleiben.");
-  }
-  return errors;
-}
-
-function getDocSuggestionById(id) {
-  const list = Array.isArray(state.docSuggestions) ? state.docSuggestions : [];
-  return list.find((entry) => entry.id === id) || null;
-}
-
-function toDocSuggestionSummary(entry) {
-  if (!entry?.item) return [];
-  const item = entry.item;
-  const durationLabel = item.durationMin ? `${item.durationMin} min` : "nicht gesetzt";
-  return [
-    `Typ: ${item.kind}`,
-    `Titel: ${item.title || "Ohne Titel"}`,
-    `Datum: ${item.dateISO || "nicht gesetzt"}`,
-    `Startzeit: ${item.startTime || "ganztägig"}`,
-    `Dauer: ${durationLabel}`,
-    `Ort: ${item.location || "-"}`,
-  ];
-}
-
-function closeDocCreateConfirmModal() {
-  state.docCreateConfirmSuggestionId = null;
-  if (els.docCreateConfirmError) els.docCreateConfirmError.textContent = "";
-  if (els.docCreateConfirmBackdrop) els.docCreateConfirmBackdrop.classList.add("hidden");
-  if (els.docCreateConfirmModal) els.docCreateConfirmModal.classList.add("hidden");
-}
-
-function openDocCreateConfirmModal(suggestionId) {
-  const entry = getDocSuggestionById(suggestionId);
-  if (!entry || entry.status !== "accepted") return;
-  state.docCreateConfirmSuggestionId = suggestionId;
-  if (els.docCreateConfirmError) els.docCreateConfirmError.textContent = "";
-  if (els.docCreateConfirmSummary) {
-    const lines = toDocSuggestionSummary(entry);
-    els.docCreateConfirmSummary.innerHTML = lines.map((line) => `<div>${escapeHtml(line)}</div>`).join("");
-  }
-  if (els.docCreateConfirmBackdrop) els.docCreateConfirmBackdrop.classList.remove("hidden");
-  if (els.docCreateConfirmModal) els.docCreateConfirmModal.classList.remove("hidden");
-}
-
-async function confirmDocSuggestionCreate() {
-  const suggestionId = state.docCreateConfirmSuggestionId;
-  const entry = getDocSuggestionById(suggestionId);
-  if (!entry || entry.status !== "accepted") {
-    closeDocCreateConfirmModal();
-    return;
-  }
-  if (state.docCreatePendingSuggestionId) return;
-
-  if (els.docCreateConfirmError) els.docCreateConfirmError.textContent = "";
-  state.docCreatePendingSuggestionId = suggestionId;
-  if (els.docCreateConfirmBtn) els.docCreateConfirmBtn.disabled = true;
-
-  try {
-    const result = await apiPost("/api/calendar/createFromSuggestion", {
-      item: entry.item,
-    });
-
-    entry.status = "created";
-    entry.createError = "";
-    entry.createdEvent = {
-      eventId: result?.eventId || result?.event?.googleEventId || "",
-      htmlLink: result?.htmlLink || result?.googleEvent?.htmlLink || "",
-    };
-    closeDocCreateConfirmModal();
-    await loadFromApi();
-  } catch (error) {
-    const message = error?.message || "Erstellen im Kalender fehlgeschlagen.";
-    entry.createError = message;
-    if (els.docCreateConfirmError) els.docCreateConfirmError.textContent = message;
-  } finally {
-    state.docCreatePendingSuggestionId = null;
-    if (els.docCreateConfirmBtn) els.docCreateConfirmBtn.disabled = false;
-    renderDocSuggestions();
-  }
 }
 
 function renderDocSuggestions() {
@@ -919,18 +821,13 @@ function renderDocSuggestions() {
   }
 
   list.forEach((entry) => {
-    if (entry.status === "rejected") return;
     const row = document.createElement("article");
     row.className = "docSuggestionItem";
-    if (entry.status === "accepted" || entry.status === "created") row.classList.add("accepted");
+    row.classList.add("accepted");
 
     const badge = document.createElement("div");
     badge.className = "docSuggestionStatus";
-    if (entry.status === "created") {
-      badge.textContent = "Erstellt";
-    } else {
-      badge.textContent = entry.status === "accepted" ? "Angenommen – noch nicht im Kalender" : "Ausstehend";
-    }
+    badge.textContent = "Read-only";
 
     const title = document.createElement("div");
     title.className = "docSuggestionTitle";
@@ -939,157 +836,19 @@ function renderDocSuggestions() {
     const meta = document.createElement("div");
     meta.className = "docSuggestionMeta";
     const fields = [
-      `Typ: ${entry.item.kind}`,
+      `Typ: ${entry.item.type}`,
       entry.item.dateISO ? `Datum: ${entry.item.dateISO}` : null,
       entry.item.startTime ? `Start: ${entry.item.startTime}` : null,
       entry.item.durationMin ? `Dauer: ${entry.item.durationMin} min` : null,
       entry.item.location ? `Ort: ${entry.item.location}` : null,
-      entry.item.description ? `Beschreibung: ${entry.item.description}` : null,
       `Confidence: ${Math.round(entry.item.confidence * 100)}%`,
       entry.item.sourceSnippet ? `Quelle: ${truncateSnippet(entry.item.sourceSnippet)}` : null,
     ].filter(Boolean);
     meta.innerHTML = fields.map((f) => `<div>${escapeHtml(f)}</div>`).join("");
 
-    const actions = document.createElement("div");
-    actions.className = "docSuggestionActions";
-    actions.innerHTML = `
-      <button type="button" class="btn ghost" data-action="accept">Annehmen</button>
-      <button type="button" class="btn ghost" data-action="reject">Ablehnen</button>
-      <button type="button" class="btn ghost" data-action="edit">Bearbeiten</button>
-    `;
-
-    actions.querySelector('[data-action="accept"]')?.addEventListener("click", () => {
-      entry.status = "accepted";
-      entry.isEditing = false;
-      entry.createError = "";
-      renderDocSuggestions();
-    });
-    actions.querySelector('[data-action="reject"]')?.addEventListener("click", () => {
-      entry.status = "rejected";
-      entry.isEditing = false;
-      renderDocSuggestions();
-    });
-    actions.querySelector('[data-action="edit"]')?.addEventListener("click", () => {
-      entry.isEditing = !entry.isEditing;
-      entry.errors = [];
-      entry.draft = entry.isEditing ? { ...entry.item, durationMin: entry.item.durationMin || "", confidence: entry.item.confidence } : null;
-      renderDocSuggestions();
-    });
-
-    if (entry.status === "accepted") {
-      const createBtn = document.createElement("button");
-      createBtn.type = "button";
-      createBtn.className = "btn primary";
-      createBtn.dataset.action = "create";
-      createBtn.textContent = "In Kalender erstellen";
-      createBtn.disabled = state.docCreatePendingSuggestionId === entry.id;
-      createBtn.addEventListener("click", () => openDocCreateConfirmModal(entry.id));
-      actions.appendChild(createBtn);
-    }
-
     row.appendChild(badge);
     row.appendChild(title);
     row.appendChild(meta);
-    row.appendChild(actions);
-
-    if (entry.status === "created") {
-      const createdInfo = document.createElement("div");
-      createdInfo.className = "docSuggestionMeta";
-      const idLine = `Event-ID: ${entry.createdEvent?.eventId || "n/a"}`;
-      const link = entry.createdEvent?.htmlLink ? `<a href="${escapeHtml(entry.createdEvent.htmlLink)}" target="_blank" rel="noopener noreferrer">Kalender öffnen</a>` : "";
-      createdInfo.innerHTML = `<div>${escapeHtml(idLine)}</div>${link ? `<div>${link}</div>` : ""}`;
-      row.appendChild(createdInfo);
-    }
-
-    if (entry.createError) {
-      const err = document.createElement("div");
-      err.className = "docExtractError";
-      err.textContent = entry.createError;
-      row.appendChild(err);
-    }
-
-    if (entry.isEditing) {
-      const editor = document.createElement("div");
-      editor.className = "docSuggestionEditor";
-      const draft = entry.draft || { ...entry.item };
-      editor.innerHTML = `
-        <label class="field"><span>Typ</span>
-          <select data-field="kind"><option value="event">event</option><option value="task">task</option></select>
-        </label>
-        <label class="field"><span>Titel</span><input data-field="title" type="text" /></label>
-        <label class="field"><span>Datum (YYYY-MM-DD)</span><input data-field="dateISO" type="text" /></label>
-        <label class="field"><span>Startzeit (HH:MM)</span><input data-field="startTime" type="text" /></label>
-        <label class="field"><span>Dauer (Min)</span><input data-field="durationMin" type="text" /></label>
-        <label class="field"><span>Ort</span><input data-field="location" type="text" /></label>
-        <label class="field"><span>Beschreibung</span><textarea data-field="description" rows="3"></textarea></label>
-        <label class="field"><span>Confidence (0..1)</span><input data-field="confidence" type="number" min="0" max="1" step="0.01" /></label>
-        <label class="field"><span>Source Snippet</span><textarea data-field="sourceSnippet" rows="2"></textarea></label>
-        <div class="docSuggestionActions">
-          <button type="button" class="btn primary" data-action="save">Speichern</button>
-          <button type="button" class="btn ghost" data-action="cancel">Abbrechen</button>
-        </div>
-      `;
-      const setVal = (field, value) => {
-        const el = editor.querySelector(`[data-field="${field}"]`);
-        if (!el) return;
-        el.value = value == null ? "" : String(value);
-      };
-      setVal("kind", draft.kind);
-      setVal("title", draft.title);
-      setVal("dateISO", draft.dateISO || "");
-      setVal("startTime", draft.startTime || "");
-      setVal("durationMin", draft.durationMin || "");
-      setVal("location", draft.location || "");
-      setVal("description", draft.description || "");
-      setVal("confidence", clampDocConfidence(draft.confidence));
-      setVal("sourceSnippet", draft.sourceSnippet || "");
-
-      editor.querySelector('[data-action="cancel"]')?.addEventListener("click", () => {
-        entry.isEditing = false;
-        entry.draft = null;
-        entry.errors = [];
-        renderDocSuggestions();
-      });
-      editor.querySelector('[data-action="save"]')?.addEventListener("click", () => {
-        const read = (field) => String(editor.querySelector(`[data-field="${field}"]`)?.value || "").trim();
-        const nextDraft = {
-          kind: read("kind") === "task" ? "task" : "event",
-          title: read("title") || "Ohne Titel",
-          dateISO: read("dateISO"),
-          startTime: read("startTime"),
-          durationMin: read("durationMin"),
-          location: read("location"),
-          description: read("description"),
-          confidence: clampDocConfidence(read("confidence")),
-          sourceSnippet: read("sourceSnippet").slice(0, 180),
-        };
-        const errors = validateDocDraft(nextDraft);
-        if (errors.length) {
-          entry.errors = errors;
-          entry.draft = nextDraft;
-          renderDocSuggestions();
-          return;
-        }
-        entry.item = sanitizeDocSuggestionItem(nextDraft);
-        entry.item.dateISO = nextDraft.dateISO;
-        entry.item.startTime = nextDraft.startTime;
-        entry.item.durationMin = nextDraft.durationMin;
-        entry.isEditing = false;
-        entry.draft = null;
-        entry.errors = [];
-        entry.createError = "";
-        if (entry.status === "created") entry.status = "accepted";
-        renderDocSuggestions();
-      });
-
-      if (entry.errors?.length) {
-        const err = document.createElement("div");
-        err.className = "docExtractError";
-        err.textContent = entry.errors.join(" ");
-        editor.appendChild(err);
-      }
-      row.appendChild(editor);
-    }
 
     els.docSuggestionList.appendChild(row);
   });
@@ -1333,12 +1092,6 @@ function initDocExtractUI() {
   });
   els.docParseRunBtn?.addEventListener("click", () => {
     void runDocParse();
-  });
-  els.docCreateConfirmBackdrop?.addEventListener("click", closeDocCreateConfirmModal);
-  els.docCreateConfirmCloseBtn?.addEventListener("click", closeDocCreateConfirmModal);
-  els.docCreateConfirmCancelBtn?.addEventListener("click", closeDocCreateConfirmModal);
-  els.docCreateConfirmBtn?.addEventListener("click", () => {
-    void confirmDocSuggestionCreate();
   });
   els.shareImportUseBtn?.addEventListener("click", () => {
     void applyShareImportPayload();
