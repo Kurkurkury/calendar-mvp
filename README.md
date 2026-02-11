@@ -117,3 +117,19 @@ State expectations:
 - Release notes drafted and stakeholder communication prepared.
 - Go/No-Go decision recorded.
 - Post-release verification checklist prepared (first-hour and first-day checks).
+
+## Deployment note: single service URL (backend + frontend)
+
+The Render API service also serves the frontend from `www/`, so one base URL works for desktop and Android.
+
+- Browser UI URL: same as API base URL (for example `https://calendar-api-v2.onrender.com/`)
+- API routes remain under `/api/*` on the same host.
+
+### Quick smoke checks
+
+```bash
+curl -i https://calendar-api-v2.onrender.com/
+curl -i https://calendar-api-v2.onrender.com/style.css
+curl -i https://calendar-api-v2.onrender.com/api/health
+curl -i -X POST https://calendar-api-v2.onrender.com/api/doc/parse -H 'Content-Type: application/json' -d '{}'
+```
