@@ -7,10 +7,18 @@ import {
 } from "./v3/engine/suggestion-workflow.js";
 
 const HAS_CAPACITOR = typeof window.Capacitor !== "undefined";
+const API_BASE_META = document
+  .querySelector('meta[name="api-base"]')
+  ?.getAttribute("content");
+const API_BASE_OVERRIDE = window.API_BASE || API_BASE_META || "";
 const API_BASE = HAS_CAPACITOR
-  ? "https://calendar-api-v2.onrender.com"
-  : "http://localhost:3000";
+  ? (API_BASE_OVERRIDE || "https://calendar-api-v2.onrender.com")
+  : API_BASE_OVERRIDE;
 const API_BASE_CLEAN = String(API_BASE || "").replace(/\/+$/, "");
+
+function apiUrl(path) {
+  return `${API_BASE_CLEAN}${path}`;
+}
 
 const IS_NATIVE =
   !!window.Capacitor &&
@@ -27,7 +35,7 @@ if (IS_NATIVE) {
       App.addListener("appUrlOpen", async ({ url }) => {
         if (url && url.startsWith("calendar-mvp://oauth")) {
           try {
-            await fetch(`${API_BASE_CLEAN}/api/google/status`, {
+            await fetch(apiUrl("/api/google/status"), {
               credentials: "include"
             });
           } catch {}
@@ -1421,7 +1429,7 @@ async function runDocParse() {
     const locale = navigator.language || "de-CH";
     const referenceDate = getTodayISOInTimeZone(timezone);
 
-    const res = await fetch(`${API_BASE_CLEAN}/api/doc/parse`, {
+    const res = await fetch(apiUrl("/api/doc/parse"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, locale, timezone, referenceDate }),
@@ -1525,7 +1533,7 @@ async function runDocExtract() {
     const formData = new FormData();
     formData.append("file", file);
 
-    const res = await fetch(`${API_BASE_CLEAN}/api/doc/extract`, {
+    const res = await fetch(apiUrl("/api/doc/extract"), {
       method: "POST",
       body: formData,
     });
@@ -1698,7 +1706,7 @@ async function handleAiExtractFile(file) {
     const formData = new FormData();
     formData.append("file", file);
 
-    const res = await fetch(`${API_BASE_CLEAN}/api/ai/extract`, {
+    const res = await fetch(apiUrl("/api/ai/extract"), {
       method: "POST",
       body: formData,
     });
@@ -6352,7 +6360,7 @@ function handleGoogleAuthError(res, body) {
 }
 
 async function apiGet(path) {
-  const url = API_BASE_CLEAN + path;
+  const url = apiUrl(path);
   let res;
   try {
     res = await fetch(url, { method: 'GET', headers: headers() });
@@ -6375,7 +6383,7 @@ async function apiGet(path) {
 }
 
 async function apiPost(path, bodyObj) {
-  const url = API_BASE_CLEAN + path;
+  const url = apiUrl(path);
   let res;
   try {
     res = await fetch(url, {
@@ -6401,7 +6409,7 @@ async function apiPost(path, bodyObj) {
 }
 
 async function apiPatch(path, bodyObj) {
-  const url = API_BASE_CLEAN + path;
+  const url = apiUrl(path);
   let res;
   try {
     res = await fetch(url, {
@@ -6427,7 +6435,7 @@ async function apiPatch(path, bodyObj) {
 }
 
 async function apiDelete(path) {
-  const url = API_BASE_CLEAN + path;
+  const url = apiUrl(path);
   let res;
   try {
     res = await fetch(url, { method: 'DELETE', headers: headers() });
