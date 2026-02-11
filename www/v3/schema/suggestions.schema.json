@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["groups", "meta"],
+  "properties": {
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["groupId", "groupType", "groupTitle", "groupRationale", "groupConfidence", "members"],
+        "properties": {
+          "groupId": { "type": "string" },
+          "groupType": { "type": "string", "enum": ["trip", "agenda", "series", "none"] },
+          "groupTitle": { "type": "string" },
+          "groupRationale": { "type": "string" },
+          "groupConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "title", "start", "end", "location", "suggestionConfidence", "explanation", "source"],
+              "properties": {
+                "id": { "type": "string" },
+                "title": { "type": "string" },
+                "start": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$" },
+                "end": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$" },
+                "location": { "type": ["string", "null"] },
+                "suggestionConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
+                "explanation": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["title", "bullets"],
+                  "properties": {
+                    "title": { "type": "string" },
+                    "bullets": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+                  }
+                },
+                "source": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["documentId", "lineHints"],
+                  "properties": {
+                    "documentId": { "type": "string" },
+                    "lineHints": { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["aiFallbackUsed", "aiFallbackReason"],
+      "properties": {
+        "aiFallbackUsed": { "type": "boolean" },
+        "aiFallbackReason": { "type": ["string", "null"] }
+      }
+    }
+  }
+}
