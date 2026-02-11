@@ -772,7 +772,7 @@ function clampDocConfidence(raw) {
 
 function sanitizeDocSuggestionItem(item) {
   const title = String(item?.title || "").trim() || "Ohne Titel";
-  const kind = item?.kind === "task" ? "task" : "event";
+  const type = item?.type === "task" ? "task" : "event";
   const dateISO = typeof item?.dateISO === "string" && /^\d{4}-\d{2}-\d{2}$/.test(item.dateISO) ? item.dateISO : "";
   const startTime = typeof item?.startTime === "string" && /^\d{2}:\d{2}$/.test(item.startTime) ? item.startTime : "";
   const durationMin = Number.isFinite(Number(item?.durationMin)) ? String(Math.max(0, Math.trunc(Number(item.durationMin)))) : "";
@@ -780,7 +780,7 @@ function sanitizeDocSuggestionItem(item) {
   const description = String(item?.description || "").trim();
   const sourceSnippet = String(item?.sourceSnippet || "").trim().slice(0, 180);
   return {
-    kind,
+    type,
     title,
     dateISO,
     startTime,
@@ -839,7 +839,7 @@ function toDocSuggestionSummary(entry) {
   const item = entry.item;
   const durationLabel = item.durationMin ? `${item.durationMin} min` : "nicht gesetzt";
   return [
-    `Typ: ${item.kind}`,
+    `Typ: ${item.type}`,
     `Titel: ${item.title || "Ohne Titel"}`,
     `Datum: ${item.dateISO || "nicht gesetzt"}`,
     `Startzeit: ${item.startTime || "ganztägig"}`,
@@ -939,7 +939,7 @@ function renderDocSuggestions() {
     const meta = document.createElement("div");
     meta.className = "docSuggestionMeta";
     const fields = [
-      `Typ: ${entry.item.kind}`,
+      `Typ: ${entry.item.type}`,
       entry.item.dateISO ? `Datum: ${entry.item.dateISO}` : null,
       entry.item.startTime ? `Start: ${entry.item.startTime}` : null,
       entry.item.durationMin ? `Dauer: ${entry.item.durationMin} min` : null,
@@ -952,6 +952,8 @@ function renderDocSuggestions() {
 
     const actions = document.createElement("div");
     actions.className = "docSuggestionActions";
+    // V3 Phase 4 depends on suggestion lifecycle states (pending/accepted/rejected/created),
+    // so accept/reject/edit/create actions must stay available instead of read-only output.
     actions.innerHTML = `
       <button type="button" class="btn ghost" data-action="accept">Annehmen</button>
       <button type="button" class="btn ghost" data-action="reject">Ablehnen</button>
@@ -1014,7 +1016,7 @@ function renderDocSuggestions() {
       const draft = entry.draft || { ...entry.item };
       editor.innerHTML = `
         <label class="field"><span>Typ</span>
-          <select data-field="kind"><option value="event">event</option><option value="task">task</option></select>
+          <select data-field="type"><option value="event">event</option><option value="task">task</option></select>
         </label>
         <label class="field"><span>Titel</span><input data-field="title" type="text" /></label>
         <label class="field"><span>Datum (YYYY-MM-DD)</span><input data-field="dateISO" type="text" /></label>
@@ -1034,7 +1036,7 @@ function renderDocSuggestions() {
         if (!el) return;
         el.value = value == null ? "" : String(value);
       };
-      setVal("kind", draft.kind);
+      setVal("type", draft.type);
       setVal("title", draft.title);
       setVal("dateISO", draft.dateISO || "");
       setVal("startTime", draft.startTime || "");
@@ -1053,7 +1055,7 @@ function renderDocSuggestions() {
       editor.querySelector('[data-action="save"]')?.addEventListener("click", () => {
         const read = (field) => String(editor.querySelector(`[data-field="${field}"]`)?.value || "").trim();
         const nextDraft = {
-          kind: read("kind") === "task" ? "task" : "event",
+          type: read("type") === "task" ? "task" : "event",
           title: read("title") || "Ohne Titel",
           dateISO: read("dateISO"),
           startTime: read("startTime"),
