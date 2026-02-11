@@ -423,6 +423,15 @@
               <div class="cardTitle">Document</div>
               <div class="cardSub">Bild oder PDF hochladen, alternativ Text einfügen</div>
 
+              <div id="shareImportPanel" class="shareImportPanel hidden" aria-live="polite">
+                <div class="shareImportHeader">Geteilter Inhalt erkannt</div>
+                <div id="shareImportMeta" class="shareImportMeta"></div>
+                <div class="shareImportActions">
+                  <button id="shareImportUseBtn" class="btn primary" type="button">In Extraktion übernehmen</button>
+                  <button id="shareImportClearBtn" class="btn ghost" type="button">Verwerfen</button>
+                </div>
+              </div>
+
               <label class="field">
                 <span>Datei (Bild/PDF)</span>
                 <input id="docExtractFileInput" type="file" accept="image/*,application/pdf" />

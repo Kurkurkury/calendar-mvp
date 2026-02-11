@@ -128,6 +128,8 @@ const DEFAULT_PREFS_UI = {
 };
 const AI_EXTRACT_ACCEPT = ".png,.jpg,.jpeg,.webp,.pdf,.docx";
 const DOC_EXTRACT_ACCEPT = "image/*,application/pdf";
+const SHARE_IMPORT_ALLOWED_MIME_PREFIXES = ["image/", "application/pdf", "text/"];
+const SHARE_IMPORT_MAX_PREVIEW = 180;
 const AI_EXTRACT_ALLOWED_MIME = new Set([
   "image/png",
   "image/jpeg",
@@ -406,6 +408,7 @@ const state = {
   docSuggestionCounter: 0,
   docCreateConfirmSuggestionId: null,
   docCreatePendingSuggestionId: null,
+  shareImport: null,
 };
 
 let lastDayScrollerScrollLeft = 0;
@@ -464,6 +467,10 @@ const els = {
   docExtractOutput: byId("docExtractOutput"),
   docParseOutput: byId("docParseOutput"),
   docSuggestionList: byId("docSuggestionList"),
+  shareImportPanel: byId("shareImportPanel"),
+  shareImportMeta: byId("shareImportMeta"),
+  shareImportUseBtn: byId("shareImportUseBtn"),
+  shareImportClearBtn: byId("shareImportClearBtn"),
 
   prefWindowStart: byId("prefWindowStart"),
   prefWindowEnd: byId("prefWindowEnd"),
@@ -1089,6 +1096,126 @@ function renderDocSuggestions() {
 }
 
 
+function formatShareImportMeta(payload) {
+  if (!payload) return "";
+  const parts = [];
+  if (payload.kind === "file") {
+    parts.push(`Datei: ${payload.name || "Unbenannt"}`);
+    if (payload.type) parts.push(`Typ: ${payload.type}`);
+  } else if (payload.kind === "text") {
+    parts.push("Typ: Text");
+  }
+
+  if (payload.preview) {
+    parts.push(`Vorschau: ${payload.preview}`);
+  }
+  return parts.join(" · ");
+}
+
+function renderShareImportPanel() {
+  if (!els.shareImportPanel || !els.shareImportMeta) return;
+  const payload = state.shareImport;
+  if (!payload) {
+    els.shareImportPanel.classList.add("hidden");
+    els.shareImportMeta.textContent = "";
+    return;
+  }
+
+  els.shareImportMeta.textContent = formatShareImportMeta(payload);
+  els.shareImportPanel.classList.remove("hidden");
+}
+
+function clearShareImportPayload() {
+  state.shareImport = null;
+  renderShareImportPanel();
+}
+
+async function applyShareImportPayload() {
+  const payload = state.shareImport;
+  if (!payload) return;
+
+  if (payload.kind === "text") {
+    if (els.docExtractTextInput) els.docExtractTextInput.value = payload.text || "";
+    if (els.docExtractFileInput) els.docExtractFileInput.value = "";
+    if (els.docExtractOutput) els.docExtractOutput.value = String(payload.text || "").trim();
+    setDocExtractState("success");
+    setDocExtractError("");
+    setDocParseState("idle");
+    setDocParseOutput([]);
+    state.docSuggestions = [];
+    renderDocSuggestions();
+    uiNotify("success", "Geteilter Text wurde übernommen.");
+    clearShareImportPayload();
+    return;
+  }
+
+  if (payload.kind === "file" && payload.file) {
+    const dt = new DataTransfer();
+    dt.items.add(payload.file);
+    if (els.docExtractFileInput) {
+      els.docExtractFileInput.files = dt.files;
+    }
+    if (els.docExtractTextInput) els.docExtractTextInput.value = "";
+    uiNotify("success", `Geteilte Datei "${payload.name || payload.file.name}" übernommen.`);
+    clearShareImportPayload();
+    await runDocExtract();
+  }
+}
+
+function sanitizeSharePreview(text) {
+  return String(text || "").replace(/\s+/g, " ").trim().slice(0, SHARE_IMPORT_MAX_PREVIEW);
+}
+
+function canHandleSharedType(type) {
+  if (!type) return false;
+  return SHARE_IMPORT_ALLOWED_MIME_PREFIXES.some((prefix) => type.startsWith(prefix));
+}
+
+async function onNativeAppRestoredResult(event) {
+  try {
+    const data = event?.data || {};
+    const pluginId = String(data?.pluginId || "");
+    const methodName = String(data?.methodName || "");
+    if (pluginId !== "Share" || methodName !== "share") return;
+
+    const value = data?.data?.value;
+    const files = Array.isArray(value?.files) ? value.files : [];
+    const text = String(value?.text || "").trim();
+
+    const shareFile = files.find((entry) => canHandleSharedType(String(entry?.type || "")) || /\.(png|jpe?g|webp|pdf)$/i.test(String(entry?.name || "")));
+
+    if (shareFile?.path) {
+      const response = await fetch(shareFile.path);
+      const blob = await response.blob();
+      const inferredType = shareFile.type || blob.type || "application/octet-stream";
+      const file = new File([blob], shareFile.name || "shared-file", { type: inferredType });
+      state.shareImport = {
+        kind: "file",
+        file,
+        name: file.name,
+        type: inferredType,
+        preview: "",
+      };
+      renderShareImportPanel();
+      uiNotify("info", "Geteilte Datei empfangen. Übernimm sie im Document-Bereich.");
+      return;
+    }
+
+    if (text) {
+      state.shareImport = {
+        kind: "text",
+        text,
+        preview: sanitizeSharePreview(text),
+      };
+      renderShareImportPanel();
+      uiNotify("info", "Geteilter Text empfangen. Übernimm ihn im Document-Bereich.");
+    }
+  } catch (error) {
+    console.error("Share-Import fehlgeschlagen", error);
+    uiNotify("warning", "Geteilter Inhalt konnte nicht geladen werden.");
+  }
+}
+
 async function runDocParse() {
   const extractedText = String(els.docExtractOutput?.value || "").trim();
   const fallbackText = String(els.docExtractTextInput?.value || "").trim();
@@ -1213,6 +1340,14 @@ function initDocExtractUI() {
   els.docCreateConfirmBtn?.addEventListener("click", () => {
     void confirmDocSuggestionCreate();
   });
+  els.shareImportUseBtn?.addEventListener("click", () => {
+    void applyShareImportPayload();
+  });
+  els.shareImportClearBtn?.addEventListener("click", () => {
+    clearShareImportPayload();
+    uiNotify("info", "Geteilter Inhalt verworfen.");
+  });
+  renderShareImportPanel();
 }
 
 function initAiExtractUI() {
@@ -1567,6 +1702,18 @@ async function boot() {
   // AI Extract (Phase 3 Minimal UI)
   initAiExtractUI();
   initDocExtractUI();
+
+  if (IS_NATIVE) {
+    try {
+      const mod = await import("@capacitor/app");
+      const App = mod?.App;
+      App?.addListener?.("appRestoredResult", (event) => {
+        void onNativeAppRestoredResult(event);
+      });
+    } catch {
+      // ignore if plugin unavailable
+    }
+  }
 
   // Smart suggestions (Phase 5)
   applySmartPrefsToInputs();
