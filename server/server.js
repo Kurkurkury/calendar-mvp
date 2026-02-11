@@ -845,6 +845,17 @@ function normalizeParseTextInput(text) {
     .trim();
 }
 
+function sanitizeSourceSnippet(snippet) {
+  return String(snippet || "")
+    .replace(/https?:\/\/\S+/gi, "[link]")
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email]")
+    .replace(/\+?\d[\d\s()./-]{6,}\d/g, "[phone]")
+    .replace(/\b\d{5,}\b/g, "[number]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 180);
+}
+
 function hasPromptInjectionSignals(text) {
   const sample = String(text || "").toLowerCase();
   const patterns = [
@@ -945,7 +956,7 @@ function parseDeterministicItems({ text, locale, referenceDate }) {
   const out = [];
 
   for (const line of lines) {
-    const sourceSnippet = line.slice(0, 180);
+    const sourceSnippet = sanitizeSourceSnippet(line);
     const dateMatch = line.match(/\b(\d{4}-\d{2}-\d{2}|\d{1,2}\.\d{1,2}(?:\.\d{2,4})?|today|tomorrow|heute|morgen)\b/i);
     const timeMatch = line.match(/\b\d{1,2}(?::|\.)\d{2}\b|\b\d{1,2}\s?h\b/i);
     const locationMatch = line.match(/\b(?:at|in|im|bei)\s+([^,.;\n]{2,60})/i);
@@ -954,12 +965,12 @@ function parseDeterministicItems({ text, locale, referenceDate }) {
     const dateISO = dateMatch ? deriveDateISO({ raw: dateMatch[1], refDateISO, locale }) : null;
     const startTime = timeMatch ? parseTimeValue(timeMatch[0]) : null;
     const durationMin = parseDurationMin(line);
-    const location = locationMatch ? String(locationMatch[1]).trim() : null;
+    const location = locationMatch ? String(locationMatch[1]).trim() : "";
 
     const isEvent = Boolean(dateISO || startTime || /\b(meeting|termin|call|workshop|event)\b/i.test(line));
-    const kind = taskCue && !isEvent ? "task" : "event";
+    const type = taskCue && !isEvent ? "task" : "event";
 
-    const confidenceBase = kind === "event" ? 0.55 : 0.5;
+    const confidenceBase = type === "event" ? 0.55 : 0.5;
     const confidence = clamp(
       confidenceBase + (dateISO ? 0.2 : 0) + (startTime ? 0.15 : 0) + (durationMin ? 0.05 : 0),
       0,
@@ -969,13 +980,13 @@ function parseDeterministicItems({ text, locale, referenceDate }) {
     if (!line || (!dateISO && !startTime && !taskCue && !isEvent)) continue;
 
     out.push({
-      kind,
+      type,
       title: buildParsedTitle(line),
       dateISO,
       startTime,
       durationMin,
       location,
-      description: null,
+      description: "",
       confidence,
       sourceSnippet,
     });
@@ -999,7 +1010,7 @@ async function parseItemsWithOpenAiFallback({ text, locale, timezone, referenceD
           type: "object",
           additionalProperties: false,
           required: [
-            "kind",
+            "type",
             "title",
             "dateISO",
             "startTime",
@@ -1010,13 +1021,13 @@ async function parseItemsWithOpenAiFallback({ text, locale, timezone, referenceD
             "sourceSnippet",
           ],
           properties: {
-            kind: { type: "string", enum: ["event", "task"] },
+            type: { type: "string", enum: ["event", "task"] },
             title: { type: "string" },
             dateISO: { type: ["string", "null"] },
             startTime: { type: ["string", "null"] },
             durationMin: { type: ["number", "null"] },
-            location: { type: ["string", "null"] },
-            description: { type: ["string", "null"] },
+            location: { type: "string" },
+            description: { type: "string" },
             confidence: { type: "number", minimum: 0, maximum: 1 },
             sourceSnippet: { type: "string" },
           },
@@ -2445,7 +2456,7 @@ async function handleCreateFromSuggestion(req, res) {
     await assertCorrectGoogleAccount();
 
     const item = req.body?.item && typeof req.body.item === "object" ? req.body.item : {};
-    const kind = normalizeSuggestionKind(item.kind);
+    const kind = normalizeSuggestionKind(item.type ?? item.kind);
     const titleRaw = String(item.title || "").trim();
     const dateISO = String(item.dateISO || "").trim();
     const startTime = String(item.startTime || "").trim();
@@ -2970,6 +2981,7 @@ app.post("/api/assistant/parse", async (req, res) => {
 app.post("/api/doc/parse", async (req, res) => {
   try {
     const text = normalizeParseTextInput(req.body?.text || "");
+    const normalizedChars = text.length;
     const locale = String(req.body?.locale || "de-CH").trim() || "de-CH";
     const timezone = String(req.body?.timezone || "Europe/Zurich").trim() || "Europe/Zurich";
     const referenceDate = String(req.body?.referenceDate || getDateISOInTimeZone(timezone)).trim();
@@ -2989,6 +3001,7 @@ app.post("/api/doc/parse", async (req, res) => {
 
     let items = parseDeterministicItems({ text, locale, referenceDate: refDateISO });
     let method = "deterministic_v1";
+    let fallbackUsed = false;
 
     if (!items.length || items.some((item) => !item.dateISO && !item.startTime && item.confidence < 0.65)) {
       const fallbackItems = await parseItemsWithOpenAiFallback({
@@ -2999,7 +3012,7 @@ app.post("/api/doc/parse", async (req, res) => {
       });
       if (Array.isArray(fallbackItems) && fallbackItems.length) {
         items = fallbackItems.map((item) => ({
-          kind: item?.kind === "task" ? "task" : "event",
+          type: item?.type === "task" ? "task" : "event",
           title: String(item?.title || "Ohne Titel").trim() || "Ohne Titel",
           dateISO: typeof item?.dateISO === "string" && /^\d{4}-\d{2}-\d{2}$/.test(item.dateISO) ? item.dateISO : null,
           startTime:
@@ -3007,17 +3020,17 @@ app.post("/api/doc/parse", async (req, res) => {
               ? item.startTime
               : null,
           durationMin: Number.isFinite(item?.durationMin) ? Math.max(0, Math.trunc(item.durationMin)) : null,
-          location: typeof item?.location === "string" && item.location.trim() ? item.location.trim() : null,
-          description:
-            typeof item?.description === "string" && item.description.trim() ? item.description.trim() : null,
+          location: String(item?.location || "").trim(),
+          description: String(item?.description || "").trim(),
           confidence: clamp(Number(item?.confidence) || 0, 0, 1),
-          sourceSnippet: String(item?.sourceSnippet || "").trim().slice(0, 180),
+          sourceSnippet: sanitizeSourceSnippet(item?.sourceSnippet || ""),
         }));
         method = "openai_fallback_v1";
+        fallbackUsed = true;
       }
     }
 
-    return res.json({ items, meta: { method } });
+    return res.json({ items, meta: { method, fallbackUsed, normalizedChars } });
   } catch {
     return res.status(500).json({ message: "Document parse failed" });
   }
