@@ -5,7 +5,10 @@ import {
   setSuggestionStatus,
   shouldCommitSuggestion,
 } from "./v3/engine/suggestion-workflow.js";
-import { clipboardItemsToImageFile, dispatchAiExtractFile } from "./ai-extract-upload.mjs";
+import {
+  dispatchAiExtractFile,
+  handleClipboardImagePasteEvent,
+} from "./ai-extract-upload.mjs";
 
 const HAS_CAPACITOR = typeof window.Capacitor !== "undefined";
 const API_BASE_META = document
@@ -1501,6 +1504,31 @@ async function runDocParse() {
   }
 }
 
+async function extractDocTextFromFile(file) {
+  if (!file) {
+    throw new Error("Keine Datei übergeben.");
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(apiUrl("/api/doc/extract"), {
+    method: "POST",
+    body: formData,
+  });
+
+  const raw = await res.text();
+  const parsed = parseApiBody(raw);
+  const data = parsed.kind === "json" ? parsed.json : null;
+
+  if (!res.ok || !data?.text) {
+    const message = data?.message || "Extraktion nicht möglich.";
+    throw new Error(message);
+  }
+
+  return String(data.text || "");
+}
+
 async function runDocExtract() {
   if (!els.docExtractOutput) return;
 
@@ -1532,24 +1560,8 @@ async function runDocExtract() {
   setDocExtractState("extracting");
 
   try {
-    const formData = new FormData();
-    formData.append("file", file);
-
-    const res = await fetch(apiUrl("/api/doc/extract"), {
-      method: "POST",
-      body: formData,
-    });
-
-    const raw = await res.text();
-    const parsed = parseApiBody(raw);
-    const data = parsed.kind === "json" ? parsed.json : null;
-
-    if (!res.ok || !data?.text) {
-      const message = data?.message || "Extraktion nicht möglich.";
-      throw new Error(message);
-    }
-
-    els.docExtractOutput.value = String(data.text || "");
+    const extractedText = await extractDocTextFromFile(file);
+    els.docExtractOutput.value = extractedText;
     setDocExtractState("success");
   } catch (error) {
     setDocExtractState("error");
@@ -1628,10 +1640,9 @@ function initAiExtractUI() {
 
   const onDocumentPaste = (event) => {
     if (!aiExtractPasteArmed || isMobile()) return;
-    const file = clipboardItemsToImageFile(event.clipboardData?.items, Date.now());
-    if (!file) return;
-    event.preventDefault();
-    handleFiles([file]);
+    handleClipboardImagePasteEvent(event, (file) => {
+      handleFiles([file]);
+    });
   };
 
   els.aiExtractInput.addEventListener("change", (event) => {
@@ -1677,6 +1688,52 @@ function initAiExtractUI() {
   clearAiExtractWarnings();
   setAiExtractStatus("");
   setAiExtractError("");
+}
+
+function initEventTextImagePaste() {
+  if (!els.eventText) return;
+
+  let isExtractingPaste = false;
+  let previousPlaceholder = "";
+
+  const setAnalyzingPlaceholder = (active) => {
+    if (!els.eventText) return;
+    if (active) {
+      previousPlaceholder = els.eventText.getAttribute("placeholder") || "";
+      els.eventText.setAttribute("placeholder", "Screenshot wird analysiert…");
+      els.eventText.setAttribute("aria-busy", "true");
+      return;
+    }
+    els.eventText.setAttribute("placeholder", previousPlaceholder || "Neues Event oder Task eingeben…");
+    els.eventText.removeAttribute("aria-busy");
+  };
+
+  els.eventText.addEventListener("paste", (event) => {
+    if (isMobile() || isExtractingPaste) return;
+
+    handleClipboardImagePasteEvent(
+      event,
+      async (file) => {
+        isExtractingPaste = true;
+        setAnalyzingPlaceholder(true);
+
+        try {
+          const extractedText = await extractDocTextFromFile(file);
+          if (!extractedText.trim()) return;
+          els.eventText.value = extractedText.trim();
+          els.eventText.focus();
+          const cursorPos = els.eventText.value.length;
+          els.eventText.setSelectionRange(cursorPos, cursorPos);
+        } catch {
+          // fail silent to avoid notification spam on paste
+        } finally {
+          setAnalyzingPlaceholder(false);
+          isExtractingPaste = false;
+        }
+      },
+      { timestamp: Date.now(), filenamePrefix: "clipboard-task" },
+    );
+  });
 }
 
 function clearAiExtractResults() {
@@ -2025,6 +2082,7 @@ async function boot() {
   // Event modal
   els.closeEventBtn?.addEventListener("click", closeEventModal);
   els.eventBackdrop?.addEventListener("click", closeEventModal);
+  initEventTextImagePaste();
   els.createEventBtn?.addEventListener("click", createEventFromText);
   els.assistantAnswerBtn?.addEventListener("click", submitAssistantAnswer);
   els.assistantCreateBtn?.addEventListener("click", commitAssistantProposal);
