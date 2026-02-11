@@ -1093,6 +1093,211 @@ function deriveItemContextTags(item, docContext) {
   return uniqueTags(tags, 10);
 }
 
+function normalizeTopicTokens(value) {
+  const stopwords = new Set([
+    "der", "die", "das", "und", "oder", "mit", "für", "vom", "von", "zum", "zur", "am", "im",
+    "the", "and", "for", "with", "from", "to", "at", "ein", "eine", "einen", "event", "task",
+    "termin", "meeting", "rechnung", "invoice", "deadline", "travel", "reise",
+  ]);
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s-]+/gu, " ")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3 && !stopwords.has(token))
+    .slice(0, 10);
+}
+
+function tokenOverlapScore(tokensA, tokensB) {
+  const a = new Set(Array.isArray(tokensA) ? tokensA : []);
+  const b = new Set(Array.isArray(tokensB) ? tokensB : []);
+  if (!a.size || !b.size) return 0;
+  let overlap = 0;
+  for (const token of a) {
+    if (b.has(token)) overlap += 1;
+  }
+  return overlap / Math.max(a.size, b.size);
+}
+
+function getItemTopicLabel(item, context) {
+  const haystack = `${item?.title || ""} ${item?.sourceSnippet || ""} ${(item?.contextTags || []).join(" ")}`.toLowerCase();
+  const contextType = String(context?.contextType || "").toLowerCase();
+
+  if (/\b(hinreise|rückreise|abflug|rückflug|departure|return|outbound|inbound|hin\b|rück\b|flight|hotel|train)\b/.test(haystack)) {
+    return "Reise";
+  }
+  if (/\b(invoice|rechnung|iban|vat|payment|betrag|fällig|due date|due)\b/.test(haystack) || contextType === "invoice") {
+    return "Rechnung";
+  }
+  if (/\b(deadline|spätestens|einreichen|submission|due)\b/.test(haystack) || contextType === "deadline") {
+    return "Deadline";
+  }
+  if (/\b(meeting|termin|call|workshop|zoom|teams|standup)\b/.test(haystack) || contextType === "invitation") {
+    return "Meeting";
+  }
+  return item?.type === "task" ? "Aufgabe" : "Termin";
+}
+
+function sanitizeExplanationText(value) {
+  const input = String(value || "").slice(0, 140);
+  const withoutEmail = input.replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[redacted]");
+  const withoutPhone = withoutEmail.replace(/\+?\d[\d\s()./-]{6,}\d/g, "[redacted]");
+  return withoutPhone.replace(/\s+/g, " ").trim();
+}
+
+function buildDeterministicExplanation({ item, groupLabel, travelRoundTripDetected, invoiceDueDetected }) {
+  if (groupLabel === "Reise" && travelRoundTripDetected) {
+    return "Hin- und Rückfahrt erkannt.";
+  }
+  if (groupLabel === "Rechnung" && invoiceDueDetected && item?.dateISO) {
+    return "Rechnungs- und Fälligkeitswörter + Datum erkannt.";
+  }
+  if (groupLabel === "Deadline" && item?.dateISO) {
+    return "Deadline-Wörter + Datum erkannt.";
+  }
+  if (item?.dateISO && item?.startTime) {
+    return "Datum + Uhrzeit erkannt.";
+  }
+  if (item?.dateISO) {
+    return "Datum erkannt.";
+  }
+  if (item?.startTime) {
+    return "Uhrzeit erkannt.";
+  }
+  return "Kontext- und Schlüsselwörter erkannt.";
+}
+
+function dateSortValue(dateISO) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateISO || ""))) return "9999-99-99";
+  return dateISO;
+}
+
+function timeSortValue(startTime) {
+  if (!/^\d{2}:\d{2}$/.test(String(startTime || ""))) return "99:99";
+  return startTime;
+}
+
+// Inline test sample (travel outbound+return):
+// "Hinreise 12.05 08:00 Zürich nach Berlin\nRückreise 15.05 18:30 Berlin nach Zürich" -> groupLabel "Reise" with same groupId.
+// Inline test sample (invoice+deadline):
+// "Rechnung 2025-09-12 erhalten, Zahlung fällig bis 2025-09-30" -> groupLabel "Rechnung" with due-date explanation.
+
+function enrichAndGroupDocItems({ items, context, text }) {
+  const safeItems = Array.isArray(items) ? items : [];
+  const fullText = String(text || "").toLowerCase();
+
+  const outboundCue = /\b(hinreise|abflug|departure|outbound|hin\b)\b/.test(fullText);
+  const returnCue = /\b(rückreise|rückflug|return|inbound|rück\b)\b/.test(fullText);
+  const travelRoundTripDetected = outboundCue && returnCue;
+  const invoiceCue = /\b(invoice|rechnung|iban|vat|payment|betrag)\b/.test(fullText);
+  const dueCue = /\b(fällig|due date|due|deadline|zahlbar bis|payment due)\b/.test(fullText);
+  const invoiceDueDetected = invoiceCue && dueCue;
+
+  const working = safeItems.map((item, idx) => {
+    const topicLabel = getItemTopicLabel(item, context);
+    const titleTokens = normalizeTopicTokens(item?.title || "");
+    const forcedGroupKey =
+      travelRoundTripDetected && topicLabel === "Reise"
+        ? "forced-travel"
+        : invoiceDueDetected && topicLabel === "Rechnung"
+          ? "forced-invoice"
+          : null;
+    return {
+      idx,
+      item,
+      topicLabel,
+      titleTokens,
+      forcedGroupKey,
+    };
+  });
+
+  const groups = [];
+  for (const entry of working.sort((a, b) => (b.item.confidence || 0) - (a.item.confidence || 0))) {
+    if (entry.forcedGroupKey) {
+      let forced = groups.find((g) => g.key === entry.forcedGroupKey);
+      if (!forced) {
+        forced = { key: entry.forcedGroupKey, label: entry.topicLabel, items: [] };
+        groups.push(forced);
+      }
+      forced.items.push(entry);
+      continue;
+    }
+
+    let best = null;
+    let bestScore = -1;
+    for (const g of groups) {
+      const any = g.items[0];
+      const sameLabel = g.label === entry.topicLabel;
+      const sameDay = Boolean(entry.item?.dateISO) && g.items.some((e) => e.item?.dateISO && e.item.dateISO === entry.item.dateISO);
+      const overlap = Math.max(...g.items.map((e) => tokenOverlapScore(e.titleTokens, entry.titleTokens)), 0);
+      const score = (sameLabel ? 3 : 0) + (sameDay ? 2 : 0) + (overlap >= 0.34 ? 2 : 0);
+      if (score > bestScore) {
+        best = g;
+        bestScore = score;
+      }
+      if (!any) continue;
+    }
+
+    if (best && bestScore >= 3) {
+      best.items.push(entry);
+    } else {
+      groups.push({ key: `group-${groups.length + 1}`, label: entry.topicLabel, items: [entry] });
+    }
+  }
+
+  const sortedGroups = groups
+    .map((group, i) => {
+      const confidenceAvg =
+        group.items.reduce((sum, e) => sum + clamp(Number(e.item?.confidence) || 0, 0, 1), 0) /
+        Math.max(1, group.items.length);
+      const groupId = `g${i + 1}`;
+      return {
+        groupId,
+        label: sanitizeExplanationText(group.label) || "Termin",
+        itemCount: group.items.length,
+        confidenceAvg,
+        items: group.items
+          .slice()
+          .sort((a, b) => {
+            const confDiff = (b.item?.confidence || 0) - (a.item?.confidence || 0);
+            if (confDiff !== 0) return confDiff;
+            const dateDiff = dateSortValue(a.item?.dateISO).localeCompare(dateSortValue(b.item?.dateISO));
+            if (dateDiff !== 0) return dateDiff;
+            return timeSortValue(a.item?.startTime).localeCompare(timeSortValue(b.item?.startTime));
+          }),
+      };
+    })
+    .sort((a, b) => b.confidenceAvg - a.confidenceAvg);
+
+  const flattened = [];
+  for (const group of sortedGroups) {
+    for (const entry of group.items) {
+      const explanation = buildDeterministicExplanation({
+        item: entry.item,
+        groupLabel: group.label,
+        travelRoundTripDetected,
+        invoiceDueDetected,
+      });
+      flattened.push({
+        ...entry.item,
+        groupId: group.groupId,
+        groupLabel: group.label,
+        explanation: sanitizeExplanationText(explanation) || "Kontext erkannt.",
+      });
+    }
+  }
+
+  return {
+    items: flattened,
+    groups: sortedGroups.map((group) => ({
+      groupId: group.groupId,
+      label: group.label,
+      itemCount: group.itemCount,
+      confidenceAvg: clamp(group.confidenceAvg, 0, 1),
+    })),
+  };
+}
+
 function buildParsedTitle(snippet) {
   const cleaned = String(snippet || "")
     .replace(/\b(today|tomorrow|heute|morgen)\b/gi, "")
@@ -3212,14 +3417,17 @@ app.post("/api/doc/parse", async (req, res) => {
       contextTags: deriveItemContextTags(item, context),
     }));
 
+    const grouped = enrichAndGroupDocItems({ items, context, text });
+
     return res.json({
-      items,
+      items: grouped.items,
       meta: {
         method,
         fallbackUsed,
         normalizedChars,
         context,
         contextFallbackUsed,
+        groups: grouped.groups,
       },
     });
   } catch {

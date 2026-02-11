@@ -2214,3 +2214,18 @@ code{
   gap: 8px;
   flex-wrap: wrap;
 }
+
+.docSuggestionGroupHeader {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  padding: 4px 2px;
+}
+
+.docSuggestionWhy {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  opacity: 0.9;
+}
+
