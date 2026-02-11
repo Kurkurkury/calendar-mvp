@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { clipboardItemsToImageFile, dispatchAiExtractFile } from "../ai-extract-upload.mjs";
+import {
+  clipboardItemsToImageFile,
+  dispatchAiExtractFile,
+  handleClipboardImagePasteEvent,
+} from "../ai-extract-upload.mjs";
 
 class TestFile {
   constructor(parts, name, options = {}) {
@@ -65,4 +69,74 @@ test("clipboardItemsToImageFile ignores non-image clipboard entries", () => {
   ]);
 
   assert.equal(result, null);
+});
+
+
+test("handleClipboardImagePasteEvent dispatches image file and prevents default", () => {
+  const originalFile = globalThis.File;
+  globalThis.File = TestFile;
+
+  try {
+    const sourceFile = { type: "image/png" };
+    const event = {
+      clipboardData: {
+        items: [
+          {
+            type: "image/png",
+            getAsFile() {
+              return sourceFile;
+            },
+          },
+        ],
+      },
+      defaultPrevented: false,
+      preventDefault() {
+        this.defaultPrevented = true;
+      },
+    };
+
+    let received = null;
+    const didHandle = handleClipboardImagePasteEvent(
+      event,
+      (file) => {
+        received = file;
+      },
+      { timestamp: 1700000000001, filenamePrefix: "clipboard-task" },
+    );
+
+    assert.equal(didHandle, true);
+    assert.equal(event.defaultPrevented, true);
+    assert.ok(received instanceof TestFile);
+    assert.equal(received.name, "clipboard-task-1700000000001.png");
+  } finally {
+    globalThis.File = originalFile;
+  }
+});
+
+test("handleClipboardImagePasteEvent ignores non-image clipboard entries", () => {
+  const event = {
+    clipboardData: {
+      items: [
+        {
+          type: "text/plain",
+          getAsFile() {
+            return null;
+          },
+        },
+      ],
+    },
+    defaultPrevented: false,
+    preventDefault() {
+      this.defaultPrevented = true;
+    },
+  };
+
+  let wasCalled = false;
+  const didHandle = handleClipboardImagePasteEvent(event, () => {
+    wasCalled = true;
+  });
+
+  assert.equal(didHandle, false);
+  assert.equal(event.defaultPrevented, false);
+  assert.equal(wasCalled, false);
 });
