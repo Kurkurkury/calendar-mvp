@@ -1195,6 +1195,13 @@ body.view-day .side {
 .list { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
 .list.small .item { font-size: 12px; }
 
+#eventsList {
+  max-height: 320px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
 .item {
   border: 1px solid var(--line);
   background: var(--panel2);
@@ -2229,4 +2236,3 @@ code{
   color: var(--muted);
   opacity: 0.9;
 }
-
