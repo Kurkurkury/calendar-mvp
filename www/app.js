@@ -789,10 +789,13 @@ function sanitizeDocGroups(groups) {
     .map((group) => {
       const groupId = /^g\d+$/.test(String(group?.groupId || "").trim()) ? String(group.groupId).trim() : "";
       if (!groupId) return null;
-      const label = String(group?.label || "").trim().slice(0, 40) || "Termin";
+      const label = String(group?.groupTitle || group?.label || "").trim().slice(0, 40) || "Termin";
       const itemCount = Math.max(0, Math.trunc(Number(group?.itemCount) || 0));
       const confidenceAvg = clampDocConfidence(group?.confidenceAvg);
-      return { groupId, label, itemCount, confidenceAvg };
+      const groupType = new Set(["travel", "agenda", "series", "single"]).has(group?.groupType)
+        ? group.groupType
+        : "single";
+      return { groupId, label, itemCount, confidenceAvg, groupType };
     })
     .filter(Boolean)
     .sort((a, b) => b.confidenceAvg - a.confidenceAvg);
@@ -832,13 +835,29 @@ function sanitizeDocSuggestionItem(item) {
     : [];
   const groupIdRaw = String(item?.groupId || "").trim();
   const groupLabelRaw = String(item?.groupLabel || "").trim();
-  const explanationRaw = String(item?.explanation || "").trim();
+  const explanationTitleRaw = String(item?.explanation?.title || item?.explanationText || item?.explanation || "").trim();
+  const explanationBulletsRaw = Array.isArray(item?.explanation?.bullets) ? item.explanation.bullets : [];
   const groupId = /^g\d+$/.test(groupIdRaw) ? groupIdRaw : "";
   const groupLabel = groupLabelRaw.slice(0, 40);
-  const explanation = explanationRaw
+  const explanation = explanationTitleRaw
     .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[redacted]")
     .replace(/\+?\d[\d\s()./-]{6,}\d/g, "[redacted]")
     .slice(0, 140);
+  const explanationBullets = explanationBulletsRaw
+    .map((line) => String(line || "").trim())
+    .filter(Boolean)
+    .slice(0, 4)
+    .map((line) =>
+      line
+        .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[redacted]")
+        .replace(/\+?\d[\d\s()./-]{6,}\d/g, "[redacted]")
+        .slice(0, 140),
+    );
+  const suggestionConfidence = clampDocConfidence(item?.suggestionConfidence ?? item?.confidence);
+  const groupType = new Set(["travel", "agenda", "series", "single"]).has(item?.groupType)
+    ? item.groupType
+    : "single";
+  const groupTitle = String(item?.groupTitle || groupLabel || "").trim().slice(0, 40);
 
   return {
     type,
@@ -849,11 +868,15 @@ function sanitizeDocSuggestionItem(item) {
     location,
     description,
     confidence: clampDocConfidence(item?.confidence),
+    suggestionConfidence,
     sourceSnippet,
     contextTags,
     groupId,
+    groupType,
+    groupTitle,
     groupLabel,
     explanation,
+    explanationBullets,
   };
 }
 
@@ -1029,8 +1052,11 @@ function avgConfidence(entries) {
 }
 
 function sortDocSuggestionEntries(a, b) {
-  const conf = clampDocConfidence(b?.item?.confidence) - clampDocConfidence(a?.item?.confidence);
+  const conf = clampDocConfidence(b?.item?.suggestionConfidence) - clampDocConfidence(a?.item?.suggestionConfidence);
   if (conf !== 0) return conf;
+  const aStructured = a?.item?.groupType && a.item.groupType !== "single" ? 1 : 0;
+  const bStructured = b?.item?.groupType && b.item.groupType !== "single" ? 1 : 0;
+  if (aStructured !== bStructured) return bStructured - aStructured;
   const ad = String(a?.item?.dateISO || "9999-99-99");
   const bd = String(b?.item?.dateISO || "9999-99-99");
   const d = ad.localeCompare(bd);
@@ -1064,14 +1090,17 @@ function buildDocSuggestionRow(entry) {
     entry.item.durationMin ? `Dauer: ${entry.item.durationMin} min` : null,
     entry.item.location ? `Ort: ${entry.item.location}` : null,
     entry.item.description ? `Beschreibung: ${entry.item.description}` : null,
-    `Confidence: ${Math.round(entry.item.confidence * 100)}%`,
+    `Confidence: ${Math.round((entry.item.suggestionConfidence || 0) * 100)}%`,
     entry.item.sourceSnippet ? `Quelle: ${truncateSnippet(entry.item.sourceSnippet)}` : null,
   ].filter(Boolean);
   meta.innerHTML = fields.map((f) => `<div>${escapeHtml(f)}</div>`).join("");
 
   const why = document.createElement("div");
   why.className = "docSuggestionWhy";
-  why.textContent = `Warum: ${entry.item.explanation || "Kontext erkannt."}`;
+  const bulletText = Array.isArray(entry.item.explanationBullets) && entry.item.explanationBullets.length
+    ? ` ${entry.item.explanationBullets.map((b) => `• ${b}`).join(" ")}`
+    : "";
+  why.textContent = `Warum: ${entry.item.explanation || "Kontext erkannt."}${bulletText}`;
 
   const actions = document.createElement("div");
   actions.className = "docSuggestionActions";
