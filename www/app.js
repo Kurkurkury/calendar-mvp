@@ -3306,6 +3306,7 @@ function renderDayScroller() {
   if (!els.dayScroller) return;
   const dayNames = ["SO", "MO", "DI", "MI", "DO", "FR", "SA"];
   const curDays = buildMonthDays(state.currentYear, state.currentMonth);
+  const importantDays = buildImportantEventsByDate();
   const strips = [
     { key: "cur", year: state.currentYear, month: state.currentMonth, days: curDays },
   ];
@@ -3318,9 +3319,13 @@ function renderDayScroller() {
     stripEl.dataset.month = strip.key === "cur" ? "current" : strip.key;
     strip.days.forEach((dayObj) => {
       const dayDate = dayObj.date;
+      const dayHasImportant = Boolean(importantDays[dateKey(dayDate)]);
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "day-chip";
+      button.className = "day-chip dateCircle dateCircle--default";
+      if (dayHasImportant) {
+        button.classList.add("dateCircle--important");
+      }
       button.innerHTML = `
         <span class="day-number">${pad2(dayObj.dayNumber)}</span>
         <span class="day-label">${dayNames[dayDate.getDay()]}</span>
@@ -6646,6 +6651,24 @@ function buildCountsByDate() {
   }
 
   return counts;
+}
+
+function buildImportantEventsByDate() {
+  const importantByDate = Object.create(null);
+
+  for (const ev of (state.events || [])) {
+    const d = new Date(ev?.start);
+    if (Number.isNaN(d.getTime())) continue;
+
+    const isImportant = ev?.important === true
+      || ev?.isImportant === true
+      || ev?.priority === "high";
+    if (!isImportant) continue;
+
+    importantByDate[dateKey(d)] = true;
+  }
+
+  return importantByDate;
 }
 
 function formatCountLine(c) {
