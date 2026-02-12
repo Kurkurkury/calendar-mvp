@@ -22,6 +22,12 @@
   --today: #ffffff;
   --todayGlow: transparent;
   --todayLine: rgba(255, 255, 255, 0.5);
+
+  /* Date circle color tokens */
+  --c-date-default-bg: #ffffff;
+  --c-date-default-text: #6a1b9a;
+  --c-date-important-bg: #d92d20;
+  --c-date-important-text: #ffffff;
 }
 
 * { box-sizing: border-box; }
@@ -522,6 +528,16 @@ body.view-day .side {
   border: 1px solid #e0e0e0;
   padding: 6px;
   line-height: 1.1;
+}
+
+.dateCircle--default {
+  background-color: var(--c-date-default-bg);
+  color: var(--c-date-default-text);
+}
+
+.dateCircle--important {
+  background-color: var(--c-date-important-bg);
+  color: var(--c-date-important-text);
 }
 
 .day-chip span {
