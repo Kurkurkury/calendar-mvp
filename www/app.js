@@ -6666,7 +6666,9 @@ function buildImportantEventsByDate() {
     const d = new Date(ev?.start);
     if (Number.isNaN(d.getTime())) continue;
 
-    const isImportant = ev?.important === true;
+    const isImportant = ev?.important === true
+      || ev?.isImportant === true
+      || ev?.priority === "high";
     if (!isImportant) continue;
 
     importantByDate[dateKey(d)] = true;
