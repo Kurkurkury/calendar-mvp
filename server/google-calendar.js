@@ -4,6 +4,25 @@
 import { google } from "googleapis";
 import { clearTokens, loadTokens, saveTokens, getTokenStorageInfo } from "./token-store.js";
 
+const IMPORTANT_MARKER = "[calendar-important]";
+
+function withImportantMarker(notes, important) {
+  const base = String(notes || "").trim();
+  if (important !== true) return base;
+  if (base.includes(IMPORTANT_MARKER)) return base;
+  return base ? `${base}\n\n${IMPORTANT_MARKER}` : IMPORTANT_MARKER;
+}
+
+function parseImportantFromNotes(notes) {
+  const raw = String(notes || "");
+  const important = raw.includes(IMPORTANT_MARKER);
+  const cleanedNotes = raw
+    .replace(IMPORTANT_MARKER, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return { important, cleanedNotes };
+}
+
 export { clearTokens, loadTokens, saveTokens, getTokenStorageInfo };
 
 export function getGoogleConfig() {
@@ -173,7 +192,7 @@ async function ensureFreshTokens(oauth2, tokens) {
   await saveTokens(merged);
 }
 
-export async function createGoogleEvent({ title, start, end, location = "", notes = "" }) {
+export async function createGoogleEvent({ title, start, end, location = "", notes = "", important = false }) {
   if (!title || !start || !end) {
     return { ok: false, message: "title/start/end required" };
   }
@@ -189,7 +208,7 @@ export async function createGoogleEvent({ title, start, end, location = "", note
   const resource = {
     summary: String(title),
     location: String(location || ""),
-    description: String(notes || ""),
+    description: withImportantMarker(notes, important === true),
     start: {
       dateTime: String(start),
       timeZone: cfg.GOOGLE_TIMEZONE || "Europe/Zurich",
@@ -232,13 +251,15 @@ export async function listGoogleEvents({ timeMin, timeMax, maxTotal = 2500 } = {
     const items = Array.isArray(res?.data?.items) ? res.data.items : [];
     for (const it of items) {
       if (it?.status === "cancelled") continue;
+      const parsedNotes = parseImportantFromNotes(it.description || "");
       out.push({
         id: `gcal_${it.id}`,
         title: it.summary || "Termin",
         start: it.start?.dateTime || "",
         end: it.end?.dateTime || "",
         location: it.location || "",
-        notes: it.description || "",
+        notes: parsedNotes.cleanedNotes,
+        important: parsedNotes.important,
         googleEventId: it.id,
       });
       if (out.length >= maxTotal) {

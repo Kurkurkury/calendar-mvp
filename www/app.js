@@ -566,6 +566,7 @@ const els = {
   eventDuration: byId("eventDuration"),
   eventLocation: byId("eventLocation"),
   eventNotes: byId("eventNotes"),
+  eventImportant: byId("eventImportant"),
   createEventFormBtn: byId("createEventFormBtn"),
 
   // Free slots (Phase 3)
@@ -3306,6 +3307,7 @@ function renderDayScroller() {
   if (!els.dayScroller) return;
   const dayNames = ["SO", "MO", "DI", "MI", "DO", "FR", "SA"];
   const curDays = buildMonthDays(state.currentYear, state.currentMonth);
+  const importantDays = buildImportantEventsByDate();
   const strips = [
     { key: "cur", year: state.currentYear, month: state.currentMonth, days: curDays },
   ];
@@ -3318,9 +3320,13 @@ function renderDayScroller() {
     stripEl.dataset.month = strip.key === "cur" ? "current" : strip.key;
     strip.days.forEach((dayObj) => {
       const dayDate = dayObj.date;
+      const dayHasImportant = Boolean(importantDays[dateKey(dayDate)]);
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "day-chip";
+      button.className = "day-chip dateCircle dateCircle--default";
+      if (dayHasImportant) {
+        button.classList.add("dateCircle--important");
+      }
       button.innerHTML = `
         <span class="day-number">${pad2(dayObj.dayNumber)}</span>
         <span class="day-label">${dayNames[dayDate.getDay()]}</span>
@@ -5365,6 +5371,7 @@ function resetCreateEventForm() {
   if (els.eventDuration) els.eventDuration.value = "60";
   if (els.eventLocation) els.eventLocation.value = "";
   if (els.eventNotes) els.eventNotes.value = "";
+  if (els.eventImportant) els.eventImportant.checked = false;
 }
 
 async function applyCreatedEvent(createdRes, fallbackTitle) {
@@ -5476,6 +5483,7 @@ async function createEventFromForm() {
   const durationMin = clamp(parseInt(els.eventDuration?.value || "60", 10), 5, 24 * 60);
   const location = (els.eventLocation?.value || "").trim();
   const notes = (els.eventNotes?.value || "").trim();
+  const important = Boolean(els.eventImportant?.checked);
 
   if (!title || !dateStr || !timeStr || !durationMin) {
     setStatus("Bitte Titel, Datum, Startzeit und Dauer ausfüllen.", false);
@@ -5501,6 +5509,7 @@ async function createEventFromForm() {
       durationMinutes: durationMin,
       location,
       notes,
+      important,
     });
 
     if (suggestionsRes?.ok && Array.isArray(suggestionsRes.suggestions)) {
@@ -5515,6 +5524,7 @@ async function createEventFromForm() {
           durationMinutes: durationMin,
           location,
           notes,
+          important,
         });
       }
     } else {
@@ -6330,6 +6340,7 @@ function extractEventFromQuickAddResponse(data, fallbackTitle) {
     end,
     location: ev.location || "",
     notes: ev.notes || ev.description || "",
+    important: ev.important === true,
     googleEventId: googleEventId || undefined,
   };
 }
@@ -6646,6 +6657,22 @@ function buildCountsByDate() {
   }
 
   return counts;
+}
+
+function buildImportantEventsByDate() {
+  const importantByDate = Object.create(null);
+
+  for (const ev of (state.events || [])) {
+    const d = new Date(ev?.start);
+    if (Number.isNaN(d.getTime())) continue;
+
+    const isImportant = ev?.important === true;
+    if (!isImportant) continue;
+
+    importantByDate[dateKey(d)] = true;
+  }
+
+  return importantByDate;
 }
 
 function formatCountLine(c) {
