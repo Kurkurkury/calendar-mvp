@@ -63,6 +63,7 @@ const DOC_EXTRACT_ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
   "image/webp",
 ]);
+const IMPORTANT_MARKER = "[calendar-important]";
 
 // ---- Paths ----
 const DB_PATH = path.join(__dirname, "db.json");
@@ -2221,8 +2222,8 @@ app.get("/api/google/callback", handleGoogleCallback);
 // Alias for legacy redirect URIs like /auth/google/callback
 app.get("/auth/google/callback", handleGoogleCallback);
 
-async function createAndMirrorEvent({ title, start, end, location = "", notes = "" }) {
-  const out = await createGoogleEvent({ title, start, end, location, notes });
+async function createAndMirrorEvent({ title, start, end, location = "", notes = "", important = false }) {
+  const out = await createGoogleEvent({ title, start, end, location, notes, important: important === true });
   if (!out.ok) return { ok: false, status: 400, payload: out };
 
   const googleId = out.googleEvent?.id ? String(out.googleEvent.id) : uid("gcal");
@@ -2234,6 +2235,7 @@ async function createAndMirrorEvent({ title, start, end, location = "", notes = 
     end: String(end),
     location: String(location || ""),
     notes: String(notes || ""),
+    important: important === true,
     color: "",
     googleEventId: googleId,
   };
@@ -2246,7 +2248,11 @@ async function createAndMirrorEvent({ title, start, end, location = "", notes = 
     start: String(out.googleEvent?.start?.dateTime || start || ""),
     end: String(out.googleEvent?.end?.dateTime || end || ""),
     location: String(out.googleEvent?.location || location || ""),
-    notes: String(out.googleEvent?.description || notes || ""),
+    notes: String(out.googleEvent?.description || notes || "")
+      .replace(IMPORTANT_MARKER, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim(),
+    important: important === true,
     googleEventId: googleId,
   };
 
@@ -2257,8 +2263,8 @@ async function handleGoogleEventCreate(req, res) {
   try {
     await assertCorrectGoogleAccount();
 
-    const { title, start, end, location = "", notes = "" } = req.body || {};
-    const created = await createAndMirrorEvent({ title, start, end, location, notes });
+    const { title, start, end, location = "", notes = "", important = false } = req.body || {};
+    const created = await createAndMirrorEvent({ title, start, end, location, notes, important: important === true });
     if (!created.ok) return res.status(created.status || 400).json(created.payload || { ok: false });
 
     res.json({
@@ -2300,6 +2306,7 @@ async function handleEventSuggestions(req, res) {
       durationMinutes,
       location = "",
       notes = "",
+      important = false,
       daysForward = 5,
       windowStart = "08:00",
       windowEnd = "18:00",
@@ -2356,6 +2363,7 @@ async function handleEventSuggestions(req, res) {
             end: endIso,
             location,
             notes,
+            important: important === true,
             source: "classic",
             createdAt: Date.now(),
           });
@@ -2414,6 +2422,7 @@ async function handleEventSuggestionConfirm(req, res) {
       end: entry.end,
       location: entry.location || "",
       notes: entry.notes || "",
+      important: entry.important === true,
     });
     if (!created.ok) return res.status(created.status || 400).json(created.payload || { ok: false });
 
@@ -2994,6 +3003,7 @@ async function handleCreateFromSuggestion(req, res) {
     const duration = parseSuggestionDuration(item.durationMin);
     const location = String(item.location || "").trim();
     const notes = String(item.description || "").trim();
+    const important = item.important === true;
 
     if (!titleRaw) {
       return res.status(400).json({ ok: false, message: "title required" });
@@ -3028,7 +3038,7 @@ async function handleCreateFromSuggestion(req, res) {
       end = `${endDate.getFullYear()}-${pad2(endDate.getMonth() + 1)}-${pad2(endDate.getDate())}`;
     }
 
-    const created = await createAndMirrorEvent({ title, start, end, location, notes });
+    const created = await createAndMirrorEvent({ title, start, end, location, notes, important });
     if (!created.ok) return res.status(created.status || 400).json(created.payload || { ok: false });
 
     return res.json({

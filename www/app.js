@@ -566,6 +566,7 @@ const els = {
   eventDuration: byId("eventDuration"),
   eventLocation: byId("eventLocation"),
   eventNotes: byId("eventNotes"),
+  eventImportant: byId("eventImportant"),
   createEventFormBtn: byId("createEventFormBtn"),
 
   // Free slots (Phase 3)
@@ -5370,6 +5371,7 @@ function resetCreateEventForm() {
   if (els.eventDuration) els.eventDuration.value = "60";
   if (els.eventLocation) els.eventLocation.value = "";
   if (els.eventNotes) els.eventNotes.value = "";
+  if (els.eventImportant) els.eventImportant.checked = false;
 }
 
 async function applyCreatedEvent(createdRes, fallbackTitle) {
@@ -5481,6 +5483,7 @@ async function createEventFromForm() {
   const durationMin = clamp(parseInt(els.eventDuration?.value || "60", 10), 5, 24 * 60);
   const location = (els.eventLocation?.value || "").trim();
   const notes = (els.eventNotes?.value || "").trim();
+  const important = Boolean(els.eventImportant?.checked);
 
   if (!title || !dateStr || !timeStr || !durationMin) {
     setStatus("Bitte Titel, Datum, Startzeit und Dauer ausfüllen.", false);
@@ -5506,6 +5509,7 @@ async function createEventFromForm() {
       durationMinutes: durationMin,
       location,
       notes,
+      important,
     });
 
     if (suggestionsRes?.ok && Array.isArray(suggestionsRes.suggestions)) {
@@ -5520,6 +5524,7 @@ async function createEventFromForm() {
           durationMinutes: durationMin,
           location,
           notes,
+          important,
         });
       }
     } else {
@@ -6335,6 +6340,7 @@ function extractEventFromQuickAddResponse(data, fallbackTitle) {
     end,
     location: ev.location || "",
     notes: ev.notes || ev.description || "",
+    important: ev.important === true,
     googleEventId: googleEventId || undefined,
   };
 }
