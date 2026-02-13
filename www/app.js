@@ -2125,9 +2125,14 @@ async function boot() {
   els.eventDetailCloseBtn?.addEventListener("click", closeEventDetailModal);
   els.eventDetailBackdrop?.addEventListener("click", closeEventDetailModal);
   els.eventDetailDeleteBtn?.addEventListener("click", async () => {
-    if (!state.detailEvent) return;
-    await deleteEvent(state.detailEvent);
-    closeEventDetailModal();
+    const eventToDelete = getDetailEventForDelete();
+    if (!eventToDelete) {
+      uiNotify("error", "Kein Event zum Löschen gefunden.");
+      return;
+    }
+    const eventId = getGoogleEventId(eventToDelete) || eventToDelete?.id || "";
+    await deleteEvent(eventToDelete);
+    if (!findEventById(eventId)) closeEventDetailModal();
   });
 
   els.selectedEventDeleteBtn?.addEventListener("click", async () => {
@@ -3928,6 +3933,13 @@ function getSelectedEvent() {
   return findEventById(state.selectedEventId) || state.selectedEventData || null;
 }
 
+function getDetailEventForDelete() {
+  const detail = state.detailEvent;
+  const detailId = getGoogleEventId(detail) || detail?.id || state.selectedEventId || "";
+  if (!detailId) return null;
+  return findEventById(detailId) || detail || null;
+}
+
 function findEventById(eventId) {
   if (!eventId) return null;
   return (state.events || []).find((ev) => {
@@ -5213,7 +5225,7 @@ function renderEventDetailModal(event) {
   if (els.eventDetailNotes) {
     els.eventDetailNotes.value = notes;
   }
-  const eventId = getGoogleEventId(event);
+  const eventId = getGoogleEventId(event) || state.selectedEventId || "";
   if (els.eventDetailDeleteBtn) {
     els.eventDetailDeleteBtn.disabled = !eventId || deletingEvents.has(eventId);
   }
