@@ -4256,52 +4256,6 @@ app.post("/api/events", requireApiKey, (req, res) => {
   res.json({ ok: true, event: ev });
 });
 
-app.delete("/api/events/:id", requireApiKey, async (req, res) => {
-  const rawId = String(req.params.id || "").trim();
-  if (!rawId) {
-    return res.status(400).json({ ok: false, message: "Missing event id" });
-  }
-
-  const normalizedGoogleId = rawId.startsWith("gcal_") ? rawId.slice(5) : "";
-
-  const db = readDb();
-  const existing = (db.events || []).find((ev) => {
-    if (!ev) return false;
-    return (
-      String(ev.id || "") === rawId
-      || (normalizedGoogleId && String(ev.googleEventId || "") === normalizedGoogleId)
-      || String(ev.googleEventId || "") === rawId
-    );
-  });
-
-  const googleEventId = String(existing?.googleEventId || normalizedGoogleId || "").trim();
-
-  db.events = (db.events || []).filter((ev) => {
-    if (!ev) return false;
-    const evId = String(ev.id || "");
-    const evGoogleId = String(ev.googleEventId || "");
-    if (evId === rawId) return false;
-    if (googleEventId && evGoogleId === googleEventId) return false;
-    if (normalizedGoogleId && evId === `gcal_${normalizedGoogleId}`) return false;
-    return true;
-  });
-  writeDb(db);
-
-  if (googleEventId) {
-    try {
-      await deleteGoogleEvent({ eventId: googleEventId });
-    } catch (e) {
-      const status = e?.code || e?.response?.status;
-      if (status !== 404 && status !== 410) {
-        const msg = String(e?.message || "");
-        return res.status(500).json({ ok: false, message: "google delete failed", details: msg });
-      }
-    }
-  }
-
-  return res.json({ ok: true });
-});
-
 // ---- Tasks (local db.json) ----
 app.get("/api/tasks", (req, res) => {
   const db = readDb();

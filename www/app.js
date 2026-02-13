@@ -3403,7 +3403,6 @@ function renderDayEventList() {
       date: start,
       location,
       description,
-      event: ev,
     });
   });
 
@@ -3483,19 +3482,6 @@ function renderDayEventList() {
 
     card.appendChild(time);
     card.appendChild(title);
-
-    if (item.type === "event" && item.event) {
-      const deleteBtn = document.createElement("button");
-      deleteBtn.className = "btn small delete";
-      deleteBtn.type = "button";
-      deleteBtn.textContent = "🗑 Löschen";
-      deleteBtn.addEventListener("click", (event) => {
-        event.stopPropagation();
-        void deleteEvent(item.event);
-      });
-      card.appendChild(deleteBtn);
-    }
-
     card.appendChild(icon);
     card.appendChild(detailPanel);
 
@@ -6210,38 +6196,48 @@ async function deleteEvent(ev) {
     return;
   }
 
-  const title = ev?.title || ev?.summary || "Event";
-  const confirmed = window.confirm(`Event wirklich löschen?
-
-${title}`);
-  if (!confirmed) return;
+  if (!isGoogleConnected()) {
+    uiNotify("error", "Google nicht verbunden – bitte verbinden");
+    return;
+  }
 
   if (deletingEvents.has(eventId)) return;
 
   deletingEvents.add(eventId);
   uiNotify("info", "Lösche Termin…");
 
+  const snapshot = { ...ev };
   const previousEvents = Array.isArray(state.events) ? [...state.events] : [];
   state.events = previousEvents.filter((e) => (getGoogleEventId(e) || e.id) !== eventId);
   if (state.selectedEventId === eventId) clearSelectedEvent();
   await render();
 
   try {
-    await apiDelete(`/api/events/${encodeURIComponent(eventId)}`);
+    await apiDelete(`/api/google/events/${encodeURIComponent(eventId)}`);
     uiNotify("success", "Termin gelöscht");
 
-    if (isGoogleConnected()) {
-      const eventsRes = await apiGetGoogleEvents(GCAL_DAYS_PAST, GCAL_DAYS_FUTURE);
-      if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
-        state.events = eventsRes.events;
-        saveLastKnownGoogleEvents(state.events);
-        await render();
-      }
+    pendingUndoToast = showUndoToast({
+      message: "Termin gelöscht.",
+      onUndo: async () => {
+        await undoDeleteEvent(snapshot);
+      },
+    });
+
+    const eventsRes = await apiGetGoogleEvents(GCAL_DAYS_PAST, GCAL_DAYS_FUTURE);
+    if (eventsRes?.ok && Array.isArray(eventsRes.events)) {
+      state.events = eventsRes.events;
+      saveLastKnownGoogleEvents(state.events);
+      await render();
     }
   } catch (e) {
+    const status = e?._meta?.status;
     const msg = String(e?.message || "");
     state.events = previousEvents;
     await render();
+    if (status === 401 || msg.toLowerCase().includes("google nicht verbunden")) {
+      uiNotify("error", "Google nicht verbunden – bitte verbinden");
+      return;
+    }
     uiNotify("error", `Fehler beim Löschen: ${msg || "unbekannt"}`);
   } finally {
     deletingEvents.delete(eventId);
