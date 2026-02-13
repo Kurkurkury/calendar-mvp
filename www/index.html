@@ -325,6 +325,11 @@
                   <input id="eventTitle" type="text" placeholder="z.B. Projekt-Meeting" />
                 </label>
 
+                <label class="toggle">
+                  <input id="eventImportant" type="checkbox" />
+                  <span>Wichtig</span>
+                </label>
+
                 <div class="row">
                   <label class="field">
                     <span>Datum</span>
@@ -350,11 +355,6 @@
                 <label class="field">
                   <span>Notizen (optional)</span>
                   <textarea id="eventNotes" rows="3" placeholder="Agenda, Links, Vorbereitung..."></textarea>
-                </label>
-
-                <label class="field" style="display:flex;flex-direction:row;align-items:center;gap:10px;">
-                  <input id="eventImportant" type="checkbox" />
-                  <span>Wichtig</span>
                 </label>
 
                 <div class="modalFoot">
@@ -630,6 +630,11 @@
       <label class="field">
         <span>Titel</span>
         <input id="editEventTitle" type="text" placeholder="z.B. Projekt-Meeting" />
+      </label>
+
+      <label class="toggle">
+        <input id="editEventImportant" type="checkbox" />
+        <span>Wichtig</span>
       </label>
 
       <div class="row">

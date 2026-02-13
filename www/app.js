@@ -636,6 +636,7 @@ const els = {
   editEventDuration: byId("editEventDuration"),
   editEventLocation: byId("editEventLocation"),
   editEventNotes: byId("editEventNotes"),
+  editEventImportant: byId("editEventImportant"),
 
   // Event detail modal
   eventDetailBackdrop: byId("eventDetailBackdrop"),
@@ -5153,6 +5154,7 @@ function openEditEventModal(event) {
   if (els.editEventDuration) els.editEventDuration.value = String(durationMin);
   if (els.editEventLocation) els.editEventLocation.value = event?.location || "";
   if (els.editEventNotes) els.editEventNotes.value = event?.notes || event?.description || "";
+  if (els.editEventImportant) els.editEventImportant.checked = event?.important === true;
 
   els.editEventBackdrop?.classList.remove("hidden");
   els.editEventModal?.classList.remove("hidden");
@@ -5298,6 +5300,7 @@ async function saveEditEvent() {
   const durationMin = clamp(parseInt(els.editEventDuration?.value || "60", 10), 5, 24 * 60);
   const location = (els.editEventLocation?.value || "").trim();
   const notes = (els.editEventNotes?.value || "").trim();
+  const important = Boolean(els.editEventImportant?.checked);
 
   if (!title || !dateStr || !timeStr || !durationMin) {
     uiNotify("error", "Bitte Titel, Datum, Startzeit und Dauer ausfüllen.");
@@ -5328,6 +5331,7 @@ async function saveEditEvent() {
       end,
       location,
       notes,
+      important,
     });
 
     uiNotify("success", "Gespeichert");
@@ -6054,6 +6058,7 @@ function openAssistantEditModal() {
   if (els.editEventDuration) els.editEventDuration.value = String(durationMin || 60);
   if (els.editEventLocation) els.editEventLocation.value = event.location || "";
   if (els.editEventNotes) els.editEventNotes.value = event.description || "";
+  if (els.editEventImportant) els.editEventImportant.checked = event.important === true || event.importance === true;
 
   closeEventModal();
   els.editEventBackdrop?.classList.remove("hidden");
