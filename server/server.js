@@ -3358,6 +3358,8 @@ app.post("/api/assistant/parse", async (req, res) => {
 
     const systemPrompt = [
       "You are a calendar parsing engine.",
+      "Supported intents: create_event, delete_event, clarify.",
+      "Choose delete_event when the user wants to remove/cancel an existing event.",
       "Return a strict JSON object with the required fields only.",
       "If anything is missing or ambiguous, set needs_clarification=true and ask one short clarification_question.",
       "Never invent details.",
@@ -3374,6 +3376,7 @@ app.post("/api/assistant/parse", async (req, res) => {
       type: "object",
       additionalProperties: false,
       required: [
+        "intent",
         "title",
         "date",
         "start",
@@ -3383,6 +3386,7 @@ app.post("/api/assistant/parse", async (req, res) => {
         "clarification_question",
       ],
       properties: {
+        intent: { type: "string", enum: ["create_event", "delete_event"] },
         title: { type: "string" },
         date: { type: "string", description: "YYYY-MM-DD" },
         start: { type: "string", description: "HH:MM 24h" },
@@ -3476,8 +3480,9 @@ app.post("/api/assistant/parse", async (req, res) => {
       return res.status(500).json({ ok: false, message: "AI response parse failed" });
     }
 
+    const parsedIntent = parsed?.intent === "delete_event" ? "delete_event" : "create_event";
     const proposal = normalizeAssistantProposal({
-      intent: parsed?.needs_clarification ? "clarify" : "create_event",
+      intent: parsed?.needs_clarification ? "clarify" : parsedIntent,
       confidence: parsed?.needs_clarification ? 0.5 : 1,
       event: {
         title: parsed?.title ?? null,
