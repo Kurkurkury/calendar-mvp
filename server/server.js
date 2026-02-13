@@ -1734,6 +1734,7 @@ function normalizeAssistantProposal(raw) {
       allDay: !!event.allDay,
       location: event.location ?? null,
       description: event.description ?? null,
+      important: event.important === true,
     },
     questions: Array.isArray(safe.questions) ? safe.questions.filter(Boolean).map(String) : [],
   };
@@ -4109,10 +4110,11 @@ app.post("/api/assistant/commit", requireApiKey, async (req, res) => {
     const title = String(event.title || "Termin");
     const location = String(event.location || "");
     const notes = String(event.description || "");
+    const important = event.important === true;
 
     if (provider === "google") {
       await assertCorrectGoogleAccount();
-      const created = await createAndMirrorEvent({ title, start, end, location, notes });
+      const created = await createAndMirrorEvent({ title, start, end, location, notes, important });
       if (!created.ok) return res.status(created.status || 400).json(created.payload || { ok: false });
       return res.json({ ok: true, createdEvent: created.normalizedEvent, source: "google" });
     }
@@ -4125,6 +4127,7 @@ app.post("/api/assistant/commit", requireApiKey, async (req, res) => {
       end,
       location,
       notes,
+      important,
       color: "",
     };
     db.events.push(localEvent);

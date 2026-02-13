@@ -375,6 +375,9 @@ const state = {
     intent: "none",
     questions: [],
     provider: "local",
+    draft: {
+      important: false,
+    },
   },
   eventModalOpen: false,
   selectedEventId: null,
@@ -4462,6 +4465,9 @@ function openEventModal() {
     intent: "none",
     questions: [],
     provider: determineAssistantProvider(),
+    draft: {
+      important: Boolean(els.eventImportant?.checked),
+    },
   };
   resetAssistantUi();
   setTimeout(() => els.eventText?.focus(), 0);
@@ -5222,6 +5228,7 @@ async function saveEditEvent() {
     const durationMin = clamp(parseInt(els.editEventDuration?.value || "60", 10), 5, 24 * 60);
     const location = (els.editEventLocation?.value || "").trim();
     const notes = (els.editEventNotes?.value || "").trim();
+    const important = Boolean(els.editEventImportant?.checked);
 
     if (!title || !dateStr || !timeStr || !durationMin) {
       uiNotify("error", "Bitte Titel, Datum, Startzeit und Dauer ausfüllen.");
@@ -5240,6 +5247,7 @@ async function saveEditEvent() {
         allDay: false,
         location,
         description: notes,
+        important,
       },
       questions: [],
     };
@@ -5821,6 +5829,7 @@ function normalizeAssistantProposal(proposal) {
       allDay: !!event.allDay,
       location: event.location ?? null,
       description: event.description ?? null,
+      important: event.important === true,
     },
     questions: Array.isArray(safe.questions) ? safe.questions.filter(Boolean).map(String) : [],
   };
@@ -5931,7 +5940,10 @@ async function requestAssistantParse(text) {
 }
 
 function handleAssistantResponse(raw, { originalText } = {}) {
+  const previousDraft = state.assistant?.draft || {};
   const proposal = normalizeAssistantProposal(raw);
+  const draftImportant = previousDraft.important === true;
+  proposal.event.important = draftImportant || proposal.event.important === true;
   const provider = determineAssistantProvider();
   state.assistant = {
     originalText: originalText || state.assistant.originalText || "",
@@ -5939,6 +5951,9 @@ function handleAssistantResponse(raw, { originalText } = {}) {
     intent: proposal.intent,
     questions: proposal.questions || [],
     provider,
+    draft: {
+      important: proposal.event.important === true,
+    },
   };
 
   if (proposal.intent === "clarify") {
@@ -5986,6 +6001,14 @@ async function commitAssistantProposal() {
     uiNotify("error", "Bitte erst einen vollständigen Vorschlag auswählen.");
     return;
   }
+  const draftImportant = state.assistant?.draft?.important === true;
+  const requestProposal = {
+    ...proposal,
+    event: {
+      ...(proposal.event || {}),
+      important: draftImportant || proposal?.event?.important === true,
+    },
+  };
   const provider = state.assistant.provider || "local";
   const btn = els.assistantCreateBtn;
   const oldText = btn?.textContent || "Erstellen";
@@ -5997,7 +6020,7 @@ async function commitAssistantProposal() {
   setSyncLoading(true, "Lädt… Termin wird erstellt");
   try {
     const createdRes = await apiPost("/api/assistant/commit", {
-      proposal,
+      proposal: requestProposal,
       provider,
     });
     const createdEvent = createdRes?.createdEvent || null;
@@ -6058,7 +6081,7 @@ function openAssistantEditModal() {
   if (els.editEventDuration) els.editEventDuration.value = String(durationMin || 60);
   if (els.editEventLocation) els.editEventLocation.value = event.location || "";
   if (els.editEventNotes) els.editEventNotes.value = event.description || "";
-  if (els.editEventImportant) els.editEventImportant.checked = event.important === true || event.importance === true;
+  if (els.editEventImportant) els.editEventImportant.checked = event.important === true;
 
   closeEventModal();
   els.editEventBackdrop?.classList.remove("hidden");
@@ -6074,6 +6097,15 @@ async function createEventFromText() {
     els.eventText.focus();
     return;
   }
+
+  const important = Boolean(els.eventImportant?.checked);
+  state.assistant = {
+    ...state.assistant,
+    draft: {
+      ...(state.assistant?.draft || {}),
+      important,
+    },
+  };
 
   const btn = els.createEventBtn;
   const oldText = btn.textContent;
