@@ -5918,6 +5918,7 @@ function renderAssistantClarify(questions) {
 function renderAssistantPreview(proposal) {
   resetAssistantUi();
   const event = proposal?.event || {};
+  const isDeleteIntent = proposal?.intent === "delete_event";
   if (els.assistantPreviewTitle) els.assistantPreviewTitle.textContent = event.title || "-";
   if (els.assistantPreviewTime) els.assistantPreviewTime.textContent = formatAssistantTimeRange(event);
   if (event.location) {
@@ -5929,9 +5930,45 @@ function renderAssistantPreview(proposal) {
     els.assistantPreviewDescriptionRow?.classList.remove("hidden");
   }
   if (els.assistantCreateBtn) {
-    els.assistantCreateBtn.disabled = !assistantHasRequiredFields(proposal);
+    els.assistantCreateBtn.disabled = isDeleteIntent ? !event?.title : !assistantHasRequiredFields(proposal);
+    els.assistantCreateBtn.textContent = isDeleteIntent ? "Löschen" : "Erstellen";
   }
   els.assistantPreview?.classList.remove("hidden");
+}
+
+function findEventForAssistantDelete(proposal) {
+  const event = proposal?.event || {};
+  const title = String(event.title || "").trim().toLowerCase();
+  if (!title) return null;
+  const targetDate = event.dateISO || null;
+  const targetStart = event.startTime || null;
+
+  const candidates = (state.events || []).filter((ev) => {
+    const evTitle = String(ev?.title || ev?.summary || "").trim().toLowerCase();
+    if (!evTitle) return false;
+    return evTitle.includes(title) || title.includes(evTitle);
+  });
+  if (!candidates.length) return null;
+
+  if (targetDate) {
+    const byDate = candidates.filter((ev) => {
+      const start = ev?.start ? new Date(ev.start) : null;
+      if (!start || Number.isNaN(start.getTime())) return false;
+      return toInputDate(start) === targetDate;
+    });
+    if (byDate.length === 1) return byDate[0];
+    if (byDate.length > 1 && targetStart) {
+      const byTime = byDate.find((ev) => {
+        const start = ev?.start ? new Date(ev.start) : null;
+        if (!start || Number.isNaN(start.getTime())) return false;
+        return fmtTime(start) === targetStart;
+      });
+      if (byTime) return byTime;
+    }
+    if (byDate.length > 0) return byDate[0];
+  }
+
+  return candidates[0];
 }
 
 function renderAssistantNone() {
@@ -5972,7 +6009,7 @@ function handleAssistantResponse(raw, { originalText } = {}) {
     renderAssistantClarify(proposal.questions);
     return;
   }
-  if (proposal.intent === "create_event") {
+  if (proposal.intent === "create_event" || proposal.intent === "delete_event") {
     renderAssistantPreview(proposal);
     return;
   }
@@ -6009,7 +6046,21 @@ async function submitAssistantAnswer() {
 
 async function commitAssistantProposal() {
   const proposal = state.assistant.proposal;
-  if (!proposal || !assistantHasRequiredFields(proposal)) {
+  if (!proposal) {
+    uiNotify("error", "Bitte erst einen vollständigen Vorschlag auswählen.");
+    return;
+  }
+  if (proposal.intent === "delete_event") {
+    const match = findEventForAssistantDelete(proposal);
+    if (!match) {
+      uiNotify("error", "Kein passender Termin zum Löschen gefunden.");
+      return;
+    }
+    await deleteEvent(match);
+    closeEventModal();
+    return;
+  }
+  if (!assistantHasRequiredFields(proposal)) {
     uiNotify("error", "Bitte erst einen vollständigen Vorschlag auswählen.");
     return;
   }
