@@ -737,26 +737,28 @@ function parseAIJson(rawText) {
     return null;
   }
   if (!parsed || typeof parsed !== "object") return null;
-  if (!Array.isArray(parsed.items)) return null;
+
+  const events = Array.isArray(parsed.events)
+    ? parsed.events
+    : parsed.event && typeof parsed.event === "object"
+      ? [parsed.event]
+      : [];
+  if (!events.length) return null;
 
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
   const timeRegex = /^\d{2}:\d{2}$/;
+  const confidenceValues = new Set(["high", "medium", "low"]);
 
-  for (const item of parsed.items) {
+  for (const item of events) {
     if (!item || typeof item !== "object") return null;
-    if (!["event", "task"].includes(item.type)) return null;
     if (typeof item.title !== "string") return null;
     if (typeof item.date !== "string" || !dateRegex.test(item.date)) return null;
-    if (item.start !== null && (typeof item.start !== "string" || !timeRegex.test(item.start))) return null;
-    if (item.end !== null && (typeof item.end !== "string" || !timeRegex.test(item.end))) return null;
-    if (item.durationMin !== null && !Number.isFinite(item.durationMin)) return null;
-    if (typeof item.description !== "string") return null;
-    if (typeof item.location !== "string") return null;
-    if (!Number.isFinite(item.confidence) || item.confidence < 0 || item.confidence > 1) return null;
-    if (typeof item.sourceSnippet !== "string") return null;
+    if (typeof item.startTime !== "string" || !timeRegex.test(item.startTime)) return null;
+    if (item.endTime !== null && (typeof item.endTime !== "string" || !timeRegex.test(item.endTime))) return null;
+    if (typeof item.confidence !== "string" || !confidenceValues.has(item.confidence)) return null;
   }
 
-  return parsed;
+  return { events };
 }
 
 function safeJsonParse(rawText) {
@@ -836,6 +838,27 @@ function normalizeExtractItems(items) {
     if (!normalized.start) normalized.start = null;
     if (!normalized.end) normalized.end = null;
     return normalized;
+  });
+}
+
+function normalizeExtractEvents(events) {
+  if (!Array.isArray(events)) return [];
+  return events.map((event) => {
+    const normalizedConfidence = String(event?.confidence || "").toLowerCase();
+    const confidence = ["high", "medium", "low"].includes(normalizedConfidence)
+      ? normalizedConfidence
+      : "low";
+    const endTime =
+      typeof event?.endTime === "string" && /^\d{2}:\d{2}$/.test(event.endTime)
+        ? event.endTime
+        : null;
+    return {
+      title: String(event?.title || "").trim() || "Untitled event",
+      date: String(event?.date || "").trim(),
+      startTime: String(event?.startTime || "").trim(),
+      endTime,
+      confidence,
+    };
   });
 }
 
@@ -3694,14 +3717,17 @@ app.post(
         "Do not invent times or dates; use null when unknown and lower confidence.",
         "Never auto-save; suggestions only.",
         "Include evidence hints (page or snippet references) for each proposal.",
+        "Never stop after first event; collect every valid event mention.",
       ].join(" ");
 
       const userPrompt = [
-        "Extract events and tasks from the uploaded document.",
+        "Extract all event date/time suggestions from the uploaded document.",
         `Timezone: ${tz}`,
         `Locale: ${loc}`,
         `ReferenceDate: ${refDate}`,
         "If locale is de-CH or de-DE and dates are ambiguous, prefer dd.mm.yyyy interpretation.",
+        "Detect ALL date/time occurrences and return one structured event per occurrence.",
+        "If one event is found, still return an array with one item.",
       ].join("\n");
 
       const isImage = file.mimeType.startsWith("image/");
@@ -3959,36 +3985,20 @@ app.post(
       const schema = {
         type: "object",
         additionalProperties: false,
-        required: ["items"],
+        required: ["events"],
         properties: {
-          items: {
+          events: {
             type: "array",
             items: {
               type: "object",
               additionalProperties: false,
-              required: [
-                "type",
-                "title",
-                "date",
-                "start",
-                "end",
-                "durationMin",
-                "description",
-                "location",
-                "confidence",
-                "sourceSnippet",
-              ],
+              required: ["title", "date", "startTime", "endTime", "confidence"],
               properties: {
-                type: { type: "string", enum: ["event", "task"] },
                 title: { type: "string" },
                 date: { type: "string", description: "YYYY-MM-DD" },
-                start: { type: ["string", "null"], description: "HH:MM 24h or null" },
-                end: { type: ["string", "null"], description: "HH:MM 24h or null" },
-                durationMin: { type: ["number", "null"] },
-                description: { type: "string" },
-                location: { type: "string" },
-                confidence: { type: "number", minimum: 0, maximum: 1 },
-                sourceSnippet: { type: "string" },
+                startTime: { type: "string", description: "HH:MM" },
+                endTime: { type: ["string", "null"], description: "HH:MM or null" },
+                confidence: { type: "string", enum: ["high", "medium", "low"] },
               },
             },
           },
@@ -4053,8 +4063,8 @@ app.post(
         return res.status(502).json({ ok: false, error: "invalid_ai_output" });
       }
 
-      const normalizedItems = normalizeExtractItems(aiParsed.items);
-      return res.json({ ok: true, items: normalizedItems });
+      const normalizedEvents = normalizeExtractEvents(aiParsed.events);
+      return res.json({ ok: true, events: normalizedEvents });
     } catch {
       return res.status(500).json({ ok: false, message: "ai extract failed" });
     }

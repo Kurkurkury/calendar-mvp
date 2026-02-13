@@ -1834,7 +1834,11 @@ async function handleAiExtractFile(file) {
 
 function renderAiExtractResults(payload) {
   if (!els.aiExtractResults) return;
-  const events = Array.isArray(payload?.proposals?.events) ? payload.proposals.events : [];
+  const events = Array.isArray(payload?.events)
+    ? payload.events
+    : Array.isArray(payload?.proposals?.events)
+      ? payload.proposals.events
+      : [];
   const tasks = Array.isArray(payload?.proposals?.tasks) ? payload.proposals.tasks : [];
 
   els.aiExtractResults.innerHTML = "";
@@ -1848,7 +1852,14 @@ function renderAiExtractResults(payload) {
   }
 
   appendAiExtractGroup("Events", events, (event) =>
-    pickAiExtractValue(event?.date, event?.startDate, event?.start, event?.startTime, event?.when)
+    pickAiExtractValue(
+      [event?.date, event?.startTime].filter(Boolean).join(" "),
+      event?.date,
+      event?.startDate,
+      event?.start,
+      event?.startTime,
+      event?.when,
+    )
   );
   appendAiExtractGroup("Tasks", tasks, (task) =>
     pickAiExtractValue(task?.due, task?.dueDate, task?.deadline, task?.date)
