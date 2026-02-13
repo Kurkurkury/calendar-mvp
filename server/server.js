@@ -4310,7 +4310,7 @@ app.patch("/api/google/events/:id", requireApiKey, async (req, res) => {
   try {
     await assertCorrectGoogleAccount();
 
-    const { title, start, end, location = "", notes = "" } = req.body || {};
+    const { title, start, end, location = "", notes = "", important = false } = req.body || {};
     if (!title || !start || !end) {
       return res.status(400).json({ ok: false, message: "title/start/end required" });
     }
@@ -4318,10 +4318,13 @@ app.patch("/api/google/events/:id", requireApiKey, async (req, res) => {
     const auth = await buildAuthedOAuthClient();
 
     const calendar = google.calendar({ version: "v3", auth });
+    const cleanedNotes = String(notes || "").replace(IMPORTANT_MARKER, "").trim();
     const requestBody = {
       summary: String(title),
       location: String(location || ""),
-      description: String(notes || ""),
+      description: important === true
+        ? `${cleanedNotes}${cleanedNotes ? "\n" : ""}${IMPORTANT_MARKER}`
+        : cleanedNotes,
       start: {
         dateTime: String(start),
         timeZone: "Europe/Zurich",
@@ -4353,6 +4356,7 @@ app.patch("/api/google/events/:id", requireApiKey, async (req, res) => {
             end: String(end),
             location: String(location || ""),
             notes: String(notes || ""),
+            important: important === true,
           };
         }
         return ev;
