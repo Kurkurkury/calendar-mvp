@@ -3727,6 +3727,7 @@ app.post(
         `ReferenceDate: ${refDate}`,
         "If locale is de-CH or de-DE and dates are ambiguous, prefer dd.mm.yyyy interpretation.",
         "Detect ALL date/time occurrences and return one structured event per occurrence.",
+        "For screenshots/list views: iterate line-by-line and include every visible appointment row.",
         "If one event is found, still return an array with one item.",
       ].join("\n");
 
@@ -4017,6 +4018,7 @@ app.post(
               {
                 type: "input_image",
                 image_url: `data:${file.mimeType};base64,${base64File}`,
+                detail: "high",
               },
             ],
           },
@@ -4029,7 +4031,7 @@ app.post(
             schema,
           },
         },
-        max_output_tokens: 800,
+        max_output_tokens: 2000,
       };
 
       let resp;
