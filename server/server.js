@@ -3383,8 +3383,9 @@ app.post("/api/assistant/parse", async (req, res) => {
       "You are a calendar parsing engine.",
       "Supported intents: create_event, delete_event, clarify.",
       "Choose delete_event when the user wants to remove/cancel an existing event.",
-      "Return a strict JSON object with the required fields only.",
+      "Return strict JSON that follows the provided schema.",
       "If anything is missing or ambiguous, set needs_clarification=true and ask one short clarification_question.",
+      "If text contains multiple event lines, extract each as a separate event in order.",
       "Never invent details.",
     ].join(" ");
 
@@ -3393,28 +3394,31 @@ app.post("/api/assistant/parse", async (req, res) => {
       `Timezone: ${tz}`,
       `Locale: ${loc}`,
       `ReferenceDateISO: ${refDate}`,
+      "If the user writes multiple lines/bullets, treat each line as a separate candidate event.",
+      "Return all detected events in events[]; do not stop after the first one.",
     ].join("\n");
 
     const schema = {
       type: "object",
       additionalProperties: false,
-      required: [
-        "intent",
-        "title",
-        "date",
-        "start",
-        "end",
-        "description",
-        "needs_clarification",
-        "clarification_question",
-      ],
+      required: ["events", "needs_clarification", "clarification_question"],
       properties: {
-        intent: { type: "string", enum: ["create_event", "delete_event"] },
-        title: { type: "string" },
-        date: { type: "string", description: "YYYY-MM-DD" },
-        start: { type: "string", description: "HH:MM 24h" },
-        end: { type: "string", description: "HH:MM 24h" },
-        description: { type: "string" },
+        events: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["intent", "title", "date", "start", "end", "description"],
+            properties: {
+              intent: { type: "string", enum: ["create_event", "delete_event"] },
+              title: { type: "string" },
+              date: { type: "string", description: "YYYY-MM-DD" },
+              start: { type: "string", description: "HH:MM 24h" },
+              end: { type: "string", description: "HH:MM 24h" },
+              description: { type: "string" },
+            },
+          },
+        },
         needs_clarification: { type: "boolean" },
         clarification_question: { type: "string" },
       },
@@ -3503,38 +3507,62 @@ app.post("/api/assistant/parse", async (req, res) => {
       return res.status(500).json({ ok: false, message: "AI response parse failed" });
     }
 
-    const parsedIntent = parsed?.intent === "delete_event" ? "delete_event" : "create_event";
-    const proposal = normalizeAssistantProposal({
-      intent: parsed?.needs_clarification ? "clarify" : parsedIntent,
-      confidence: parsed?.needs_clarification ? 0.5 : 1,
-      event: {
-        title: parsed?.title ?? null,
-        dateISO: parsed?.date ?? null,
-        startTime: parsed?.start ?? null,
-        endTime: parsed?.end ?? null,
-        durationMin: null,
-        allDay: false,
-        location: null,
-        description: parsed?.description ?? null,
-      },
-      questions: parsed?.needs_clarification
-        ? [parsed?.clarification_question].filter(Boolean)
-        : [],
-    });
+    const normalizedItems = Array.isArray(parsed?.events)
+      ? parsed.events
+      : parsed && typeof parsed === "object"
+      ? [parsed]
+      : [];
 
-    if (proposal.intent === "create_event" && !hasRequiredAssistantFields(proposal)) {
-      const fallback = {
-        ...proposal,
+    const proposals = normalizedItems
+      .map((item) => {
+        const parsedIntent = item?.intent === "delete_event" ? "delete_event" : "create_event";
+        return normalizeAssistantProposal({
+          intent: parsed?.needs_clarification ? "clarify" : parsedIntent,
+          confidence: parsed?.needs_clarification ? 0.5 : 1,
+          event: {
+            title: item?.title ?? null,
+            dateISO: item?.date ?? null,
+            startTime: item?.start ?? null,
+            endTime: item?.end ?? null,
+            durationMin: null,
+            allDay: false,
+            location: null,
+            description: item?.description ?? null,
+          },
+          questions: parsed?.needs_clarification
+            ? [parsed?.clarification_question].filter(Boolean)
+            : [],
+        });
+      })
+      .filter((proposal) => proposal.intent === "delete_event" || hasRequiredAssistantFields(proposal));
+
+    if (parsed?.needs_clarification || proposals.length === 0) {
+      const fallback = normalizeAssistantProposal({
         intent: "clarify",
-        confidence: Math.min(proposal.confidence || 0, 0.5),
-        questions: proposal.questions?.length
-          ? proposal.questions
-          : ["Was ist der Titel?", "Wann genau soll der Termin stattfinden?"],
-      };
+        confidence: 0.5,
+        event: {
+          title: null,
+          dateISO: null,
+          startTime: null,
+          endTime: null,
+          durationMin: null,
+          allDay: false,
+          location: null,
+          description: null,
+        },
+        questions: [parsed?.clarification_question].filter(Boolean),
+      });
+      if (!fallback.questions.length) {
+        fallback.questions = ["Bitte gib Titel, Datum und Uhrzeit für jeden Termin an."];
+      }
       return res.json(fallback);
     }
 
-    res.json(proposal);
+    if (proposals.length === 1) {
+      return res.json(proposals[0]);
+    }
+
+    return res.json({ proposals });
   } catch (e) {
     res.status(500).json({ ok: false, message: "assistant parse failed", details: e?.message || "unknown" });
   }
