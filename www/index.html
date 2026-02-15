@@ -273,6 +273,44 @@
               <div id="aiExtractWarnings" class="list small"></div>
             </div>
 
+            <div class="card" id="expenseImportCard">
+              <div class="cardTitle">Budget: Screenshot-Import</div>
+              <div class="cardSub">Einkaufsliste per Screenshot importieren (mit Review vor dem Speichern).</div>
+              <div class="list">
+                <label class="field">
+                  <span>Einkaufsliste per Screenshot importieren</span>
+                  <input id="expenseImportInput" type="file" accept="image/png,image/jpeg,image/webp" />
+                </label>
+                <div id="expenseImportStatus" class="cardSub"></div>
+                <div id="expenseImportWarning" class="cardSub"></div>
+              </div>
+              <div id="expenseProposalCard" class="cardMini hidden">
+                <div class="cardMiniTitle">Import-Vorschlag</div>
+                <div class="cardMiniSub">Bitte prüfen und dann speichern.</div>
+                <div class="row">
+                  <label class="field">
+                    <span>Kategorie</span>
+                    <select id="expenseCategorySelect">
+                      <option value="Lebensmittel" selected>Lebensmittel</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>Store (optional)</span>
+                    <input id="expenseStoreInput" type="text" placeholder="z.B. Migros" />
+                  </label>
+                </div>
+                <div class="cardSub" style="margin-top:8px;">Positionen</div>
+                <div id="expenseProposalItems" class="list small"></div>
+                <div id="expenseProposalTotal" class="cardSub"></div>
+                <div class="modalFoot">
+                  <button id="expenseSaveBtn" class="btn primary" type="button">Speichern</button>
+                  <button id="expenseCancelBtn" class="btn ghost" type="button">Abbrechen</button>
+                </div>
+              </div>
+              <div class="cardSub" style="margin-top:12px;">Budget-Einträge</div>
+              <div id="expenseList" class="list small"></div>
+            </div>
+
             <div class="card" id="preferencesCard">
               <div class="cardTitle">Nutzerpräferenzen</div>
               <div class="cardSub">Beeinflusst smarte Vorschläge &amp; Fokusfenster.</div>
