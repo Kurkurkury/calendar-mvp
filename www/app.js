@@ -6124,6 +6124,35 @@ function showNextAssistantProposal() {
   showAssistantProposalAt((state.assistant?.proposalIndex || 0) + 1);
 }
 
+function consumeCurrentAssistantProposal() {
+  const proposals = Array.isArray(state.assistant?.proposals) ? [...state.assistant.proposals] : [];
+  if (!proposals.length) {
+    renderAssistantNone();
+    return;
+  }
+
+  const currentIndex = clamp(
+    Math.round(Number(state.assistant?.proposalIndex) || 0),
+    0,
+    proposals.length - 1,
+  );
+
+  proposals.splice(currentIndex, 1);
+  state.assistant.proposals = proposals;
+
+  if (!proposals.length) {
+    state.assistant.proposalIndex = 0;
+    state.assistant.proposal = null;
+    state.assistant.intent = "none";
+    state.assistant.questions = [];
+    renderAssistantNone();
+    return;
+  }
+
+  const nextIndex = Math.min(currentIndex, proposals.length - 1);
+  showAssistantProposalAt(nextIndex);
+}
+
 async function submitAssistantAnswer() {
   const answer = (els.assistantAnswer?.value || "").trim();
   if (!answer) {
@@ -6165,7 +6194,7 @@ async function commitAssistantProposal() {
       return;
     }
     await deleteEvent(match);
-    closeEventModal();
+    consumeCurrentAssistantProposal();
     return;
   }
   if (!assistantHasRequiredFields(proposal)) {
@@ -6202,7 +6231,7 @@ async function commitAssistantProposal() {
     await refreshFromApi();
     await render();
     uiNotify("success", "Termin erstellt");
-    closeEventModal();
+    consumeCurrentAssistantProposal();
   } catch (e) {
     const status = e?._meta?.status;
     if (status === 401) {
