@@ -76,7 +76,14 @@
               </div>
 
               <div id="assistantPreview" class="cardMini hidden">
-                <div class="cardMiniTitle">Vorschlag</div>
+                <div class="assistantPreviewHeader">
+                  <div class="cardMiniTitle">Vorschlag <span id="assistantPreviewCount" class="assistantPreviewCount"></span></div>
+                  <div class="assistantPreviewPager">
+                    <button id="assistantPrevBtn" class="btn ghost small" type="button" aria-label="Vorheriger Vorschlag">←</button>
+                    <span id="assistantPreviewPosition" class="assistantPreviewPosition">1/1</span>
+                    <button id="assistantNextBtn" class="btn ghost small" type="button" aria-label="Nächster Vorschlag">→</button>
+                  </div>
+                </div>
                 <div class="assistantPreviewBody">
                   <div><span class="assistantLabel">Titel</span><span id="assistantPreviewTitle" class="assistantValue"></span></div>
                   <div><span class="assistantLabel">Zeit</span><span id="assistantPreviewTime" class="assistantValue"></span></div>

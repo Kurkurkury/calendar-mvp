@@ -1470,6 +1470,32 @@ code{
   color: var(--text);
 }
 
+.assistantPreviewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.assistantPreviewCount {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.assistantPreviewPager {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.assistantPreviewPosition {
+  color: var(--muted);
+  font-size: 12px;
+  min-width: 40px;
+  text-align: center;
+}
+
 .assistantPreviewBody {
   display: flex;
   flex-direction: column;
