@@ -381,6 +381,17 @@ const state = {
       important: false,
     },
   },
+
+  plan: {
+    tasks: [],
+    constraints: {
+      dailyLimitMinutes: null,
+      excludeWeekends: false,
+      preferredBlocks: { minMinutes: 60, maxMinutes: 120 },
+    },
+    parsing: false,
+    scheduling: false,
+  },
   eventModalOpen: false,
   selectedEventId: null,
   selectedEventData: null,
@@ -568,6 +579,15 @@ const els = {
   modalBackdrop: byId("modalBackdrop"),
   taskModal: byId("taskModal"),
   closeModalBtn: byId("closeModalBtn"),
+
+  openPlanModalBtn: byId("openPlanModalBtn"),
+  planBackdrop: byId("planBackdrop"),
+  planModal: byId("planModal"),
+  closePlanModalBtn: byId("closePlanModalBtn"),
+  planInput: byId("planInput"),
+  planParseBtn: byId("planParseBtn"),
+  planScheduleBtn: byId("planScheduleBtn"),
+  planTaskList: byId("planTaskList"),
 
   taskTitle: byId("taskTitle"),
   taskDuration: byId("taskDuration"),
@@ -2275,6 +2295,13 @@ async function boot() {
       if (action === "newEvent") openEventModal();
     });
   });
+
+  // Plan modal
+  els.openPlanModalBtn?.addEventListener("click", openPlanModal);
+  els.closePlanModalBtn?.addEventListener("click", closePlanModal);
+  els.planBackdrop?.addEventListener("click", closePlanModal);
+  els.planParseBtn?.addEventListener("click", parsePlanText);
+  els.planScheduleBtn?.addEventListener("click", schedulePlanTasks);
 
   // Task modal
   els.closeModalBtn?.addEventListener("click", closeTaskModal);
@@ -4706,6 +4733,138 @@ function toggleSidebarDrawer() {
     closeSidebarDrawer();
   } else {
     openSidebarDrawer();
+  }
+}
+
+
+function openPlanModal() {
+  if (!els.planBackdrop || !els.planModal) return;
+  els.planBackdrop.classList.remove("hidden");
+  els.planModal.classList.remove("hidden");
+  renderPlanTasks();
+}
+
+function closePlanModal() {
+  if (!els.planBackdrop || !els.planModal) return;
+  els.planBackdrop.classList.add("hidden");
+  els.planModal.classList.add("hidden");
+}
+
+function normalizePlanTaskClient(task) {
+  const title = String(task?.title || "").trim();
+  if (!title) return null;
+  const estimatedMinutes = Math.max(5, Math.min(720, Math.trunc(Number(task?.estimatedMinutes) || 60)));
+  return {
+    title,
+    estimatedMinutes,
+    earliestDateISO: task?.earliestDateISO || null,
+    deadlineDateISO: task?.deadlineDateISO || null,
+    notes: String(task?.notes || "").trim(),
+  };
+}
+
+function renderPlanTasks() {
+  if (!els.planTaskList) return;
+  const tasks = Array.isArray(state.plan.tasks) ? state.plan.tasks : [];
+  if (!tasks.length) {
+    els.planTaskList.innerHTML = '<div class="cardSub">Noch keine Tasks – zuerst „Strukturieren“ ausführen.</div>';
+    return;
+  }
+
+  els.planTaskList.innerHTML = tasks
+    .map((task, idx) => `
+      <div class="row" data-plan-row="${idx}" style="align-items:flex-end; gap:8px;">
+        <label class="field" style="flex:1; margin:0;">
+          <span>Task</span>
+          <input data-plan-title="${idx}" type="text" value="${escapeHtml(task.title || "")}" />
+        </label>
+        <label class="field" style="width:120px; margin:0;">
+          <span>Minuten</span>
+          <input data-plan-min="${idx}" type="number" min="5" max="720" step="5" value="${Number(task.estimatedMinutes) || 60}" />
+        </label>
+        <button class="btn ghost" data-plan-delete="${idx}" type="button">Löschen</button>
+      </div>
+    `)
+    .join("");
+
+  els.planTaskList.querySelectorAll("[data-plan-title]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const idx = Number(input.getAttribute("data-plan-title"));
+      if (!Number.isFinite(idx) || !state.plan.tasks[idx]) return;
+      state.plan.tasks[idx].title = String(input.value || "");
+    });
+  });
+
+  els.planTaskList.querySelectorAll("[data-plan-min]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const idx = Number(input.getAttribute("data-plan-min"));
+      if (!Number.isFinite(idx) || !state.plan.tasks[idx]) return;
+      const value = Math.max(5, Math.min(720, Math.trunc(Number(input.value) || 60)));
+      state.plan.tasks[idx].estimatedMinutes = value;
+    });
+  });
+
+  els.planTaskList.querySelectorAll("[data-plan-delete]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = Number(btn.getAttribute("data-plan-delete"));
+      if (!Number.isFinite(idx)) return;
+      state.plan.tasks.splice(idx, 1);
+      renderPlanTasks();
+    });
+  });
+}
+
+async function parsePlanText() {
+  if (!els.planInput) return;
+  const text = String(els.planInput.value || "").trim();
+  if (!text) {
+    uiNotify("warning", "Bitte zuerst einen Plan eingeben.");
+    return;
+  }
+
+  state.plan.parsing = true;
+  try {
+    const out = await apiPost("/api/plan/parse", {
+      text,
+      locale: "de-CH",
+      timezone: "Europe/Zurich",
+    });
+    state.plan.tasks = (Array.isArray(out?.tasks) ? out.tasks : []).map(normalizePlanTaskClient).filter(Boolean);
+    state.plan.constraints = out?.constraints || state.plan.constraints;
+    renderPlanTasks();
+    uiNotify("success", `${state.plan.tasks.length} Aufgaben strukturiert.`);
+  } catch (e) {
+    uiNotify("error", String(e?.message || "Plan konnte nicht strukturiert werden."));
+  } finally {
+    state.plan.parsing = false;
+  }
+}
+
+async function schedulePlanTasks() {
+  const tasks = (Array.isArray(state.plan.tasks) ? state.plan.tasks : []).map(normalizePlanTaskClient).filter(Boolean);
+  if (!tasks.length) {
+    uiNotify("warning", "Keine Tasks zum Einplanen vorhanden.");
+    return;
+  }
+
+  state.plan.scheduling = true;
+  try {
+    const out = await apiPost("/api/plan/schedule", {
+      tasks,
+      constraints: state.plan.constraints,
+      timezone: "Europe/Zurich",
+      locale: "de-CH",
+    });
+
+    const created = Array.isArray(out?.created) ? out.created.length : 0;
+    const skipped = Array.isArray(out?.skipped) ? out.skipped.length : 0;
+    uiNotify("success", `Erstellt: ${created}, Übersprungen: ${skipped}`);
+    closePlanModal();
+    await refreshFromApi();
+  } catch (e) {
+    uiNotify("error", String(e?.message || "Plan konnte nicht eingeplant werden."));
+  } finally {
+    state.plan.scheduling = false;
   }
 }
 

@@ -533,6 +533,7 @@
           <div id="statusLine" class="cardSub"></div>
           <div id="googleConnectionState" class="connectionMain"></div>
           <div class="row status-actions">
+            <button id="openPlanModalBtn" class="btn ghost" type="button" aria-label="Plan zu Kalender">Plan → Kalender</button>
             <button id="googleConnectBtn" class="btn ghost" type="button" aria-label="Mit Google verbinden">Mit Google verbinden</button>
             <button id="googleDisconnectBtn" class="btn ghost" type="button" aria-label="Google Verbindung trennen">Trennen</button>
           </div>
@@ -670,6 +671,25 @@
     </div>
   </div>
 
+
+  <div id="planBackdrop" class="backdrop hidden"></div>
+  <div id="planModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="planModalTitle">
+    <div class="modalHead">
+      <div id="planModalTitle" class="modalTitle">Plan → Kalender</div>
+      <button id="closePlanModalBtn" class="btn ghost" aria-label="Plan-Dialog schließen">✕</button>
+    </div>
+    <div class="modalBody">
+      <label class="field">
+        <span>Freitext-Plan</span>
+        <textarea id="planInput" rows="5" placeholder="z.B. Diese Woche: Mathe lernen 2h, Projektbericht bis 2026-03-01..."></textarea>
+      </label>
+      <div class="row">
+        <button id="planParseBtn" class="btn ghost" type="button">Strukturieren</button>
+        <button id="planScheduleBtn" class="btn primary" type="button">Einplanen</button>
+      </div>
+      <div id="planTaskList" class="list small"></div>
+    </div>
+  </div>
   <div id="editEventBackdrop" class="backdrop hidden"></div>
   <div id="editEventModal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modalHead">
