@@ -372,6 +372,8 @@ const state = {
   assistant: {
     originalText: "",
     proposal: null,
+    proposals: [],
+    proposalIndex: 0,
     intent: "none",
     questions: [],
     provider: "local",
@@ -592,6 +594,10 @@ const els = {
   assistantAnswer: byId("assistantAnswer"),
   assistantAnswerBtn: byId("assistantAnswerBtn"),
   assistantPreview: byId("assistantPreview"),
+  assistantPreviewCount: byId("assistantPreviewCount"),
+  assistantPreviewPosition: byId("assistantPreviewPosition"),
+  assistantPrevBtn: byId("assistantPrevBtn"),
+  assistantNextBtn: byId("assistantNextBtn"),
   assistantPreviewTitle: byId("assistantPreviewTitle"),
   assistantPreviewTime: byId("assistantPreviewTime"),
   assistantPreviewLocationRow: byId("assistantPreviewLocationRow"),
@@ -2103,6 +2109,8 @@ async function boot() {
   els.assistantAnswerBtn?.addEventListener("click", submitAssistantAnswer);
   els.assistantCreateBtn?.addEventListener("click", commitAssistantProposal);
   els.assistantEditBtn?.addEventListener("click", openAssistantEditModal);
+  els.assistantPrevBtn?.addEventListener("click", showPreviousAssistantProposal);
+  els.assistantNextBtn?.addEventListener("click", showNextAssistantProposal);
   els.eventText?.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
@@ -4485,6 +4493,8 @@ function openEventModal() {
   state.assistant = {
     originalText: "",
     proposal: null,
+    proposals: [],
+    proposalIndex: 0,
     intent: "none",
     questions: [],
     provider: determineAssistantProvider(),
@@ -5906,6 +5916,10 @@ function resetAssistantUi() {
   if (els.assistantPreviewTime) els.assistantPreviewTime.textContent = "";
   if (els.assistantPreviewLocation) els.assistantPreviewLocation.textContent = "";
   if (els.assistantPreviewDescription) els.assistantPreviewDescription.textContent = "";
+  if (els.assistantPreviewCount) els.assistantPreviewCount.textContent = "";
+  if (els.assistantPreviewPosition) els.assistantPreviewPosition.textContent = "1/1";
+  if (els.assistantPrevBtn) els.assistantPrevBtn.disabled = true;
+  if (els.assistantNextBtn) els.assistantNextBtn.disabled = true;
   els.assistantPreviewLocationRow?.classList.add("hidden");
   els.assistantPreviewDescriptionRow?.classList.add("hidden");
   if (els.assistantCreateBtn) els.assistantCreateBtn.disabled = true;
@@ -5926,6 +5940,22 @@ function renderAssistantClarify(questions) {
   setTimeout(() => els.assistantAnswer?.focus(), 0);
 }
 
+function updateAssistantPreviewCounter() {
+  const proposals = Array.isArray(state.assistant?.proposals) ? state.assistant.proposals : [];
+  const total = proposals.length || (state.assistant?.proposal ? 1 : 0);
+  const index = Math.max(0, Number(state.assistant?.proposalIndex) || 0);
+
+  if (els.assistantPreviewCount) {
+    els.assistantPreviewCount.textContent = total ? `(${total} Events)` : "";
+  }
+  if (els.assistantPreviewPosition) {
+    const current = total ? Math.min(index + 1, total) : 1;
+    els.assistantPreviewPosition.textContent = `${current}/${Math.max(total, 1)}`;
+  }
+  if (els.assistantPrevBtn) els.assistantPrevBtn.disabled = total <= 1 || index <= 0;
+  if (els.assistantNextBtn) els.assistantNextBtn.disabled = total <= 1 || index >= total - 1;
+}
+
 function renderAssistantPreview(proposal) {
   resetAssistantUi();
   const event = proposal?.event || {};
@@ -5944,10 +5974,12 @@ function renderAssistantPreview(proposal) {
     els.assistantCreateBtn.disabled = isDeleteIntent ? !event?.title : !assistantHasRequiredFields(proposal);
     els.assistantCreateBtn.textContent = isDeleteIntent ? "Löschen" : "Erstellen";
   }
+  updateAssistantPreviewCounter();
   els.assistantPreview?.classList.remove("hidden");
 }
 
 function findEventForAssistantDelete(proposal) {
+
   const event = proposal?.event || {};
   const title = String(event.title || "").trim().toLowerCase();
   if (!title) return null;
@@ -5999,32 +6031,97 @@ async function requestAssistantParse(text) {
   });
 }
 
+function normalizeAssistantProposalList(raw) {
+  const candidates = Array.isArray(raw?.proposals)
+    ? raw.proposals
+    : Array.isArray(raw?.suggestions)
+    ? raw.suggestions
+    : Array.isArray(raw)
+    ? raw
+    : [raw];
+  return candidates
+    .map((candidate) => normalizeAssistantProposal(candidate))
+    .filter((proposal) => proposal?.intent === "create_event" || proposal?.intent === "delete_event");
+}
+
+function showAssistantProposalAt(index) {
+  const proposals = Array.isArray(state.assistant?.proposals) ? state.assistant.proposals : [];
+  if (!proposals.length) {
+    renderAssistantNone();
+    return;
+  }
+  const safeIndex = clamp(Math.round(Number(index) || 0), 0, proposals.length - 1);
+  const proposal = proposals[safeIndex];
+  state.assistant.proposalIndex = safeIndex;
+  state.assistant.proposal = proposal;
+  state.assistant.intent = proposal.intent;
+  state.assistant.questions = proposal.questions || [];
+  renderAssistantPreview(proposal);
+}
+
 function handleAssistantResponse(raw, { originalText } = {}) {
   const previousDraft = state.assistant?.draft || {};
-  const proposal = normalizeAssistantProposal(raw);
   const draftImportant = previousDraft.important === true;
-  proposal.event.important = draftImportant || proposal.event.important === true;
+  const proposals = normalizeAssistantProposalList(raw).map((proposal) => ({
+    ...proposal,
+    event: {
+      ...(proposal.event || {}),
+      important: draftImportant || proposal.event?.important === true,
+    },
+  }));
+  const fallbackProposal = normalizeAssistantProposal(raw);
   const provider = determineAssistantProvider();
+
+  if (fallbackProposal.intent === "clarify") {
+    state.assistant = {
+      originalText: originalText || state.assistant.originalText || "",
+      proposal: fallbackProposal,
+      proposals: [],
+      proposalIndex: 0,
+      intent: fallbackProposal.intent,
+      questions: fallbackProposal.questions || [],
+      provider,
+      draft: {
+        important: draftImportant || fallbackProposal.event?.important === true,
+      },
+    };
+    renderAssistantClarify(fallbackProposal.questions);
+    return;
+  }
+
   state.assistant = {
     originalText: originalText || state.assistant.originalText || "",
-    proposal,
-    intent: proposal.intent,
-    questions: proposal.questions || [],
+    proposal: proposals[0] || fallbackProposal,
+    proposals,
+    proposalIndex: 0,
+    intent: (proposals[0] || fallbackProposal).intent,
+    questions: (proposals[0] || fallbackProposal).questions || [],
     provider,
     draft: {
-      important: proposal.event.important === true,
+      important: draftImportant || (proposals[0] || fallbackProposal).event?.important === true,
     },
   };
 
-  if (proposal.intent === "clarify") {
-    renderAssistantClarify(proposal.questions);
+  if (proposals.length > 0) {
+    showAssistantProposalAt(0);
     return;
   }
-  if (proposal.intent === "create_event" || proposal.intent === "delete_event") {
-    renderAssistantPreview(proposal);
+
+  if (fallbackProposal.intent === "create_event" || fallbackProposal.intent === "delete_event") {
+    renderAssistantPreview(fallbackProposal);
     return;
   }
+
   renderAssistantNone();
+}
+
+
+function showPreviousAssistantProposal() {
+  showAssistantProposalAt((state.assistant?.proposalIndex || 0) - 1);
+}
+
+function showNextAssistantProposal() {
+  showAssistantProposalAt((state.assistant?.proposalIndex || 0) + 1);
 }
 
 async function submitAssistantAnswer() {
