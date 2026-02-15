@@ -438,6 +438,9 @@ const state = {
   docParseContext: null,
   docParseGroups: [],
   shareImport: null,
+  expenseImportProposal: null,
+  expenseImportSaving: false,
+  expenseLineItems: [],
 };
 
 let lastDayScrollerScrollLeft = 0;
@@ -486,6 +489,18 @@ const els = {
   aiExtractError: byId("aiExtractError"),
   aiExtractResults: byId("aiExtractResults"),
   aiExtractWarnings: byId("aiExtractWarnings"),
+
+  expenseImportInput: byId("expenseImportInput"),
+  expenseImportStatus: byId("expenseImportStatus"),
+  expenseImportWarning: byId("expenseImportWarning"),
+  expenseProposalCard: byId("expenseProposalCard"),
+  expenseProposalItems: byId("expenseProposalItems"),
+  expenseProposalTotal: byId("expenseProposalTotal"),
+  expenseCategorySelect: byId("expenseCategorySelect"),
+  expenseStoreInput: byId("expenseStoreInput"),
+  expenseSaveBtn: byId("expenseSaveBtn"),
+  expenseCancelBtn: byId("expenseCancelBtn"),
+  expenseList: byId("expenseList"),
 
   docExtractFileInput: byId("docExtractFileInput"),
   docExtractTextInput: byId("docExtractTextInput"),
@@ -1948,6 +1963,166 @@ function formatAiExtractConfidence(value) {
   return `${Math.round(percent)}%`;
 }
 
+
+function setExpenseImportStatus(message) {
+  if (els.expenseImportStatus) els.expenseImportStatus.textContent = message || "";
+}
+
+function setExpenseImportWarning(message) {
+  if (els.expenseImportWarning) {
+    els.expenseImportWarning.textContent = message || "";
+    els.expenseImportWarning.style.color = message ? "rgba(255,180,120,.95)" : "";
+  }
+}
+
+function clearExpenseProposal() {
+  state.expenseImportProposal = null;
+  els.expenseProposalCard?.classList.add("hidden");
+  if (els.expenseProposalItems) els.expenseProposalItems.innerHTML = "";
+  if (els.expenseProposalTotal) els.expenseProposalTotal.textContent = "";
+}
+
+function renderExpenseProposal(proposal) {
+  if (!proposal || !els.expenseProposalCard) return;
+  state.expenseImportProposal = proposal;
+  els.expenseProposalCard.classList.remove("hidden");
+  if (els.expenseProposalItems) els.expenseProposalItems.innerHTML = "";
+
+  const items = Array.isArray(proposal.parsedItems) ? proposal.parsedItems : [];
+  if (!items.length && els.expenseProposalItems) {
+    const row = document.createElement("div");
+    row.className = "item";
+    row.textContent = "Unklare Liste – Review nötig.";
+    els.expenseProposalItems.appendChild(row);
+  }
+
+  items.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "item";
+    const title = document.createElement("div");
+    title.className = "itemTitle";
+    title.textContent = item.normalizedName || item.rawName || "Unbekannt";
+    const conf = Number(item.confidence || 0);
+    const price = Number.isFinite(Number(item.price)) ? `${Number(item.price).toFixed(2)} ${item.currency || ""}` : "ohne Preis";
+    const qty = Number.isFinite(Number(item.qty)) ? `${item.qty}${item.unit ? ` ${item.unit}` : ""}` : "";
+    const meta = document.createElement("div");
+    meta.className = "itemMeta";
+    meta.textContent = [qty, price, conf < 0.5 ? "unsicher" : ""].filter(Boolean).join(" • ");
+    row.appendChild(title);
+    row.appendChild(meta);
+    els.expenseProposalItems?.appendChild(row);
+  });
+
+  if (els.expenseProposalTotal) {
+    els.expenseProposalTotal.textContent = Number.isFinite(Number(proposal.total))
+      ? `Total erkannt: ${Number(proposal.total).toFixed(2)} CHF`
+      : "Kein Total erkannt";
+  }
+
+  const warnings = Array.isArray(proposal.warnings) ? proposal.warnings : [];
+  setExpenseImportWarning(warnings[0] || (proposal.hasSignal ? "" : "Konnte wenig erkennen – bitte prüfen"));
+}
+
+async function loadExpenseItems() {
+  if (!els.expenseList) return;
+  try {
+    const res = await fetch(apiUrl('/api/expenses'), { headers: API_KEY ? { 'x-api-key': API_KEY } : {} });
+    const data = await res.json();
+    const items = Array.isArray(data?.items) ? data.items : [];
+    state.expenseLineItems = items;
+    els.expenseList.innerHTML = '';
+    if (!items.length) {
+      const empty = document.createElement('div');
+      empty.className = 'item';
+      empty.textContent = 'Noch keine Budget-Einträge.';
+      els.expenseList.appendChild(empty);
+      return;
+    }
+    items.slice().reverse().slice(0, 20).forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'item';
+      const title = document.createElement('div');
+      title.className = 'itemTitle';
+      title.textContent = item.name || 'Eintrag';
+      const meta = document.createElement('div');
+      meta.className = 'itemMeta';
+      const price = Number.isFinite(Number(item.price)) ? `${Number(item.price).toFixed(2)} ${item.currency || ''}` : 'ohne Preis';
+      meta.textContent = [item.date, item.category, price].filter(Boolean).join(' • ');
+      row.appendChild(title);
+      row.appendChild(meta);
+      els.expenseList.appendChild(row);
+    });
+  } catch {
+    // silent
+  }
+}
+
+async function handleExpenseScreenshotImport(file) {
+  if (!file) return;
+  setExpenseImportStatus(`Lade "${file.name}" hoch…`);
+  setExpenseImportWarning('');
+  clearExpenseProposal();
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const res = await fetch(apiUrl('/api/expenses/import/screenshot'), { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok || !data?.ok || !data?.proposal) {
+      throw new Error(data?.message || 'Import fehlgeschlagen');
+    }
+    renderExpenseProposal(data.proposal);
+    setExpenseImportStatus('Vorschlag bereit. Bitte prüfen und speichern.');
+  } catch (error) {
+    setExpenseImportStatus('');
+    setExpenseImportWarning(`Hinweis: ${error?.message || 'Konnte wenig erkennen – bitte prüfen'}`);
+  } finally {
+    if (els.expenseImportInput) els.expenseImportInput.value = '';
+  }
+}
+
+async function saveExpenseProposal() {
+  if (!state.expenseImportProposal || state.expenseImportSaving) return;
+  state.expenseImportSaving = true;
+  if (els.expenseSaveBtn) els.expenseSaveBtn.disabled = true;
+  try {
+    const res = await fetch(apiUrl('/api/expenses/import/save'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(API_KEY ? { 'x-api-key': API_KEY } : {}) },
+      body: JSON.stringify({
+        proposal: state.expenseImportProposal,
+        categoryDefault: els.expenseCategorySelect?.value || 'Lebensmittel',
+        store: (els.expenseStoreInput?.value || '').trim() || null,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data?.ok) throw new Error(data?.message || 'Speichern fehlgeschlagen');
+    setExpenseImportStatus(data?.deduped ? 'Bereits gespeichert (kein Duplikat).' : 'Budget-Einträge gespeichert.');
+    clearExpenseProposal();
+    if (els.expenseStoreInput) els.expenseStoreInput.value = '';
+    await loadExpenseItems();
+  } catch (error) {
+    setExpenseImportWarning(`Hinweis: ${error?.message || 'Speichern fehlgeschlagen'}`);
+  } finally {
+    state.expenseImportSaving = false;
+    if (els.expenseSaveBtn) els.expenseSaveBtn.disabled = false;
+  }
+}
+
+function initExpenseImportUI() {
+  if (!els.expenseImportInput) return;
+  els.expenseImportInput.addEventListener('change', (event) => {
+    const file = event.target?.files?.[0] || null;
+    void handleExpenseScreenshotImport(file);
+  });
+  els.expenseSaveBtn?.addEventListener('click', () => { void saveExpenseProposal(); });
+  els.expenseCancelBtn?.addEventListener('click', () => {
+    clearExpenseProposal();
+    setExpenseImportStatus('Import abgebrochen.');
+    setExpenseImportWarning('');
+  });
+  void loadExpenseItems();
+}
+
 const deletingEvents = new Set();
 let activeEventDrag = null;
 let pendingUndoToast = null;
@@ -2055,6 +2230,7 @@ async function boot() {
   // AI Extract (Phase 3 Minimal UI)
   initAiExtractUI();
   initDocExtractUI();
+  initExpenseImportUI();
 
   if (IS_NATIVE) {
     try {

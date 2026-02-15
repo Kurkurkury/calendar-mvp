@@ -17,6 +17,7 @@ import { fileURLToPath } from "url";
 import { google } from "googleapis";
 import pdfParse from "pdf-parse";
 import mammoth from "mammoth";
+import { parseExpenseText } from "./expense-import.js";
 
 import {
   getGoogleStatus,
@@ -507,6 +508,8 @@ function buildDefaultDb() {
   return {
     events: [],
     tasks: [],
+    expenseImports: [],
+    expenseLineItems: [],
     preferences: { ...DEFAULT_PREFERENCES },
     learning: { ...DEFAULT_LEARNING },
   };
@@ -553,6 +556,8 @@ function readDb() {
     const parsed = JSON.parse(raw || "{}");
     if (!Array.isArray(parsed.events)) parsed.events = [];
     if (!Array.isArray(parsed.tasks)) parsed.tasks = [];
+    if (!Array.isArray(parsed.expenseImports)) parsed.expenseImports = [];
+    if (!Array.isArray(parsed.expenseLineItems)) parsed.expenseLineItems = [];
     parsed.preferences = normalizePreferences(parsed.preferences || {});
     parsed.learning = normalizeLearning(parsed.learning || {});
     return parsed;
@@ -726,6 +731,28 @@ function parseMultipartFormData(req, options = {}) {
   }
 
   return { ok: true, fields, file };
+}
+
+
+function buildExpenseProposalFromText({ rawText = "", sourceImageHash = "", sourceType = "screenshot" } = {}) {
+  const parsed = parseExpenseText(rawText);
+  const now = Date.now();
+  const proposal = {
+    id: uid("expimp"),
+    createdAt: now,
+    sourceType,
+    sourceImageHash: String(sourceImageHash || ""),
+    rawExtractedText: String(rawText || ""),
+    parsedItems: parsed.parsedItems,
+    total: parsed.total,
+    store: null,
+    categoryDefault: "Lebensmittel",
+    status: "proposed",
+    notes: parsed.hasSignal ? "" : "Review nötig",
+    warnings: parsed.warnings,
+    hasSignal: parsed.hasSignal,
+  };
+  return proposal;
 }
 
 function parseAIJson(rawText) {
@@ -4339,6 +4366,149 @@ app.post("/api/tasks", requireApiKey, (req, res) => {
   db.tasks.push(task);
   writeDb(db);
   res.json({ ok: true, task });
+});
+
+
+app.get("/api/expenses", requireApiKey, (req, res) => {
+  const db = readDb();
+  res.json({ ok: true, imports: db.expenseImports || [], items: db.expenseLineItems || [] });
+});
+
+app.post(
+  "/api/expenses/import/screenshot",
+  express.raw({ type: "multipart/form-data", limit: MAX_FORM_BYTES }),
+  (req, res) => {
+    const parsed = parseMultipartFormData(req, {
+      allowedMimeTypes: new Set(["image/png", "image/jpeg", "image/webp"]),
+    });
+    if (!parsed.ok) {
+      return res.status(parsed.status || 400).json({ ok: false, message: parsed.message || "upload failed" });
+    }
+
+    const { file } = parsed;
+    const sourceImageHash = crypto.createHash("sha1").update(file.buffer).digest("hex");
+
+    extractTextFromImageWithOpenAI(file)
+      .then((ocr) => {
+        if (!ocr?.ok) {
+          const fallbackProposal = buildExpenseProposalFromText({
+            rawText: "",
+            sourceImageHash,
+            sourceType: "screenshot",
+          });
+          fallbackProposal.warnings = ["Konnte wenig erkennen – bitte prüfen"];
+          return res.json({ ok: true, proposal: fallbackProposal, reviewNeeded: true });
+        }
+
+        const proposal = buildExpenseProposalFromText({
+          rawText: ocr.text || "",
+          sourceImageHash,
+          sourceType: "screenshot",
+        });
+        return res.json({
+          ok: true,
+          proposal,
+          reviewNeeded: !proposal.hasSignal,
+          warnings: proposal.warnings,
+        });
+      })
+      .catch(() => {
+        const proposal = buildExpenseProposalFromText({ rawText: "", sourceImageHash, sourceType: "screenshot" });
+        proposal.warnings = ["Konnte wenig erkennen – bitte prüfen"];
+        return res.json({ ok: true, proposal, reviewNeeded: true });
+      });
+  },
+);
+
+app.post("/api/expenses/import/save", requireApiKey, (req, res) => {
+  const { proposal, categoryDefault = "Lebensmittel", store = null, saveDate = null } = req.body || {};
+  if (!proposal || typeof proposal !== "object") {
+    return res.status(400).json({ ok: false, message: "proposal required" });
+  }
+
+  const db = readDb();
+  const imageHash = String(proposal.sourceImageHash || "").trim();
+  if (imageHash) {
+    const existing = (db.expenseImports || []).find(
+      (entry) => entry?.sourceImageHash === imageHash && entry?.status === "saved",
+    );
+    if (existing) {
+      const existingItems = (db.expenseLineItems || []).filter((item) => item.importId === existing.id);
+      return res.json({ ok: true, import: existing, items: existingItems, deduped: true });
+    }
+  }
+
+  const importId = proposal.id || uid("expimp");
+  const normalizedImport = {
+    id: importId,
+    createdAt: Number(proposal.createdAt) || Date.now(),
+    sourceType: "screenshot",
+    sourceImageHash: imageHash,
+    rawExtractedText: String(proposal.rawExtractedText || ""),
+    parsedItems: Array.isArray(proposal.parsedItems) ? proposal.parsedItems : [],
+    total: Number.isFinite(Number(proposal.total)) ? Number(proposal.total) : null,
+    store: store === null ? null : String(store || ""),
+    categoryDefault: String(categoryDefault || "Lebensmittel"),
+    status: "saved",
+    notes: String(proposal.notes || ""),
+  };
+
+  const dateValue = saveDate ? String(saveDate) : new Date().toISOString().slice(0, 10);
+  const lineItems = [];
+  const parsedItems = normalizedImport.parsedItems;
+
+  if (parsedItems.length) {
+    parsedItems.forEach((item) => {
+      lineItems.push({
+        id: uid("exp"),
+        date: dateValue,
+        category: normalizedImport.categoryDefault,
+        store: normalizedImport.store,
+        name: String(item?.normalizedName || item?.rawName || "Unklarer Eintrag"),
+        qty: Number.isFinite(Number(item?.qty)) ? Number(item.qty) : null,
+        unit: item?.unit ? String(item.unit) : null,
+        price: Number.isFinite(Number(item?.price)) ? Number(item.price) : null,
+        currency: item?.currency ? String(item.currency) : null,
+        importId,
+      });
+    });
+  } else if (Number.isFinite(Number(normalizedImport.total))) {
+    lineItems.push({
+      id: uid("exp"),
+      date: dateValue,
+      category: normalizedImport.categoryDefault,
+      store: normalizedImport.store,
+      name: "Einkauf (Total)",
+      qty: null,
+      unit: null,
+      price: Number(normalizedImport.total),
+      currency: "CHF",
+      importId,
+    });
+  }
+
+  if (!lineItems.length) {
+    lineItems.push({
+      id: uid("exp"),
+      date: dateValue,
+      category: normalizedImport.categoryDefault,
+      store: normalizedImport.store,
+      name: "Einkauf (unklar – Review nötig)",
+      qty: null,
+      unit: null,
+      price: null,
+      currency: null,
+      importId,
+    });
+  }
+
+  db.expenseImports = Array.isArray(db.expenseImports) ? db.expenseImports : [];
+  db.expenseLineItems = Array.isArray(db.expenseLineItems) ? db.expenseLineItems : [];
+  db.expenseImports.push(normalizedImport);
+  db.expenseLineItems.push(...lineItems);
+  writeDb(db);
+
+  res.json({ ok: true, import: normalizedImport, items: lineItems, deduped: false });
 });
 
 /**
