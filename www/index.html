@@ -58,6 +58,12 @@
                 <textarea id="eventText" rows="3" placeholder="Neues Event oder Task eingeben…"></textarea>
               </label>
 
+              <div class="quick-add-actions" style="justify-content:flex-start; margin-top:-4px;">
+                <input id="eventExpenseUploadInput" type="file" accept="image/png,image/jpeg,image/webp" class="hidden" />
+                <button id="eventExpenseUploadBtn" class="btn ghost" type="button" aria-label="Budget-Screenshot hochladen">Budget-Screenshot hochladen</button>
+                <span id="eventExpenseUploadStatus" class="cardSub"></span>
+              </div>
+
               <label class="toggle">
                 <input id="eventImportant" type="checkbox" />
                 <span>Wichtig</span>
