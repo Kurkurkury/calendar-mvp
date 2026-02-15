@@ -603,6 +603,9 @@ const els = {
   eventModal: byId("eventModal"),
   closeEventBtn: byId("closeEventBtn"),
   eventText: byId("eventText"),
+  eventExpenseUploadInput: byId("eventExpenseUploadInput"),
+  eventExpenseUploadBtn: byId("eventExpenseUploadBtn"),
+  eventExpenseUploadStatus: byId("eventExpenseUploadStatus"),
   createEventBtn: byId("createEventBtn"),
   assistantClarify: byId("assistantClarify"),
   assistantQuestionList: byId("assistantQuestionList"),
@@ -1716,6 +1719,69 @@ function initAiExtractUI() {
   setAiExtractError("");
 }
 
+function initEventExpenseUpload() {
+  if (!els.eventExpenseUploadInput || !els.eventExpenseUploadBtn || !els.eventText) return;
+
+  const setStatus = (message, isWarning = false) => {
+    if (!els.eventExpenseUploadStatus) return;
+    els.eventExpenseUploadStatus.textContent = message || "";
+    els.eventExpenseUploadStatus.style.color = isWarning ? "rgba(255,180,120,.95)" : "";
+  };
+
+  els.eventExpenseUploadBtn.addEventListener("click", () => {
+    els.eventExpenseUploadInput?.click();
+  });
+
+  els.eventExpenseUploadInput.addEventListener("change", async (event) => {
+    const file = event.target?.files?.[0] || null;
+    if (!file) return;
+
+    setStatus(`Analysiere "${file.name}"…`);
+    const previousPlaceholder = els.eventText.getAttribute("placeholder") || "";
+    els.eventText.setAttribute("placeholder", "Budget-Screenshot wird analysiert…");
+    els.eventText.setAttribute("aria-busy", "true");
+
+    try {
+      await handleExpenseScreenshotImport(file);
+      const proposal = state.expenseImportProposal;
+      if (!proposal) {
+        setStatus("Kein Budget-Vorschlag erkannt. Bitte anderes Bild probieren.", true);
+        return;
+      }
+      const items = Array.isArray(proposal.parsedItems) ? proposal.parsedItems : [];
+      const summary = [];
+      if (items.length) {
+        summary.push("Budget-Screenshot:");
+        items.forEach((item) => {
+          const name = item.normalizedName || item.rawName || "Unbekannt";
+          const qty = Number.isFinite(Number(item.qty)) ? `${item.qty}${item.unit ? ` ${item.unit}` : ""}` : "";
+          const price = Number.isFinite(Number(item.price)) ? `${Number(item.price).toFixed(2)} ${item.currency || ""}`.trim() : "";
+          summary.push(`- ${[name, qty, price].filter(Boolean).join(" • ")}`);
+        });
+      }
+      if (Number.isFinite(Number(proposal.total))) {
+        summary.push(`Total: ${Number(proposal.total).toFixed(2)} CHF`);
+      }
+
+      const extracted = summary.join("\n").trim();
+      if (extracted) {
+        const existing = String(els.eventText.value || "").trim();
+        els.eventText.value = existing ? `${existing}\n\n${extracted}` : extracted;
+        const cursorPos = els.eventText.value.length;
+        els.eventText.focus();
+        els.eventText.setSelectionRange(cursorPos, cursorPos);
+      }
+      setStatus("Budget-Screenshot übernommen.");
+    } catch {
+      setStatus("Budget-Screenshot konnte nicht verarbeitet werden.", true);
+    } finally {
+      els.eventText.setAttribute("placeholder", previousPlaceholder || "Neues Event oder Task eingeben…");
+      els.eventText.removeAttribute("aria-busy");
+      els.eventExpenseUploadInput.value = "";
+    }
+  });
+}
+
 function initEventTextImagePaste() {
   if (!els.eventText) return;
 
@@ -2231,6 +2297,7 @@ async function boot() {
   initAiExtractUI();
   initDocExtractUI();
   initExpenseImportUI();
+  initEventExpenseUpload();
 
   if (IS_NATIVE) {
     try {
