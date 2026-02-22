@@ -299,6 +299,7 @@ function startGooglePollingOnce() {
             saveLastKnownGoogleEvents(state.events);
           }
           await render();
+  renderAlarmCenter();
           // ACK: dirty zuruecksetzen
           try {
             await apiPost("/api/sync/ack", { lastChangeAt: sync.lastChangeAt || null });
@@ -452,6 +453,8 @@ const state = {
   expenseImportProposal: null,
   expenseImportSaving: false,
   expenseLineItems: [],
+  alarms: [],
+  alarmsLoading: false,
 };
 
 let lastDayScrollerScrollLeft = 0;
@@ -710,6 +713,11 @@ const els = {
   selectedEventNotesRow: byId("selectedEventNotesRow"),
   selectedEventNotes: byId("selectedEventNotes"),
   selectedEventDeleteBtn: byId("selectedEventDeleteBtn"),
+  selectedEventOpenSbbBtn: byId("selectedEventOpenSbbBtn"),
+  alarmCenterBtn: byId("alarmCenterBtn"),
+  alarmCenterBadge: byId("alarmCenterBadge"),
+  alarmCenterPanel: byId("alarmCenterPanel"),
+  alarmCenterList: byId("alarmCenterList"),
   appbarMonthNav: document.querySelector(".month-nav"),
   bottomNav: document.querySelector(".bottom-nav"),
 };
@@ -2430,6 +2438,22 @@ async function boot() {
     await deleteEvent(ev);
   });
 
+  els.selectedEventOpenSbbBtn?.addEventListener("click", async () => {
+    const ev = getSelectedEvent();
+    if (!ev?.id) return;
+    await openSbbForEvent(ev.id);
+  });
+
+  els.alarmCenterBtn?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    els.alarmCenterPanel?.classList.toggle("hidden");
+  });
+  document.addEventListener("click", (event) => {
+    if (!els.alarmCenterPanel || !els.alarmCenterBtn) return;
+    const inside = els.alarmCenterPanel.contains(event.target) || els.alarmCenterBtn.contains(event.target);
+    if (!inside) els.alarmCenterPanel.classList.add("hidden");
+  });
+
   els.grid?.addEventListener("click", (event) => {
     if (event.target.closest(".eventBlock")) return;
     if (event.target.closest(".taskBlock")) return;
@@ -3055,6 +3079,87 @@ async function refreshMonitoring({ force = false } = {}) {
   }
 }
 
+
+function formatRelativeTime(timestamp) {
+  if (!timestamp) return "";
+  const diffMs = Date.now() - Number(timestamp);
+  if (!Number.isFinite(diffMs) || diffMs < 0) return "";
+  const min = Math.floor(diffMs / 60000);
+  if (min < 1) return "zuletzt geöffnet gerade eben";
+  if (min < 60) return `zuletzt geöffnet vor ${min} min`;
+  const h = Math.floor(min / 60);
+  return `zuletzt geöffnet vor ${h} h`;
+}
+
+async function loadAlarms() {
+  try {
+    const res = await apiGet("/api/alarms");
+    state.alarms = Array.isArray(res?.alarms) ? res.alarms : [];
+  } catch {
+    state.alarms = [];
+  }
+}
+
+function renderAlarmCenter() {
+  const alarms = Array.isArray(state.alarms) ? state.alarms : [];
+  if (els.alarmCenterBadge) {
+    els.alarmCenterBadge.textContent = String(alarms.length);
+    els.alarmCenterBadge.classList.toggle("hidden", alarms.length === 0);
+  }
+  if (!els.alarmCenterList) return;
+  if (!alarms.length) {
+    els.alarmCenterList.innerHTML = '<div class="cardMiniSub">Keine offenen Alarme.</div>';
+    return;
+  }
+  els.alarmCenterList.innerHTML = alarms.map((alarm) => {
+    const title = escapeHtml(alarm?.event?.title || "Termin");
+    const when = alarm?.event?.startIso ? escapeHtml(fmtDateTime(new Date(alarm.event.startIso))) : "Zeit unbekannt";
+    const location = escapeHtml(alarm?.event?.location || "-");
+    const lastOpened = formatRelativeTime(alarm?.state?.lastOpenedAt);
+    return `
+      <div class="alarm-item">
+        <div class="alarm-item-header">
+          <strong>${title}</strong>
+          <span class="alarm-severity ${alarm.severity}">${alarm.severity}</span>
+        </div>
+        <div class="alarm-item-sub">${when}</div>
+        <div class="alarm-item-sub">Ort: ${location}</div>
+        ${lastOpened ? `<div class="alarm-item-sub">${escapeHtml(lastOpened)}</div>` : ""}
+        <div class="alarm-item-actions">
+          <button class="btn ghost" type="button" data-alarm-open="${escapeHtml(alarm.event.id)}">SBB öffnen</button>
+          <button class="btn primary" type="button" data-alarm-confirm="${escapeHtml(alarm.event.id)}">Erledigt</button>
+        </div>
+      </div>`;
+  }).join("");
+
+  els.alarmCenterList.querySelectorAll("[data-alarm-open]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await openSbbForEvent(btn.getAttribute("data-alarm-open") || "");
+    });
+  });
+  els.alarmCenterList.querySelectorAll("[data-alarm-confirm]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await confirmTravelForEvent(btn.getAttribute("data-alarm-confirm") || "");
+    });
+  });
+}
+
+async function openSbbForEvent(eventId) {
+  if (!eventId) return;
+  const res = await apiPost("/api/travel/open-sbb", { eventId });
+  if (res?.sbbUrl) window.open(res.sbbUrl, "_blank", "noopener,noreferrer");
+  await loadAlarms();
+  renderAlarmCenter();
+}
+
+async function confirmTravelForEvent(eventId) {
+  if (!eventId) return;
+  await apiPost("/api/travel/confirm", { eventId, confirmed: true });
+  await loadAlarms();
+  renderAlarmCenter();
+  await refreshFromApi();
+}
+
 // -------------------- API refresh --------------------
 async function refreshFromApi() {
   let hadNetworkFailure = false;
@@ -3168,6 +3273,7 @@ async function refreshFromApi() {
   await Promise.allSettled([
     loadPreferences(),
     refreshMonitoring(),
+    loadAlarms(),
   ]);
 
   updateGoogleButtons();
@@ -3201,6 +3307,7 @@ async function render() {
   saveLocal("calendarViewV1", state.view);
   saveDateLocal("calendarActiveDateV1", state.activeDate);
   setBodyViewClass(state.view);
+  renderAlarmCenter();
   if (state.currentYear === null || state.currentMonth === null || state.selectedDay === null) {
     setActiveDate(state.activeDate);
   }
@@ -4332,6 +4439,14 @@ function renderSelectedEventDetails() {
   if (els.selectedEventDeleteBtn) {
     const eventId = getGoogleEventId(ev) || ev.id || "";
     els.selectedEventDeleteBtn.disabled = !eventId || deletingEvents.has(eventId);
+  }
+  if (els.selectedEventOpenSbbBtn) {
+    // IMPORTANT: use local event id (matches db + alarms)
+    const eventId = String(ev?.id || "");
+    const hasTravelAlarm = !!eventId &&
+      state.alarms.some((alarm) => alarm?.event?.id === eventId);
+    els.selectedEventOpenSbbBtn.style.display = hasTravelAlarm ? "inline-flex" : "none";
+    els.selectedEventOpenSbbBtn.disabled = !hasTravelAlarm;
   }
 
   els.selectedEventCard.classList.remove("hidden");

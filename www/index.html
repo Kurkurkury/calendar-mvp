@@ -35,6 +35,14 @@
             <span id="googleStatusBadge" class="statusBadge chip"></span>
             <span id="syncStatusBadge" class="statusBadge chip"></span>
           </div>
+          <button id="alarmCenterBtn" class="alarm-center-btn" type="button" aria-label="Alarmzentrale">
+            <span>🔔 Alarmzentrale</span>
+            <span id="alarmCenterBadge" class="alarm-center-badge hidden">0</span>
+          </button>
+          <div id="alarmCenterPanel" class="alarm-center-panel hidden" role="dialog" aria-label="Alarmzentrale">
+            <div class="alarm-center-title">Open Loops</div>
+            <div id="alarmCenterList" class="alarm-center-list"></div>
+          </div>
           <div id="live-timestamp" class="header-date"></div>
         </div>
       </div>
@@ -166,7 +174,8 @@
                   <div id="selectedEventNotes" class="detailValue detailNotes"></div>
                 </div>
               </div>
-              <div class="modalFoot">
+              <div class="modalFoot selected-event-actions">
+                <button id="selectedEventOpenSbbBtn" class="btn ghost" type="button">SBB öffnen</button>
                 <button id="selectedEventDeleteBtn" class="btn delete" type="button">Löschen</button>
               </div>
             </div>
