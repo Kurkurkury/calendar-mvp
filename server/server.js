@@ -18,6 +18,8 @@ import { google } from "googleapis";
 import pdfParse from "pdf-parse";
 import mammoth from "mammoth";
 import { parseExpenseText } from "./expense-import.js";
+import { buildSbbUrl } from "./sbb.js";
+import { buildTravelAlarms, normalizeTravelAlarmState } from "./alarms.js";
 
 import {
   getGoogleStatus,
@@ -494,6 +496,10 @@ const DEFAULT_PREFERENCES = {
   bufferMinutes: 15,
   windowStart: "08:00",
   windowEnd: "18:00",
+  homeStop: "Olsberg, Mitteldorf",
+  alarmLookaheadHours: 168,
+  alarmUrgentHours: 24,
+  alarmWarningHours: 72,
   lastUpdated: null,
 };
 
@@ -525,8 +531,22 @@ function normalizePreferences(pref) {
     bufferMinutes: Number.isFinite(Number(pref?.bufferMinutes)) ? Number(pref.bufferMinutes) : DEFAULT_PREFERENCES.bufferMinutes,
     windowStart: String(pref?.windowStart || DEFAULT_PREFERENCES.windowStart),
     windowEnd: String(pref?.windowEnd || DEFAULT_PREFERENCES.windowEnd),
+    homeStop: String(pref?.homeStop || DEFAULT_PREFERENCES.homeStop),
+    alarmLookaheadHours: Number.isFinite(Number(pref?.alarmLookaheadHours))
+      ? Number(pref.alarmLookaheadHours)
+      : DEFAULT_PREFERENCES.alarmLookaheadHours,
+    alarmUrgentHours: Number.isFinite(Number(pref?.alarmUrgentHours))
+      ? Number(pref.alarmUrgentHours)
+      : DEFAULT_PREFERENCES.alarmUrgentHours,
+    alarmWarningHours: Number.isFinite(Number(pref?.alarmWarningHours))
+      ? Number(pref.alarmWarningHours)
+      : DEFAULT_PREFERENCES.alarmWarningHours,
     lastUpdated: pref?.lastUpdated || null,
   };
+}
+
+function withEventAlarmState(event, previousEvent = null) {
+  return normalizeTravelAlarmState(event, previousEvent);
 }
 
 function normalizeLearning(learning) {
@@ -2012,7 +2032,7 @@ async function createPlannedEvent({ source, title, start, end, notes }) {
     important: false,
     color: "",
   };
-  db.events.push(localEvent);
+  db.events.push(withEventAlarmState(localEvent));
   writeDb(db);
   return { ok: true, event: { title: localEvent.title, start: localEvent.start, end: localEvent.end, googleId: null } };
 }
@@ -2609,7 +2629,7 @@ async function createAndMirrorEvent({ title, start, end, location = "", notes = 
 
   const googleId = out.googleEvent?.id ? String(out.googleEvent.id) : uid("gcal");
   const db = readDb();
-  const ev = {
+  const ev = withEventAlarmState({
     id: `gcal_${googleId}`,
     title: String(title),
     start: String(start),
@@ -2619,7 +2639,7 @@ async function createAndMirrorEvent({ title, start, end, location = "", notes = 
     important: important === true,
     color: "",
     googleEventId: googleId,
-  };
+  });
   db.events.push(ev);
   writeDb(db);
 
@@ -3206,6 +3226,16 @@ function handlePreferencesUpdate(req, res) {
     bufferMinutes: Number.isFinite(Number(updates.bufferMinutes)) ? Number(updates.bufferMinutes) : db.preferences?.bufferMinutes,
     windowStart: updates.windowStart || db.preferences?.windowStart,
     windowEnd: updates.windowEnd || db.preferences?.windowEnd,
+    homeStop: typeof updates.homeStop === "string" ? updates.homeStop : db.preferences?.homeStop,
+    alarmLookaheadHours: Number.isFinite(Number(updates.alarmLookaheadHours))
+      ? Number(updates.alarmLookaheadHours)
+      : db.preferences?.alarmLookaheadHours,
+    alarmUrgentHours: Number.isFinite(Number(updates.alarmUrgentHours))
+      ? Number(updates.alarmUrgentHours)
+      : db.preferences?.alarmUrgentHours,
+    alarmWarningHours: Number.isFinite(Number(updates.alarmWarningHours))
+      ? Number(updates.alarmWarningHours)
+      : db.preferences?.alarmWarningHours,
   });
 
   if (updates.timeOfDayWeights && typeof updates.timeOfDayWeights === "object") {
@@ -4715,9 +4745,10 @@ app.post("/api/assistant/commit", requireApiKey, async (req, res) => {
       important,
       color: "",
     };
-    db.events.push(localEvent);
+    const normalizedLocalEvent = withEventAlarmState(localEvent);
+    db.events.push(normalizedLocalEvent);
     writeDb(db);
-    return res.json({ ok: true, createdEvent: localEvent, source: "local" });
+    return res.json({ ok: true, createdEvent: normalizedLocalEvent, source: "local" });
   } catch (e) {
     const msg = String(e?.message || "");
     const isNotConnected =
@@ -4770,7 +4801,7 @@ app.post("/api/google/quick-add", async (req, res) => {
       const startStr = ge.start?.dateTime || ge.start?.date || parsed.start;
       const endStr = ge.end?.dateTime || ge.end?.date || parsed.end;
 
-      const ev = {
+      const ev = withEventAlarmState({
         id: `gcal_${googleId}`,
         title: String(ge.summary || parsed.title || "Termin"),
         start: startStr ? String(startStr) : "",
@@ -4779,7 +4810,7 @@ app.post("/api/google/quick-add", async (req, res) => {
         notes: String(ge.description || parsed.notes || ""),
         color: "",
         googleEventId: googleId,
-      };
+      });
 
       db.events.push(ev);
       writeDb(db);
@@ -4827,7 +4858,7 @@ app.post("/api/events", requireApiKey, (req, res) => {
   }
 
   const db = readDb();
-  const ev = {
+  const ev = withEventAlarmState({
     id: uid("evt"),
     title: String(title),
     start: String(start),
@@ -4835,10 +4866,115 @@ app.post("/api/events", requireApiKey, (req, res) => {
     location: String(location || ""),
     notes: String(notes || ""),
     color: String(color || ""),
-  };
+  });
   db.events.push(ev);
   writeDb(db);
   res.json({ ok: true, event: ev });
+});
+
+app.get("/api/alarms", requireApiKey, (req, res) => {
+  const db = readDb();
+  const preferences = normalizePreferences(db.preferences || {});
+  const normalizedEvents = (db.events || []).map((event) => withEventAlarmState(event));
+  const alarms = buildTravelAlarms({ events: normalizedEvents, preferences, nowMs: Date.now() });
+  res.json({
+    ok: true,
+    homeStop: preferences.homeStop,
+    alarms,
+  });
+});
+
+app.post("/api/travel/open-sbb", requireApiKey, (req, res) => {
+  const eventId = String(req.body?.eventId || "").trim();
+  if (!eventId) return res.status(400).json({ ok: false, message: "eventId required" });
+
+  const db = readDb();
+  const preferences = normalizePreferences(db.preferences || {});
+  const index = db.events.findIndex((event) => String(event?.id || "") === eventId);
+  if (index === -1) return res.status(404).json({ ok: false, message: "event not found" });
+
+  const event = withEventAlarmState(db.events[index]);
+  const location = String(event.location || "").trim();
+  if (!location) return res.status(400).json({ ok: false, message: "event has no location" });
+
+  const sbbUrl = buildSbbUrl({
+    from: preferences.homeStop,
+    to: location,
+    eventStartIso: event.start || undefined,
+  });
+
+  const travel = event?.alarmState?.travel || {};
+  db.events[index] = {
+    ...event,
+    alarmState: {
+      ...(event.alarmState || {}),
+      travel: {
+        ...travel,
+        needsCheck: true,
+        confirmed: false,
+        lastOpenedAt: Date.now(),
+      },
+    },
+  };
+  writeDb(db);
+
+  res.json({ ok: true, sbbUrl });
+});
+
+app.post("/api/travel/confirm", requireApiKey, (req, res) => {
+  const eventId = String(req.body?.eventId || "").trim();
+  const confirmed = req.body?.confirmed === true;
+  if (!eventId) return res.status(400).json({ ok: false, message: "eventId required" });
+  if (!confirmed) return res.status(400).json({ ok: false, message: "confirmed=true required" });
+
+  const db = readDb();
+  const index = db.events.findIndex((event) => String(event?.id || "") === eventId);
+  if (index === -1) return res.status(404).json({ ok: false, message: "event not found" });
+
+  const event = withEventAlarmState(db.events[index]);
+  const travel = event?.alarmState?.travel || {};
+  db.events[index] = {
+    ...event,
+    alarmState: {
+      ...(event.alarmState || {}),
+      travel: {
+        ...travel,
+        confirmed: true,
+        lastConfirmedAt: Date.now(),
+      },
+    },
+  };
+  writeDb(db);
+
+  res.json({ ok: true });
+});
+
+app.post("/api/travel/dismiss", requireApiKey, (req, res) => {
+  const eventId = String(req.body?.eventId || "").trim();
+  if (!eventId) return res.status(400).json({ ok: false, message: "eventId required" });
+
+  const db = readDb();
+  const index = db.events.findIndex((event) => String(event?.id || "") === eventId);
+  if (index === -1) return res.status(404).json({ ok: false, message: "event not found" });
+
+  const event = withEventAlarmState(db.events[index]);
+  const travel = event?.alarmState?.travel || {};
+
+  db.events[index] = {
+    ...event,
+    alarmState: {
+      ...(event.alarmState || {}),
+      travel: {
+        ...travel,
+        needsCheck: false,
+        confirmed: false,
+        lastConfirmedAt: null,
+      },
+    },
+  };
+
+  writeDb(db);
+  res.json({ ok: true });
 });
 
 // ---- Tasks (local db.json) ----
@@ -5080,7 +5216,7 @@ app.patch("/api/google/events/:id", requireApiKey, async (req, res) => {
       db.events = db.events.map((ev) => {
         if (ev.id === rawId || ev.googleEventId === eventId) {
           changed = true;
-          return {
+          return withEventAlarmState({
             ...ev,
             title: String(title),
             start: String(start),
@@ -5088,7 +5224,7 @@ app.patch("/api/google/events/:id", requireApiKey, async (req, res) => {
             location: String(location || ""),
             notes: String(notes || ""),
             important: important === true,
-          };
+          }, ev);
         }
         return ev;
       });
