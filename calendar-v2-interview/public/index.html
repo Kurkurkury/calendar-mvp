@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Calendar V2 – Interview Edition</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>Calendar V2 – Interview Edition</h1>
+      <div class="topbar-right">
+        <span id="connectedEmail">Not connected</span>
+        <button id="connectBtn">Connect Google</button>
+        <button id="refreshBtn">Refresh</button>
+        <button id="exportBtn">Export JSON</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="panel">
+        <h2>Range</h2>
+        <button id="todayBtn">Today</button>
+        <button id="weekBtn">This Week</button>
+      </aside>
+
+      <section class="panel">
+        <h2>Events</h2>
+        <ul id="eventsList" class="events"></ul>
+      </section>
+
+      <aside class="panel">
+        <h2>Create Event</h2>
+        <form id="createForm">
+          <label>Title <input id="title" required /></label>
+          <label>Date <input id="date" type="date" required /></label>
+          <label>Start <input id="startTime" type="time" required /></label>
+          <label>End <input id="endTime" type="time" required /></label>
+          <button type="submit">Create</button>
+        </form>
+
+        <h2>Export Output</h2>
+        <pre id="jsonPanel" class="json"></pre>
+        <button id="copyBtn" type="button">Copy JSON</button>
+      </aside>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
